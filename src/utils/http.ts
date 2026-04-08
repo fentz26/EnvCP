@@ -54,10 +54,14 @@ export class RateLimiter {
   private requests: Map<string, number[]> = new Map();
   private maxRequests: number;
   private windowMs: number;
+  private cleanupTimer: ReturnType<typeof setInterval>;
 
   constructor(maxRequests: number = 60, windowMs: number = 60000) {
     this.maxRequests = maxRequests;
     this.windowMs = windowMs;
+    // Periodically clean up stale entries
+    this.cleanupTimer = setInterval(() => this.cleanup(), windowMs * 2);
+    if (this.cleanupTimer.unref) this.cleanupTimer.unref();
   }
 
   isAllowed(key: string): boolean {
@@ -80,6 +84,22 @@ export class RateLimiter {
     const timestamps = this.requests.get(key) || [];
     const recent = timestamps.filter(t => now - t < this.windowMs);
     return Math.max(0, this.maxRequests - recent.length);
+  }
+
+  private cleanup(): void {
+    const now = Date.now();
+    for (const [key, timestamps] of this.requests) {
+      const recent = timestamps.filter(t => now - t < this.windowMs);
+      if (recent.length === 0) {
+        this.requests.delete(key);
+      } else {
+        this.requests.set(key, recent);
+      }
+    }
+  }
+
+  destroy(): void {
+    clearInterval(this.cleanupTimer);
   }
 }
 
