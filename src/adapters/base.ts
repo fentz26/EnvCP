@@ -40,6 +40,108 @@ export abstract class BaseAdapter {
 
   protected abstract registerTools(): void;
 
+  protected registerDefaultTools(): void {
+    const tools: ToolDefinition[] = [
+      {
+        name: 'envcp_list',
+        description: 'List all available environment variable names. Values are never shown.',
+        parameters: {
+          type: 'object',
+          properties: {
+            tags: { type: 'array', items: { type: 'string' }, description: 'Filter by tags' },
+          },
+        },
+        handler: async (params) => this.listVariables(params as { tags?: string[] }),
+      },
+      {
+        name: 'envcp_get',
+        description: 'Get an environment variable. Returns masked value by default.',
+        parameters: {
+          type: 'object',
+          properties: {
+            name: { type: 'string', description: 'Variable name' },
+            show_value: { type: 'boolean', description: 'Show actual value (requires user confirmation)' },
+          },
+          required: ['name'],
+        },
+        handler: async (params) => this.getVariable(params as { name: string; show_value?: boolean }),
+      },
+      {
+        name: 'envcp_set',
+        description: 'Create or update an environment variable.',
+        parameters: {
+          type: 'object',
+          properties: {
+            name: { type: 'string', description: 'Variable name' },
+            value: { type: 'string', description: 'Variable value' },
+            tags: { type: 'array', items: { type: 'string' }, description: 'Tags' },
+            description: { type: 'string', description: 'Description' },
+          },
+          required: ['name', 'value'],
+        },
+        handler: async (params) => this.setVariable(params as { name: string; value: string; tags?: string[]; description?: string }),
+      },
+      {
+        name: 'envcp_delete',
+        description: 'Delete an environment variable.',
+        parameters: {
+          type: 'object',
+          properties: {
+            name: { type: 'string', description: 'Variable name' },
+          },
+          required: ['name'],
+        },
+        handler: async (params) => this.deleteVariable(params as { name: string }),
+      },
+      {
+        name: 'envcp_sync',
+        description: 'Sync variables to .env file.',
+        parameters: { type: 'object', properties: {} },
+        handler: async () => this.syncToEnv(),
+      },
+      {
+        name: 'envcp_run',
+        description: 'Execute a command with environment variables injected.',
+        parameters: {
+          type: 'object',
+          properties: {
+            command: { type: 'string', description: 'Command to execute' },
+            variables: { type: 'array', items: { type: 'string' }, description: 'Variables to inject' },
+          },
+          required: ['command', 'variables'],
+        },
+        handler: async (params) => this.runCommand(params as { command: string; variables: string[] }),
+      },
+      {
+        name: 'envcp_add_to_env',
+        description: 'Write a stored variable to a .env file.',
+        parameters: {
+          type: 'object',
+          properties: {
+            name: { type: 'string', description: 'Variable name to add' },
+            env_file: { type: 'string', description: 'Path to .env file (default: .env)' },
+          },
+          required: ['name'],
+        },
+        handler: async (params) => this.addToEnv(params as { name: string; env_file?: string }),
+      },
+      {
+        name: 'envcp_check_access',
+        description: 'Check if a variable exists and can be accessed.',
+        parameters: {
+          type: 'object',
+          properties: {
+            name: { type: 'string', description: 'Variable name to check' },
+          },
+          required: ['name'],
+        },
+        handler: async (params) => this.checkAccess(params as { name: string }),
+      },
+    ];
+
+    tools.forEach(tool => this.tools.set(tool.name, tool));
+  }
+
   async init(): Promise<void> {
     await this.logs.init();
     await this.sessionManager.init();
