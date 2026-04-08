@@ -1,5 +1,6 @@
 import { BaseAdapter } from './base.js';
 import { EnvCPConfig, OpenAIFunction, OpenAIToolCall, OpenAIMessage, ToolDefinition } from '../types.js';
+import { setCorsHeaders, sendJson, parseBody, validateApiKey } from '../utils/http.js';
 import * as http from 'http';
 import * as url from 'url';
 
@@ -144,37 +145,12 @@ export class OpenAIAdapter extends BaseAdapter {
     return results;
   }
 
-  private setCorsHeaders(res: http.ServerResponse): void {
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-  }
-
-  private sendJson(res: http.ServerResponse, status: number, data: unknown): void {
-    res.writeHead(status, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify(data));
-  }
-
-  private parseBody(req: http.IncomingMessage): Promise<Record<string, unknown>> {
-    return new Promise((resolve, reject) => {
-      let body = '';
-      req.on('data', chunk => { body += chunk; });
-      req.on('end', () => {
-        try {
-          resolve(body ? JSON.parse(body) : {});
-        } catch {
-          reject(new Error('Invalid JSON body'));
-        }
-      });
-      req.on('error', reject);
-    });
-  }
 
   async startServer(port: number, host: string, apiKey?: string): Promise<void> {
     await this.init();
 
     this.server = http.createServer(async (req, res) => {
-      this.setCorsHeaders(res);
+      setCorsHeaders(res);
 
       if (req.method === 'OPTIONS') {
         res.writeHead(204);
@@ -184,10 +160,9 @@ export class OpenAIAdapter extends BaseAdapter {
 
       // API key validation
       if (apiKey) {
-        const authHeader = req.headers['authorization'];
-        const providedKey = authHeader?.replace('Bearer ', '');
-        if (providedKey !== apiKey) {
-          this.sendJson(res, 401, { error: { message: 'Invalid API key', type: 'invalid_api_key' } });
+        const providedKey = req.headers['authorization']?.replace('Bearer ', '');
+        if (!validateApiKey(providedKey, apiKey)) {
+          sendJson(res, 401, { error: { message: 'Invalid API key', type: 'invalid_api_key' } });
           return;
         }
       }
@@ -200,7 +175,7 @@ export class OpenAIAdapter extends BaseAdapter {
 
         // GET /v1/models - List models (for compatibility)
         if (pathname === '/v1/models' && req.method === 'GET') {
-          this.sendJson(res, 200, {
+          sendJson(res, 200, {
             object: 'list',
             data: [{
               id: 'envcp-1.0',
@@ -214,7 +189,7 @@ export class OpenAIAdapter extends BaseAdapter {
 
         // GET /v1/functions - List available functions
         if (pathname === '/v1/functions' && req.method === 'GET') {
-          this.sendJson(res, 200, {
+          sendJson(res, 200, {
             object: 'list',
             data: this.getOpenAIFunctions(),
           });
@@ -223,16 +198,16 @@ export class OpenAIAdapter extends BaseAdapter {
 
         // POST /v1/functions/call - Call a function directly
         if (pathname === '/v1/functions/call' && req.method === 'POST') {
-          const body = await this.parseBody(req);
+          const body = await parseBody(req);
           const { name, arguments: args } = body as { name: string; arguments: Record<string, unknown> };
           
           if (!name) {
-            this.sendJson(res, 400, { error: { message: 'Function name required', type: 'invalid_request_error' } });
+            sendJson(res, 400, { error: { message: 'Function name required', type: 'invalid_request_error' } });
             return;
           }
 
           const result = await this.callTool(name, args || {});
-          this.sendJson(res, 200, {
+          sendJson(res, 200, {
             object: 'function_result',
             name,
             result,
@@ -242,16 +217,16 @@ export class OpenAIAdapter extends BaseAdapter {
 
         // POST /v1/tool_calls - Process tool calls (batch)
         if (pathname === '/v1/tool_calls' && req.method === 'POST') {
-          const body = await this.parseBody(req);
+          const body = await parseBody(req);
           const { tool_calls } = body as { tool_calls: OpenAIToolCall[] };
 
           if (!tool_calls || !Array.isArray(tool_calls)) {
-            this.sendJson(res, 400, { error: { message: 'tool_calls array required', type: 'invalid_request_error' } });
+            sendJson(res, 400, { error: { message: 'tool_calls array required', type: 'invalid_request_error' } });
             return;
           }
 
           const results = await this.processToolCalls(tool_calls);
-          this.sendJson(res, 200, {
+          sendJson(res, 200, {
             object: 'list',
             data: results,
           });
@@ -261,11 +236,11 @@ export class OpenAIAdapter extends BaseAdapter {
         // POST /v1/chat/completions - For integration with proxies
         // This allows tools to be called through a chat completion-like interface
         if (pathname === '/v1/chat/completions' && req.method === 'POST') {
-          const body = await this.parseBody(req);
+          const body = await parseBody(req);
           const messages = body.messages as OpenAIMessage[] | undefined;
 
           if (!messages || !Array.isArray(messages)) {
-            this.sendJson(res, 400, { error: { message: 'messages array required', type: 'invalid_request_error' } });
+            sendJson(res, 400, { error: { message: 'messages array required', type: 'invalid_request_error' } });
             return;
           }
 
@@ -273,7 +248,7 @@ export class OpenAIAdapter extends BaseAdapter {
           const lastMessage = messages[messages.length - 1];
           if (lastMessage?.tool_calls) {
             const results = await this.processToolCalls(lastMessage.tool_calls);
-            this.sendJson(res, 200, {
+            sendJson(res, 200, {
               id: `chatcmpl-${Date.now()}`,
               object: 'chat.completion',
               created: Math.floor(Date.now() / 1000),
@@ -293,7 +268,7 @@ export class OpenAIAdapter extends BaseAdapter {
           }
 
           // Return available tools if no tool_calls
-          this.sendJson(res, 200, {
+          sendJson(res, 200, {
             id: `chatcmpl-${Date.now()}`,
             object: 'chat.completion',
             created: Math.floor(Date.now() / 1000),
@@ -316,7 +291,7 @@ export class OpenAIAdapter extends BaseAdapter {
 
         // Health check
         if (pathname === '/v1/health' || pathname === '/') {
-          this.sendJson(res, 200, {
+          sendJson(res, 200, {
             status: 'ok',
             version: '1.0.0',
             mode: 'openai',
@@ -326,10 +301,10 @@ export class OpenAIAdapter extends BaseAdapter {
         }
 
         // 404
-        this.sendJson(res, 404, { error: { message: 'Not found', type: 'not_found' } });
+        sendJson(res, 404, { error: { message: 'Not found', type: 'not_found' } });
 
       } catch (error: any) {
-        this.sendJson(res, 500, { error: { message: error.message, type: 'internal_error' } });
+        sendJson(res, 500, { error: { message: error.message, type: 'internal_error' } });
       }
     });
 

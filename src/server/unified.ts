@@ -3,6 +3,7 @@ import { RESTAdapter } from '../adapters/rest.js';
 import { OpenAIAdapter } from '../adapters/openai.js';
 import { GeminiAdapter } from '../adapters/gemini.js';
 import { EnvCPServer } from '../mcp/server.js';
+import { setCorsHeaders, sendJson, parseBody, validateApiKey } from '../utils/http.js';
 import * as http from 'http';
 import * as url from 'url';
 
@@ -65,16 +66,6 @@ export class UnifiedServer {
     return 'unknown';
   }
 
-  private setCorsHeaders(res: http.ServerResponse): void {
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-API-Key, X-Goog-Api-Key, OpenAI-Organization');
-  }
-
-  private sendJson(res: http.ServerResponse, status: number, data: unknown): void {
-    res.writeHead(status, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify(data));
-  }
 
   async start(): Promise<void> {
     const { mode, port, host, api_key } = this.serverConfig;
@@ -120,7 +111,7 @@ export class UnifiedServer {
 
     // Auto or All mode - unified server that routes based on detection
     this.httpServer = http.createServer(async (req, res) => {
-      this.setCorsHeaders(res);
+      setCorsHeaders(res);
 
       if (req.method === 'OPTIONS') {
         res.writeHead(204);
@@ -130,11 +121,11 @@ export class UnifiedServer {
 
       // API key validation
       if (api_key) {
-        const providedKey = req.headers['x-api-key'] ||
+        const providedKey = (req.headers['x-api-key'] ||
                            req.headers['x-goog-api-key'] ||
-                           req.headers['authorization']?.replace('Bearer ', '');
-        if (providedKey !== api_key) {
-          this.sendJson(res, 401, { error: 'Invalid API key' });
+                           req.headers['authorization']?.replace('Bearer ', '')) as string | undefined;
+        if (!validateApiKey(providedKey, api_key)) {
+          sendJson(res, 401, { error: 'Invalid API key' });
           return;
         }
       }
@@ -145,7 +136,7 @@ export class UnifiedServer {
       // Root endpoint - show server info and detected mode
       if (pathname === '/' && req.method === 'GET') {
         const detectedType = this.serverConfig.auto_detect ? this.detectClientType(req) : 'unknown';
-        this.sendJson(res, 200, {
+        sendJson(res, 200, {
           name: 'EnvCP Unified Server',
           version: '1.0.0',
           mode: mode,
@@ -200,7 +191,7 @@ export class UnifiedServer {
         }
 
         // 404 with helpful info
-        this.sendJson(res, 404, {
+        sendJson(res, 404, {
           error: 'Not found',
           hint: 'Use /api/* for REST, /v1/* for OpenAI, or include :generateContent for Gemini',
           available_endpoints: {
@@ -211,7 +202,7 @@ export class UnifiedServer {
         });
 
       } catch (error: any) {
-        this.sendJson(res, 500, { error: error.message });
+        sendJson(res, 500, { error: error.message });
       }
     });
 
@@ -229,11 +220,11 @@ export class UnifiedServer {
     const segments = pathname.split('/').filter(Boolean);
 
     if (!this.restAdapter) {
-      this.sendJson(res, 503, { success: false, error: 'REST adapter not initialized' });
+      sendJson(res, 503, { success: false, error: 'REST adapter not initialized' });
       return;
     }
 
-    const body = await this.parseBody(req);
+    const body = await parseBody(req);
 
     try {
       if (segments[0] === 'api') {
@@ -241,20 +232,20 @@ export class UnifiedServer {
 
         // Health
         if (pathname === '/api/health' || pathname === '/api') {
-          this.sendJson(res, 200, { success: true, data: { status: 'ok', mode: 'rest' }, timestamp: new Date().toISOString() });
+          sendJson(res, 200, { success: true, data: { status: 'ok', mode: 'rest' }, timestamp: new Date().toISOString() });
           return;
         }
 
         // Tools
         if (resource === 'tools' && !segments[2] && req.method === 'GET') {
           const tools = this.restAdapter.getToolDefinitions().map(t => ({ name: t.name, description: t.description }));
-          this.sendJson(res, 200, { success: true, data: { tools }, timestamp: new Date().toISOString() });
+          sendJson(res, 200, { success: true, data: { tools }, timestamp: new Date().toISOString() });
           return;
         }
 
         if (resource === 'tools' && segments[2] && req.method === 'POST') {
           const result = await this.restAdapter.callTool(segments[2], body);
-          this.sendJson(res, 200, { success: true, data: result, timestamp: new Date().toISOString() });
+          sendJson(res, 200, { success: true, data: result, timestamp: new Date().toISOString() });
           return;
         }
 
@@ -262,27 +253,27 @@ export class UnifiedServer {
         if (resource === 'variables') {
           if (!segments[2] && req.method === 'GET') {
             const result = await this.restAdapter.callTool('list', {});
-            this.sendJson(res, 200, { success: true, data: result, timestamp: new Date().toISOString() });
+            sendJson(res, 200, { success: true, data: result, timestamp: new Date().toISOString() });
             return;
           }
           if (!segments[2] && req.method === 'POST') {
             const result = await this.restAdapter.callTool('set', body);
-            this.sendJson(res, 201, { success: true, data: result, timestamp: new Date().toISOString() });
+            sendJson(res, 201, { success: true, data: result, timestamp: new Date().toISOString() });
             return;
           }
           if (segments[2] && req.method === 'GET') {
             const result = await this.restAdapter.callTool('get', { name: segments[2], show_value: parsedUrl.query.show_value === 'true' });
-            this.sendJson(res, 200, { success: true, data: result, timestamp: new Date().toISOString() });
+            sendJson(res, 200, { success: true, data: result, timestamp: new Date().toISOString() });
             return;
           }
           if (segments[2] && req.method === 'PUT') {
             const result = await this.restAdapter.callTool('set', { ...body, name: segments[2] });
-            this.sendJson(res, 200, { success: true, data: result, timestamp: new Date().toISOString() });
+            sendJson(res, 200, { success: true, data: result, timestamp: new Date().toISOString() });
             return;
           }
           if (segments[2] && req.method === 'DELETE') {
             const result = await this.restAdapter.callTool('delete', { name: segments[2] });
-            this.sendJson(res, 200, { success: true, data: result, timestamp: new Date().toISOString() });
+            sendJson(res, 200, { success: true, data: result, timestamp: new Date().toISOString() });
             return;
           }
         }
@@ -290,38 +281,38 @@ export class UnifiedServer {
         // Sync
         if (resource === 'sync' && req.method === 'POST') {
           const result = await this.restAdapter.callTool('sync', {});
-          this.sendJson(res, 200, { success: true, data: result, timestamp: new Date().toISOString() });
+          sendJson(res, 200, { success: true, data: result, timestamp: new Date().toISOString() });
           return;
         }
 
         // Run
         if (resource === 'run' && req.method === 'POST') {
           const result = await this.restAdapter.callTool('run', body);
-          this.sendJson(res, 200, { success: true, data: result, timestamp: new Date().toISOString() });
+          sendJson(res, 200, { success: true, data: result, timestamp: new Date().toISOString() });
           return;
         }
       }
 
-      this.sendJson(res, 404, { success: false, error: 'Not found', timestamp: new Date().toISOString() });
+      sendJson(res, 404, { success: false, error: 'Not found', timestamp: new Date().toISOString() });
 
     } catch (error: any) {
-      this.sendJson(res, 500, { success: false, error: error.message, timestamp: new Date().toISOString() });
+      sendJson(res, 500, { success: false, error: error.message, timestamp: new Date().toISOString() });
     }
   }
 
   private async handleOpenAIRequest(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
     if (!this.openaiAdapter) {
-      this.sendJson(res, 503, { error: { message: 'OpenAI adapter not initialized', type: 'service_unavailable' } });
+      sendJson(res, 503, { error: { message: 'OpenAI adapter not initialized', type: 'service_unavailable' } });
       return;
     }
 
     const parsedUrl = url.parse(req.url || '/', true);
     const pathname = parsedUrl.pathname || '/';
-    const body = await this.parseBody(req);
+    const body = await parseBody(req);
 
     try {
       if (pathname === '/v1/models' && req.method === 'GET') {
-        this.sendJson(res, 200, {
+        sendJson(res, 200, {
           object: 'list',
           data: [{ id: 'envcp-1.0', object: 'model', created: Date.now(), owned_by: 'envcp' }],
         });
@@ -329,21 +320,21 @@ export class UnifiedServer {
       }
 
       if (pathname === '/v1/functions' && req.method === 'GET') {
-        this.sendJson(res, 200, { object: 'list', data: this.openaiAdapter.getOpenAIFunctions() });
+        sendJson(res, 200, { object: 'list', data: this.openaiAdapter.getOpenAIFunctions() });
         return;
       }
 
       if (pathname === '/v1/functions/call' && req.method === 'POST') {
         const { name, arguments: args } = body as any;
         const result = await this.openaiAdapter.callTool(name, args || {});
-        this.sendJson(res, 200, { object: 'function_result', name, result });
+        sendJson(res, 200, { object: 'function_result', name, result });
         return;
       }
 
       if (pathname === '/v1/tool_calls' && req.method === 'POST') {
         const { tool_calls } = body as any;
         const results = await this.openaiAdapter.processToolCalls(tool_calls);
-        this.sendJson(res, 200, { object: 'list', data: results });
+        sendJson(res, 200, { object: 'list', data: results });
         return;
       }
 
@@ -353,7 +344,7 @@ export class UnifiedServer {
         
         if (lastMessage?.tool_calls) {
           const results = await this.openaiAdapter.processToolCalls(lastMessage.tool_calls);
-          this.sendJson(res, 200, {
+          sendJson(res, 200, {
             id: `chatcmpl-${Date.now()}`,
             object: 'chat.completion',
             model: 'envcp-1.0',
@@ -363,7 +354,7 @@ export class UnifiedServer {
           return;
         }
 
-        this.sendJson(res, 200, {
+        sendJson(res, 200, {
           id: `chatcmpl-${Date.now()}`,
           object: 'chat.completion',
           model: 'envcp-1.0',
@@ -373,40 +364,40 @@ export class UnifiedServer {
         return;
       }
 
-      this.sendJson(res, 404, { error: { message: 'Not found', type: 'not_found' } });
+      sendJson(res, 404, { error: { message: 'Not found', type: 'not_found' } });
 
     } catch (error: any) {
-      this.sendJson(res, 500, { error: { message: error.message, type: 'internal_error' } });
+      sendJson(res, 500, { error: { message: error.message, type: 'internal_error' } });
     }
   }
 
   private async handleGeminiRequest(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
     if (!this.geminiAdapter) {
-      this.sendJson(res, 503, { error: { code: 503, message: 'Gemini adapter not initialized', status: 'UNAVAILABLE' } });
+      sendJson(res, 503, { error: { code: 503, message: 'Gemini adapter not initialized', status: 'UNAVAILABLE' } });
       return;
     }
 
     const parsedUrl = url.parse(req.url || '/', true);
     const pathname = parsedUrl.pathname || '/';
-    const body = await this.parseBody(req);
+    const body = await parseBody(req);
 
     try {
       if (pathname === '/v1/tools' && req.method === 'GET') {
-        this.sendJson(res, 200, { tools: [{ functionDeclarations: this.geminiAdapter.getGeminiFunctionDeclarations() }] });
+        sendJson(res, 200, { tools: [{ functionDeclarations: this.geminiAdapter.getGeminiFunctionDeclarations() }] });
         return;
       }
 
       if (pathname === '/v1/functions/call' && req.method === 'POST') {
         const { name, args } = body as any;
         const result = await this.geminiAdapter.callTool(name, args || {});
-        this.sendJson(res, 200, { name, response: { result } });
+        sendJson(res, 200, { name, response: { result } });
         return;
       }
 
       if (pathname === '/v1/function_calls' && req.method === 'POST') {
         const { functionCalls } = body as any;
         const results = await this.geminiAdapter.processFunctionCalls(functionCalls);
-        this.sendJson(res, 200, { functionResponses: results });
+        sendJson(res, 200, { functionResponses: results });
         return;
       }
 
@@ -424,7 +415,7 @@ export class UnifiedServer {
 
         if (functionCalls.length > 0) {
           const results = await this.geminiAdapter.processFunctionCalls(functionCalls);
-          this.sendJson(res, 200, {
+          sendJson(res, 200, {
             candidates: [{
               content: { parts: results.map(r => ({ functionResponse: r })), role: 'model' },
               finishReason: 'STOP',
@@ -433,7 +424,7 @@ export class UnifiedServer {
           return;
         }
 
-        this.sendJson(res, 200, {
+        sendJson(res, 200, {
           candidates: [{
             content: { parts: [{ text: 'EnvCP tools available.' }], role: 'model' },
             finishReason: 'STOP',
@@ -443,27 +434,13 @@ export class UnifiedServer {
         return;
       }
 
-      this.sendJson(res, 404, { error: { code: 404, message: 'Not found', status: 'NOT_FOUND' } });
+      sendJson(res, 404, { error: { code: 404, message: 'Not found', status: 'NOT_FOUND' } });
 
     } catch (error: any) {
-      this.sendJson(res, 500, { error: { code: 500, message: error.message, status: 'INTERNAL' } });
+      sendJson(res, 500, { error: { code: 500, message: error.message, status: 'INTERNAL' } });
     }
   }
 
-  private parseBody(req: http.IncomingMessage): Promise<Record<string, unknown>> {
-    return new Promise((resolve, reject) => {
-      let body = '';
-      req.on('data', chunk => { body += chunk; });
-      req.on('end', () => {
-        try {
-          resolve(body ? JSON.parse(body) : {});
-        } catch {
-          reject(new Error('Invalid JSON body'));
-        }
-      });
-      req.on('error', reject);
-    });
-  }
 
   stop(): void {
     if (this.httpServer) {

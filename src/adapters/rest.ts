@@ -1,5 +1,6 @@
 import { BaseAdapter } from './base.js';
 import { EnvCPConfig, RESTResponse, ToolDefinition } from '../types.js';
+import { setCorsHeaders, sendJson, parseBody, validateApiKey } from '../utils/http.js';
 import * as http from 'http';
 import * as url from 'url';
 
@@ -94,37 +95,12 @@ export class RESTAdapter extends BaseAdapter {
     };
   }
 
-  private parseBody(req: http.IncomingMessage): Promise<Record<string, unknown>> {
-    return new Promise((resolve, reject) => {
-      let body = '';
-      req.on('data', chunk => { body += chunk; });
-      req.on('end', () => {
-        try {
-          resolve(body ? JSON.parse(body) : {});
-        } catch {
-          reject(new Error('Invalid JSON body'));
-        }
-      });
-      req.on('error', reject);
-    });
-  }
-
-  private setCorsHeaders(res: http.ServerResponse): void {
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-API-Key');
-  }
-
-  private sendJson(res: http.ServerResponse, status: number, data: unknown): void {
-    res.writeHead(status, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify(data));
-  }
 
   async startServer(port: number, host: string, apiKey?: string): Promise<void> {
     await this.init();
 
     this.server = http.createServer(async (req, res) => {
-      this.setCorsHeaders(res);
+      setCorsHeaders(res);
 
       if (req.method === 'OPTIONS') {
         res.writeHead(204);
@@ -134,9 +110,9 @@ export class RESTAdapter extends BaseAdapter {
 
       // API key validation
       if (apiKey) {
-        const providedKey = req.headers['x-api-key'] || req.headers['authorization']?.replace('Bearer ', '');
-        if (providedKey !== apiKey) {
-          this.sendJson(res, 401, this.createResponse(false, undefined, 'Invalid API key'));
+        const providedKey = (req.headers['x-api-key'] || req.headers['authorization']?.replace('Bearer ', '')) as string | undefined;
+        if (!validateApiKey(providedKey, apiKey)) {
+          sendJson(res, 401, this.createResponse(false, undefined, 'Invalid API key'));
           return;
         }
       }
@@ -162,7 +138,7 @@ export class RESTAdapter extends BaseAdapter {
 
           // Health check
           if (pathname === '/api/health' || pathname === '/api') {
-            this.sendJson(res, 200, this.createResponse(true, {
+            sendJson(res, 200, this.createResponse(true, {
               status: 'ok',
               version: '1.0.0',
               mode: 'rest',
@@ -177,16 +153,16 @@ export class RESTAdapter extends BaseAdapter {
               description: t.description,
               parameters: t.parameters,
             }));
-            this.sendJson(res, 200, this.createResponse(true, { tools }));
+            sendJson(res, 200, this.createResponse(true, { tools }));
             return;
           }
 
           // Call tool
           if (resource === 'tools' && segments[2] && req.method === 'POST') {
             const toolName = segments[2];
-            const body = await this.parseBody(req);
+            const body = await parseBody(req);
             const result = await this.callTool(toolName, body);
-            this.sendJson(res, 200, this.createResponse(true, result));
+            sendJson(res, 200, this.createResponse(true, result));
             return;
           }
 
@@ -199,34 +175,34 @@ export class RESTAdapter extends BaseAdapter {
                 ? (Array.isArray(parsedUrl.query.tags) ? parsedUrl.query.tags : [parsedUrl.query.tags])
                 : undefined;
               const result = await this.callTool('list', { tags });
-              this.sendJson(res, 200, this.createResponse(true, result));
+              sendJson(res, 200, this.createResponse(true, result));
               return;
             }
 
             if (!varName && req.method === 'POST') {
-              const body = await this.parseBody(req);
+              const body = await parseBody(req);
               const result = await this.callTool('set', body);
-              this.sendJson(res, 201, this.createResponse(true, result));
+              sendJson(res, 201, this.createResponse(true, result));
               return;
             }
 
             if (varName && req.method === 'GET') {
               const showValue = parsedUrl.query.show_value === 'true';
               const result = await this.callTool('get', { name: varName, show_value: showValue });
-              this.sendJson(res, 200, this.createResponse(true, result));
+              sendJson(res, 200, this.createResponse(true, result));
               return;
             }
 
             if (varName && req.method === 'PUT') {
-              const body = await this.parseBody(req);
+              const body = await parseBody(req);
               const result = await this.callTool('set', { ...body, name: varName });
-              this.sendJson(res, 200, this.createResponse(true, result));
+              sendJson(res, 200, this.createResponse(true, result));
               return;
             }
 
             if (varName && req.method === 'DELETE') {
               const result = await this.callTool('delete', { name: varName });
-              this.sendJson(res, 200, this.createResponse(true, result));
+              sendJson(res, 200, this.createResponse(true, result));
               return;
             }
           }
@@ -234,34 +210,34 @@ export class RESTAdapter extends BaseAdapter {
           // Sync
           if (resource === 'sync' && req.method === 'POST') {
             const result = await this.callTool('sync', {});
-            this.sendJson(res, 200, this.createResponse(true, result));
+            sendJson(res, 200, this.createResponse(true, result));
             return;
           }
 
           // Run
           if (resource === 'run' && req.method === 'POST') {
-            const body = await this.parseBody(req);
+            const body = await parseBody(req);
             const result = await this.callTool('run', body);
-            this.sendJson(res, 200, this.createResponse(true, result));
+            sendJson(res, 200, this.createResponse(true, result));
             return;
           }
 
           // Check access
           if (resource === 'access' && segments[2] && req.method === 'GET') {
             const result = await this.callTool('check_access', { name: segments[2] });
-            this.sendJson(res, 200, this.createResponse(true, result));
+            sendJson(res, 200, this.createResponse(true, result));
             return;
           }
         }
 
         // 404
-        this.sendJson(res, 404, this.createResponse(false, undefined, 'Not found'));
+        sendJson(res, 404, this.createResponse(false, undefined, 'Not found'));
 
       } catch (error: any) {
         const status = error.message.includes('locked') ? 401 :
                        error.message.includes('not found') ? 404 :
                        error.message.includes('disabled') ? 403 : 500;
-        this.sendJson(res, status, this.createResponse(false, undefined, error.message));
+        sendJson(res, status, this.createResponse(false, undefined, error.message));
       }
     });
 

@@ -1,5 +1,6 @@
 import { BaseAdapter } from './base.js';
 import { EnvCPConfig, GeminiFunctionDeclaration, GeminiFunctionCall, GeminiFunctionResponse, ToolDefinition } from '../types.js';
+import { setCorsHeaders, sendJson, parseBody, validateApiKey } from '../utils/http.js';
 import * as http from 'http';
 import * as url from 'url';
 
@@ -141,37 +142,12 @@ export class GeminiAdapter extends BaseAdapter {
     return results;
   }
 
-  private setCorsHeaders(res: http.ServerResponse): void {
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Goog-Api-Key');
-  }
-
-  private sendJson(res: http.ServerResponse, status: number, data: unknown): void {
-    res.writeHead(status, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify(data));
-  }
-
-  private parseBody(req: http.IncomingMessage): Promise<Record<string, unknown>> {
-    return new Promise((resolve, reject) => {
-      let body = '';
-      req.on('data', chunk => { body += chunk; });
-      req.on('end', () => {
-        try {
-          resolve(body ? JSON.parse(body) : {});
-        } catch {
-          reject(new Error('Invalid JSON body'));
-        }
-      });
-      req.on('error', reject);
-    });
-  }
 
   async startServer(port: number, host: string, apiKey?: string): Promise<void> {
     await this.init();
 
     this.server = http.createServer(async (req, res) => {
-      this.setCorsHeaders(res);
+      setCorsHeaders(res);
 
       if (req.method === 'OPTIONS') {
         res.writeHead(204);
@@ -181,9 +157,9 @@ export class GeminiAdapter extends BaseAdapter {
 
       // API key validation
       if (apiKey) {
-        const providedKey = req.headers['x-goog-api-key'] || req.headers['authorization']?.replace('Bearer ', '');
-        if (providedKey !== apiKey) {
-          this.sendJson(res, 401, { error: { code: 401, message: 'Invalid API key', status: 'UNAUTHENTICATED' } });
+        const providedKey = (req.headers['x-goog-api-key'] || req.headers['authorization']?.replace('Bearer ', '')) as string | undefined;
+        if (!validateApiKey(providedKey, apiKey)) {
+          sendJson(res, 401, { error: { code: 401, message: 'Invalid API key', status: 'UNAUTHENTICATED' } });
           return;
         }
       }
@@ -196,7 +172,7 @@ export class GeminiAdapter extends BaseAdapter {
 
         // GET /v1/models - List models
         if (pathname === '/v1/models' && req.method === 'GET') {
-          this.sendJson(res, 200, {
+          sendJson(res, 200, {
             models: [{
               name: 'models/envcp-1.0',
               displayName: 'EnvCP Tool Server',
@@ -209,7 +185,7 @@ export class GeminiAdapter extends BaseAdapter {
 
         // GET /v1/tools - List available tools/functions
         if (pathname === '/v1/tools' && req.method === 'GET') {
-          this.sendJson(res, 200, {
+          sendJson(res, 200, {
             tools: [{
               functionDeclarations: this.getGeminiFunctionDeclarations(),
             }],
@@ -219,16 +195,16 @@ export class GeminiAdapter extends BaseAdapter {
 
         // POST /v1/functions/call - Call a function directly
         if (pathname === '/v1/functions/call' && req.method === 'POST') {
-          const body = await this.parseBody(req);
+          const body = await parseBody(req);
           const { name, args } = body as { name: string; args: Record<string, unknown> };
 
           if (!name) {
-            this.sendJson(res, 400, { error: { code: 400, message: 'Function name required', status: 'INVALID_ARGUMENT' } });
+            sendJson(res, 400, { error: { code: 400, message: 'Function name required', status: 'INVALID_ARGUMENT' } });
             return;
           }
 
           const result = await this.callTool(name, args || {});
-          this.sendJson(res, 200, {
+          sendJson(res, 200, {
             name,
             response: { result },
           });
@@ -237,16 +213,16 @@ export class GeminiAdapter extends BaseAdapter {
 
         // POST /v1/function_calls - Process function calls (batch)
         if (pathname === '/v1/function_calls' && req.method === 'POST') {
-          const body = await this.parseBody(req);
+          const body = await parseBody(req);
           const { functionCalls } = body as { functionCalls: GeminiFunctionCall[] };
 
           if (!functionCalls || !Array.isArray(functionCalls)) {
-            this.sendJson(res, 400, { error: { code: 400, message: 'functionCalls array required', status: 'INVALID_ARGUMENT' } });
+            sendJson(res, 400, { error: { code: 400, message: 'functionCalls array required', status: 'INVALID_ARGUMENT' } });
             return;
           }
 
           const results = await this.processFunctionCalls(functionCalls);
-          this.sendJson(res, 200, {
+          sendJson(res, 200, {
             functionResponses: results,
           });
           return;
@@ -254,7 +230,7 @@ export class GeminiAdapter extends BaseAdapter {
 
         // POST /v1/models/envcp:generateContent - Gemini-style content generation
         if ((pathname === '/v1/models/envcp:generateContent' || pathname === '/v1beta/models/envcp:generateContent') && req.method === 'POST') {
-          const body = await this.parseBody(req);
+          const body = await parseBody(req);
           const contents = body.contents as Array<{ parts: Array<{ functionCall?: GeminiFunctionCall }> }> | undefined;
 
           // Look for function calls in the content
@@ -271,7 +247,7 @@ export class GeminiAdapter extends BaseAdapter {
 
           if (functionCalls.length > 0) {
             const results = await this.processFunctionCalls(functionCalls);
-            this.sendJson(res, 200, {
+            sendJson(res, 200, {
               candidates: [{
                 content: {
                   parts: results.map(r => ({
@@ -286,7 +262,7 @@ export class GeminiAdapter extends BaseAdapter {
           }
 
           // Return available tools if no function calls
-          this.sendJson(res, 200, {
+          sendJson(res, 200, {
             candidates: [{
               content: {
                 parts: [{
@@ -305,7 +281,7 @@ export class GeminiAdapter extends BaseAdapter {
 
         // Health check
         if (pathname === '/v1/health' || pathname === '/') {
-          this.sendJson(res, 200, {
+          sendJson(res, 200, {
             status: 'ok',
             version: '1.0.0',
             mode: 'gemini',
@@ -315,10 +291,10 @@ export class GeminiAdapter extends BaseAdapter {
         }
 
         // 404
-        this.sendJson(res, 404, { error: { code: 404, message: 'Not found', status: 'NOT_FOUND' } });
+        sendJson(res, 404, { error: { code: 404, message: 'Not found', status: 'NOT_FOUND' } });
 
       } catch (error: any) {
-        this.sendJson(res, 500, { error: { code: 500, message: error.message, status: 'INTERNAL' } });
+        sendJson(res, 500, { error: { code: 500, message: error.message, status: 'INTERNAL' } });
       }
     });
 
