@@ -355,7 +355,13 @@ export abstract class BaseAdapter {
       lines.push(`${name}=${val}`);
     }
 
-    const envPath = path.join(this.projectPath, this.config.sync.target);
+    const envPath = path.resolve(this.projectPath, this.config.sync.target);
+    const projectRoot = path.resolve(this.projectPath);
+
+    if (envPath !== projectRoot && !envPath.startsWith(`${projectRoot}${path.sep}`)) {
+      throw new Error('sync.target must be within the project directory');
+    }
+
     await fs.writeFile(envPath, lines.join('\n'), 'utf8');
 
     await this.logs.log({

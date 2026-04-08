@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import * as path from 'path';
 
 export const EnvCPConfigSchema = z.object({
   version: z.string().default('1.0'),
@@ -30,7 +31,11 @@ export const EnvCPConfigSchema = z.object({
   
   sync: z.object({
     enabled: z.boolean().default(false),
-    target: z.string().default('.env'),
+    target: z.string()
+      .refine((value) => !path.isAbsolute(value), {
+        message: 'sync.target must be a relative path within the project directory',
+      })
+      .default('.env'),
     exclude: z.array(z.string()).default([]),
     include: z.array(z.string()).optional(),
     format: z.enum(['dotenv', 'json', 'yaml']).default('dotenv'),
