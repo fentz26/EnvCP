@@ -4,9 +4,9 @@
 
 We release patches for security vulnerabilities. Currently supported versions:
 
-| Version | Supported          |
-| ------- | ------------------ |
-| 1.0.x   | :white_check_mark: |
+| Version | Supported |
+| ------- | --------- |
+| 1.0.x   | ✓         |
 
 ## Reporting a Vulnerability
 
@@ -14,7 +14,7 @@ We release patches for security vulnerabilities. Currently supported versions:
 
 If you discover a security vulnerability in EnvCP, please report it by emailing:
 
-**work@fentz.dev**
+**contact@fentz.dev**
 
 Please include:
 - Type of vulnerability
@@ -124,7 +124,7 @@ EnvCP is designed for local development use. For production or compliance-critic
 
 ## Contact
 
-For security concerns: **work@fentz.dev**
+For security concerns: **contact@fentz.dev**
 
 For general issues: https://github.com/fentz26/EnvCP/issues
 
