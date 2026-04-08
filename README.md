@@ -1,14 +1,8 @@
 
 
-<pre align="center">
- ____                     ____     ____    
-/\  _`\                  /\  _`\  /\  _`\  
-\ \ \L\_\    ___   __  __\ \ \/\_\\ \ \L\ \
- \ \  _\L  /' _ `\/\ \/\ \\ \ \/_/_\ \ ,__/
-  \ \ \L\ \/\ \/\ \ \ \_/ |\ \ \L\ \\ \ \/ 
-   \ \____/\ \_\ \_\ \___/  \ \____/ \ \_\ 
-    \/___/  \/_/\/_/\/__/    \/___/   \/_/ 
-</pre>
+<p align="center">
+  <img src="./assets/logo-ascii.png" alt="EnvCP" width="100%">
+</p>
 
 <p align="center">
   <a href="https://www.npmjs.com/package/@fentz26/envcp"><img src="https://img.shields.io/npm/v/%40fentz26%2Fenvcp?style=flat-square&color=000000&labelColor=000000&label=version" alt="npm version"></a>
