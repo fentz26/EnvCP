@@ -89,6 +89,92 @@ export async function initConfig(projectPath: string, projectName?: string): Pro
   return config;
 }
 
+export function getMcpConfigPaths(): { name: string; path: string }[] {
+  const home = process.env.HOME || process.env.USERPROFILE || '';
+  const platform = process.platform;
+  const paths: { name: string; path: string }[] = [];
+
+  // Claude Desktop
+  if (platform === 'darwin') {
+    paths.push({ name: 'Claude Desktop', path: path.join(home, 'Library', 'Application Support', 'Claude', 'claude_desktop_config.json') });
+  } else if (platform === 'win32') {
+    const appdata = process.env.APPDATA || path.join(home, 'AppData', 'Roaming');
+    paths.push({ name: 'Claude Desktop', path: path.join(appdata, 'Claude', 'claude_desktop_config.json') });
+  } else {
+    paths.push({ name: 'Claude Desktop', path: path.join(home, '.config', 'Claude', 'claude_desktop_config.json') });
+  }
+
+  // Cursor (global)
+  paths.push({ name: 'Cursor', path: path.join(home, '.cursor', 'mcp.json') });
+
+  // Claude Code (global)
+  paths.push({ name: 'Claude Code', path: path.join(home, '.claude', 'mcp.json') });
+
+  return paths;
+}
+
+export async function registerMcpConfig(projectPath: string): Promise<string[]> {
+  const configs = getMcpConfigPaths();
+  const registered: string[] = [];
+
+  for (const { name, path: configPath } of configs) {
+    if (!await fs.pathExists(configPath)) continue;
+
+    try {
+      const content = await fs.readFile(configPath, 'utf8');
+      const config = JSON.parse(content);
+
+      // Ensure mcpServers key exists
+      if (!config.mcpServers) config.mcpServers = {};
+
+      // Skip if already registered
+      if (config.mcpServers.envcp) {
+        registered.push(`${name} (already configured)`);
+        continue;
+      }
+
+      config.mcpServers.envcp = {
+        command: 'npx',
+        args: ['envcp', 'serve', '--mode', 'mcp'],
+        cwd: projectPath,
+      };
+
+      await fs.writeFile(configPath, JSON.stringify(config, null, 2), 'utf8');
+      registered.push(name);
+    } catch {
+      // Skip invalid JSON or permission errors
+    }
+  }
+
+  return registered;
+}
+
+export function parseEnvFile(content: string): Record<string, string> {
+  const vars: Record<string, string> = {};
+
+  for (const line of content.split('\n')) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+
+    const eqIndex = trimmed.indexOf('=');
+    if (eqIndex === -1) continue;
+
+    const key = trimmed.substring(0, eqIndex).trim();
+    let value = trimmed.substring(eqIndex + 1).trim();
+
+    // Strip quotes
+    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+      value = value.slice(1, -1);
+    }
+
+    if (validateVariableName(key)) {
+      vars[key] = value;
+    }
+  }
+
+  return vars;
+}
+
 export function validateVariableName(name: string): boolean {
   return /^[A-Za-z_][A-Za-z0-9_]*$/.test(name);
 }

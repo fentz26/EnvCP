@@ -3,7 +3,7 @@ import inquirer from 'inquirer';
 import chalk from 'chalk';
 import * as path from 'path';
 import * as fs from 'fs-extra';
-import { loadConfig, initConfig } from '../config/manager.js';
+import { loadConfig, initConfig, parseEnvFile, registerMcpConfig } from '../config/manager.js';
 import { StorageManager } from '../storage/index.js';
 import { SessionManager } from '../utils/session.js';
 import { maskValue, validatePassword } from '../utils/crypto.js';
@@ -61,20 +61,97 @@ program
   .description('Initialize EnvCP in the current project')
   .option('-p, --project <name>', 'Project name')
   .option('-e, --encrypted', 'Enable encryption', true)
+  .option('--skip-env', 'Skip .env auto-import')
+  .option('--skip-mcp', 'Skip MCP auto-registration')
   .action(async (options) => {
     const projectPath = process.cwd();
     const projectName = options.project || path.basename(projectPath);
-    
+
     console.log(chalk.blue('Initializing EnvCP...'));
-    
+
     const config = await initConfig(projectPath, projectName);
-    
+
     console.log(chalk.green('EnvCP initialized successfully!'));
     console.log(chalk.gray(`  Project: ${config.project}`));
     console.log(chalk.gray(`  Storage: ${config.storage.path}`));
     console.log(chalk.gray(`  Encrypted: ${config.storage.encrypted}`));
     console.log(chalk.gray(`  Session timeout: ${config.session?.timeout_minutes || 30} minutes`));
     console.log(chalk.gray(`  AI active check: ${config.access?.allow_ai_active_check ? 'enabled' : 'disabled'}`));
+
+    // Auto-import .env file
+    if (!options.skipEnv) {
+      const envPath = path.join(projectPath, '.env');
+      if (await fs.pathExists(envPath)) {
+        const { importEnv } = await inquirer.prompt([
+          { type: 'confirm', name: 'importEnv', message: 'Found .env file. Import variables into EnvCP?', default: true }
+        ]);
+
+        if (importEnv) {
+          const { password: pwd } = await inquirer.prompt([
+            { type: 'password', name: 'password', message: 'Set encryption password:', mask: '*' }
+          ]);
+          const { confirm } = await inquirer.prompt([
+            { type: 'password', name: 'confirm', message: 'Confirm password:', mask: '*' }
+          ]);
+
+          if (pwd !== confirm) {
+            console.log(chalk.red('Passwords do not match. Skipping .env import.'));
+          } else {
+            const envContent = await fs.readFile(envPath, 'utf8');
+            const vars = parseEnvFile(envContent);
+            const count = Object.keys(vars).length;
+
+            if (count > 0) {
+              const storage = new StorageManager(
+                path.join(projectPath, config.storage.path),
+                config.storage.encrypted
+              );
+              storage.setPassword(pwd);
+
+              const now = new Date().toISOString();
+              for (const [name, value] of Object.entries(vars)) {
+                await storage.set(name, {
+                  name,
+                  value,
+                  encrypted: config.storage.encrypted,
+                  created: now,
+                  updated: now,
+                  sync_to_env: true,
+                });
+              }
+
+              // Create session so user doesn't have to unlock immediately
+              const sessionManager = new SessionManager(
+                path.join(projectPath, config.session?.path || '.envcp/.session'),
+                config.session?.timeout_minutes || 30,
+                config.session?.max_extensions || 5
+              );
+              await sessionManager.init();
+              await sessionManager.create(pwd);
+
+              console.log(chalk.green(`  Imported ${count} variables from .env`));
+              console.log(chalk.gray(`  Variables: ${Object.keys(vars).join(', ')}`));
+            } else {
+              console.log(chalk.yellow('  .env file is empty, nothing to import'));
+            }
+          }
+        }
+      }
+    }
+
+    // Auto-register MCP config
+    if (!options.skipMcp) {
+      const registered = await registerMcpConfig(projectPath);
+      if (registered.length > 0) {
+        console.log(chalk.green('  MCP auto-registered:'));
+        for (const name of registered) {
+          console.log(chalk.gray(`    - ${name}`));
+        }
+      } else {
+        console.log(chalk.gray('  No AI tool configs detected for MCP auto-registration'));
+        console.log(chalk.gray('  You can manually add EnvCP to your AI tool config later'));
+      }
+    }
   });
 
 program
