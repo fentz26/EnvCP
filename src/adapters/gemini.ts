@@ -2,7 +2,6 @@ import { BaseAdapter } from './base.js';
 import { EnvCPConfig, GeminiFunctionDeclaration, GeminiFunctionCall, GeminiFunctionResponse, ToolDefinition } from '../types.js';
 import { setCorsHeaders, sendJson, parseBody, validateApiKey } from '../utils/http.js';
 import * as http from 'http';
-import * as url from 'url';
 
 export class GeminiAdapter extends BaseAdapter {
   private server: http.Server | null = null;
@@ -164,8 +163,8 @@ export class GeminiAdapter extends BaseAdapter {
         }
       }
 
-      const parsedUrl = url.parse(req.url || '/', true);
-      const pathname = parsedUrl.pathname || '/';
+      const parsedUrl = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
+      const pathname = parsedUrl.pathname;
 
       try {
         // Gemini-compatible endpoints

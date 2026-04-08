@@ -2,7 +2,6 @@ import { BaseAdapter } from './base.js';
 import { EnvCPConfig, RESTResponse, ToolDefinition } from '../types.js';
 import { setCorsHeaders, sendJson, parseBody, validateApiKey } from '../utils/http.js';
 import * as http from 'http';
-import * as url from 'url';
 
 export class RESTAdapter extends BaseAdapter {
   private server: http.Server | null = null;
@@ -117,8 +116,8 @@ export class RESTAdapter extends BaseAdapter {
         }
       }
 
-      const parsedUrl = url.parse(req.url || '/', true);
-      const pathname = parsedUrl.pathname || '/';
+      const parsedUrl = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
+      const pathname = parsedUrl.pathname;
       const segments = pathname.split('/').filter(Boolean);
 
       try {
@@ -171,9 +170,8 @@ export class RESTAdapter extends BaseAdapter {
             const varName = segments[2];
 
             if (!varName && req.method === 'GET') {
-              const tags = parsedUrl.query.tags
-                ? (Array.isArray(parsedUrl.query.tags) ? parsedUrl.query.tags : [parsedUrl.query.tags])
-                : undefined;
+              const tagsParam = parsedUrl.searchParams.getAll('tags');
+              const tags = tagsParam.length > 0 ? tagsParam : undefined;
               const result = await this.callTool('envcp_list', { tags });
               sendJson(res, 200, this.createResponse(true, result));
               return;
@@ -187,7 +185,7 @@ export class RESTAdapter extends BaseAdapter {
             }
 
             if (varName && req.method === 'GET') {
-              const showValue = parsedUrl.query.show_value === 'true';
+              const showValue = parsedUrl.searchParams.get('show_value') === 'true';
               const result = await this.callTool('envcp_get', { name: varName, show_value: showValue });
               sendJson(res, 200, this.createResponse(true, result));
               return;

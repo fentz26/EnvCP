@@ -5,7 +5,6 @@ import { GeminiAdapter } from '../adapters/gemini.js';
 import { EnvCPServer } from '../mcp/server.js';
 import { setCorsHeaders, sendJson, parseBody, validateApiKey, RateLimiter, rateLimitMiddleware } from '../utils/http.js';
 import * as http from 'http';
-import * as url from 'url';
 
 export class UnifiedServer {
   private config: EnvCPConfig;
@@ -31,7 +30,7 @@ export class UnifiedServer {
   detectClientType(req: http.IncomingMessage): ClientType {
     const userAgent = req.headers['user-agent']?.toLowerCase() || '';
     const contentType = req.headers['content-type'] || '';
-    const pathname = url.parse(req.url || '/', true).pathname || '/';
+    const pathname = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`).pathname;
 
     // Check for OpenAI-style requests
     if (pathname.startsWith('/v1/chat') ||
@@ -135,8 +134,8 @@ export class UnifiedServer {
         }
       }
 
-      const parsedUrl = url.parse(req.url || '/', true);
-      const pathname = parsedUrl.pathname || '/';
+      const parsedUrl = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
+      const pathname = parsedUrl.pathname;
 
       // Root endpoint - show server info and detected mode
       if (pathname === '/' && req.method === 'GET') {
@@ -164,7 +163,7 @@ export class UnifiedServer {
       }
 
       // Force mode query param
-      const forceMode = parsedUrl.query.mode as string | undefined;
+      const forceMode = parsedUrl.searchParams.get('mode') || undefined;
       if (forceMode && ['rest', 'openai', 'gemini'].includes(forceMode)) {
         clientType = forceMode as ClientType;
       }
@@ -267,7 +266,7 @@ export class UnifiedServer {
             return;
           }
           if (segments[2] && req.method === 'GET') {
-            const result = await this.restAdapter.callTool('envcp_get', { name: segments[2], show_value: parsedUrl.query.show_value === 'true' });
+            const result = await this.restAdapter.callTool('envcp_get', { name: segments[2], show_value: parsedUrl.searchParams.get('show_value') === 'true' });
             sendJson(res, 200, { success: true, data: result, timestamp: new Date().toISOString() });
             return;
           }

@@ -2,7 +2,6 @@ import { BaseAdapter } from './base.js';
 import { EnvCPConfig, OpenAIFunction, OpenAIToolCall, OpenAIMessage, ToolDefinition } from '../types.js';
 import { setCorsHeaders, sendJson, parseBody, validateApiKey } from '../utils/http.js';
 import * as http from 'http';
-import * as url from 'url';
 
 export class OpenAIAdapter extends BaseAdapter {
   private server: http.Server | null = null;
@@ -167,8 +166,8 @@ export class OpenAIAdapter extends BaseAdapter {
         }
       }
 
-      const parsedUrl = url.parse(req.url || '/', true);
-      const pathname = parsedUrl.pathname || '/';
+      const parsedUrl = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
+      const pathname = parsedUrl.pathname;
 
       try {
         // OpenAI-compatible endpoints
