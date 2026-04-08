@@ -488,7 +488,7 @@ export class EnvCPServer {
 
     const { spawn } = await import('child_process');
     const { program, args: cmdArgs } = this.parseCommand(args.command);
-    const env: Record<string, string> = { ...process.env };
+    const env: Record<string, string> = { ...process.env } as Record<string, string>;
 
     for (const name of args.variables) {
       if (isBlacklisted(name, this.config)) {

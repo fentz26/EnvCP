@@ -1,7 +1,7 @@
 import * as fs from 'fs-extra';
 import * as path from 'path';
 import * as yaml from 'js-yaml';
-import { EnvCPConfig, EnvCPConfigSchema } from '../types';
+import { EnvCPConfig, EnvCPConfigSchema } from '../types.js';
 
 const DEFAULT_CONFIG: Partial<EnvCPConfig> = {
   version: '1.0',
@@ -98,19 +98,19 @@ export function matchesPattern(name: string, pattern: string): boolean {
 
 export function canAccess(name: string, config: EnvCPConfig): boolean {
   if (config.access.blacklist_patterns && config.access.blacklist_patterns.length > 0) {
-    if (config.access.blacklist_patterns.some(p => matchesPattern(name, p))) {
+    if (config.access.blacklist_patterns.some((p: string) => matchesPattern(name, p))) {
       return false;
     }
   }
-  
+
   if (config.access.denied_patterns && config.access.denied_patterns.length > 0) {
-    if (config.access.denied_patterns.some(p => matchesPattern(name, p))) {
+    if (config.access.denied_patterns.some((p: string) => matchesPattern(name, p))) {
       return false;
     }
   }
-  
+
   if (config.access.allowed_patterns && config.access.allowed_patterns.length > 0) {
-    if (!config.access.allowed_patterns.some(p => matchesPattern(name, p))) {
+    if (!config.access.allowed_patterns.some((p: string) => matchesPattern(name, p))) {
       return false;
     }
   }
@@ -120,7 +120,7 @@ export function canAccess(name: string, config: EnvCPConfig): boolean {
 
 export function isBlacklisted(name: string, config: EnvCPConfig): boolean {
   if (config.access.blacklist_patterns && config.access.blacklist_patterns.length > 0) {
-    return config.access.blacklist_patterns.some(p => matchesPattern(name, p));
+    return config.access.blacklist_patterns.some((p: string) => matchesPattern(name, p));
   }
   return false;
 }

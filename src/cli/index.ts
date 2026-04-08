@@ -218,7 +218,7 @@ program
     await sessionManager.init();
     
     let session = await sessionManager.load();
-    let password: string | undefined;
+    let password = '';
     
     if (!session) {
       const answer = await inquirer.prompt([
@@ -293,7 +293,7 @@ program
     await sessionManager.init();
     
     let session = await sessionManager.load();
-    let password: string | undefined;
+    let password = '';
     
     if (!session) {
       const answer = await inquirer.prompt([
@@ -346,7 +346,7 @@ program
     await sessionManager.init();
     
     let session = await sessionManager.load();
-    let password: string | undefined;
+    let password = '';
     
     if (!session) {
       const answer = await inquirer.prompt([
@@ -392,7 +392,7 @@ program
     await sessionManager.init();
     
     let session = await sessionManager.load();
-    let password: string | undefined;
+    let password = '';
     
     if (!session) {
       const answer = await inquirer.prompt([
@@ -439,7 +439,7 @@ program
     await sessionManager.init();
     
     let session = await sessionManager.load();
-    let password: string | undefined;
+    let password = '';
     
     if (!session) {
       const answer = await inquirer.prompt([
@@ -599,7 +599,7 @@ program
     await sessionManager.init();
     
     let session = await sessionManager.load();
-    let password: string | undefined;
+    let password = '';
     
     if (!session) {
       const answer = await inquirer.prompt([

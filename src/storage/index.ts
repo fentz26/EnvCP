@@ -1,7 +1,7 @@
 import * as fs from 'fs-extra';
 import * as path from 'path';
-import { Variable, OperationLog } from '../types';
-import { encrypt, decrypt } from '../utils/crypto';
+import { Variable, OperationLog } from '../types.js';
+import { encrypt, decrypt } from '../utils/crypto.js';
 
 export class StorageManager {
   private storePath: string;
