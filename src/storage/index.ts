@@ -53,12 +53,14 @@ export class StorageManager {
 
     await fs.ensureDir(path.dirname(this.storePath));
 
-    if (this.encrypted && this.password) {
-      const encryptedData = encrypt(data, this.password);
-      await fs.writeFile(this.storePath, encryptedData, 'utf8');
-    } else {
-      await fs.writeFile(this.storePath, data, 'utf8');
-    }
+    const content = this.encrypted && this.password
+      ? encrypt(data, this.password)
+      : data;
+
+    // Atomic write: write to temp file, then rename
+    const tmpPath = this.storePath + '.tmp';
+    await fs.writeFile(tmpPath, content, 'utf8');
+    await fs.rename(tmpPath, this.storePath);
   }
 
   async get(name: string): Promise<Variable | undefined> {
