@@ -4,7 +4,7 @@ import chalk from 'chalk';
 import * as path from 'path';
 import * as os from 'os';
 import fs from 'fs-extra';
-import { loadConfig, initConfig, saveConfig, parseEnvFile, registerMcpConfig } from '../config/manager.js';
+import { loadConfig, initConfig, saveConfig, parseEnvFile, registerMcpConfig, isBlacklisted, canAccess } from '../config/manager.js';
 import { StorageManager } from '../storage/index.js';
 import { SessionManager } from '../utils/session.js';
 import { maskValue, validatePassword, encrypt, decrypt, generateRecoveryKey, createRecoveryData, recoverPassword } from '../utils/crypto.js';
@@ -602,8 +602,19 @@ program
 program
   .command('get <name>')
   .description('Get a variable value')
-  .action(async (name) => {
-    await withSession(async (storage) => {
+  .option('--show-value', 'Reveal the unmasked value')
+  .action(async (name, options) => {
+    await withSession(async (storage, _password, config) => {
+      if (isBlacklisted(name, config)) {
+        console.log(chalk.red(`Variable '${name}' is blacklisted and cannot be accessed`));
+        return;
+      }
+
+      if (!canAccess(name, config)) {
+        console.log(chalk.red(`Access denied to variable '${name}'`));
+        return;
+      }
+
       const variable = await storage.get(name);
 
       if (!variable) {
@@ -611,8 +622,12 @@ program
         return;
       }
 
+      const value = options.showValue && !config.access?.mask_values
+        ? variable.value
+        : maskValue(variable.value);
+
       console.log(chalk.cyan(name));
-      console.log(`  Value: ${variable.value}`);
+      console.log(`  Value: ${value}`);
       if (variable.tags) console.log(`  Tags: ${variable.tags.join(', ')}`);
       if (variable.description) console.log(`  Description: ${variable.description}`);
     });
@@ -652,6 +667,15 @@ program
       }
 
       for (const [name, variable] of Object.entries(variables)) {
+        if (isBlacklisted(name, config) || !canAccess(name, config)) continue;
+        if (!variable.sync_to_env) continue;
+
+        const excluded = config.sync.exclude?.some((pattern: string) => {
+          const regex = new RegExp('^' + pattern.replace(/\*/g, '.*') + '$');
+          return regex.test(name);
+        });
+        if (excluded) continue;
+
         const needsQuoting = /[\s#"'\\]/.test(variable.value);
         const val = needsQuoting ? `"${variable.value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"` : variable.value;
         lines.push(`${name}=${val}`);
@@ -670,6 +694,15 @@ program
         const removed: string[] = [];
 
         for (const [name, variable] of Object.entries(variables)) {
+          if (isBlacklisted(name, config) || !canAccess(name, config)) continue;
+          if (!variable.sync_to_env) continue;
+
+          const excluded = config.sync.exclude?.some((pattern: string) => {
+            const regex = new RegExp('^' + pattern.replace(/\*/g, '.*') + '$');
+            return regex.test(name);
+          });
+          if (excluded) continue;
+
           if (name in existing) {
             if (existing[name] !== variable.value) updated.push(name);
           } else {
@@ -1261,7 +1294,6 @@ if (!await fs.pathExists(firstRunMarker)) {
      Advanced (manual config):
        $ envcp init --advanced             # Full config options
        $ envcp add [NAME] [VALUE]          # Add a secret manually
-       $ envcp config set [KEY] [VALUE]    # Set config values
 
      Explore:
        $ envcp --help                      # See all commands
