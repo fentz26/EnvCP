@@ -1,0 +1,805 @@
+---
+title: Gemini Integration
+---
+
+# Gemini Integration
+
+Complete guide for integrating EnvCP with Google's Gemini API and Google AI function calling.
+
+## Table of Contents
+
+- [Overview](#overview)
+- [Quick Start](#quick-start)
+- [Gemini Function Calling](#gemini-function-calling)
+- [Available Endpoints](#available-endpoints)
+- [Python Examples](#python-examples)
+- [Node.js Examples](#nodejs-examples)
+- [Authentication](#authentication)
+- [Error Handling](#error-handling)
+- [Advanced Usage](#advanced-usage)
+- [Troubleshooting](#troubleshooting)
+
+---
+
+## Overview
+
+EnvCP provides a complete Gemini function calling-compatible API server. This allows you to:
+
+- Use EnvCP with Google Gemini API
+- Integrate with Google AI Studio
+- Connect Gemini-compatible applications
+- Build custom Gemini-based tools with secure env var access
+
+**Base URL:** `http://localhost:3456/v1`
+
+---
+
+## Quick Start
+
+### 1. Start the Server
+
+```bash
+# Start in Gemini mode
+envcp serve --mode gemini --port 3456 --api-key your-secret-key
+
+# Or use auto-detect mode (recommended)
+envcp serve --mode auto --port 3456 --api-key your-secret-key
+```
+
+### 2. Verify Server is Running
+
+```bash
+curl http://localhost:3456/v1/health
+```
+
+Expected response:
+
+```json
+{
+  "status": "ok",
+  "version": "1.0.0",
+  "mode": "gemini",
+  "endpoints": [
+    "/v1/models",
+    "/v1/tools",
+    "/v1/functions/call",
+    "/v1/function_calls",
+    "/v1/models/envcp:generateContent"
+  ]
+}
+```
+
+---
+
+## Gemini Function Calling
+
+EnvCP tools are exposed as Gemini function declarations compatible with Google's function calling API.
+
+### List Available Tools
+
+```bash
+curl -H "X-Goog-Api-Key: your-secret-key" \
+  http://localhost:3456/v1/tools
+```
+
+Response:
+
+```json
+{
+  "tools": [{
+    "functionDeclarations": [
+      {
+        "name": "envcp_list",
+        "description": "List all available environment variable names",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "tags": {
+              "type": "array",
+              "items": { "type": "string" },
+              "description": "Filter by tags"
+            }
+          }
+        }
+      },
+      {
+        "name": "envcp_get",
+        "description": "Get an environment variable value",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string",
+              "description": "Variable name"
+            },
+            "show_value": {
+              "type": "boolean",
+              "description": "Show actual value (default: masked)"
+            }
+          },
+          "required": ["name"]
+        }
+      }
+    ]
+  }]
+}
+```
+
+### Call a Function Directly
+
+```bash
+curl -X POST \
+  -H "X-Goog-Api-Key: your-secret-key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "envcp_get",
+    "args": {
+      "name": "API_KEY",
+      "show_value": true
+    }
+  }' \
+  http://localhost:3456/v1/functions/call
+```
+
+Response:
+
+```json
+{
+  "name": "envcp_get",
+  "response": {
+    "result": {
+      "name": "API_KEY",
+      "value": "AIza...",
+      "tags": ["gemini", "production"],
+      "description": "Gemini API Key"
+    }
+  }
+}
+```
+
+---
+
+## Available Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/v1/health` | GET | Health check and server info |
+| `/v1/models` | GET | List available models |
+| `/v1/tools` | GET | List all available function declarations |
+| `/v1/functions/call` | POST | Call a single function directly |
+| `/v1/function_calls` | POST | Process multiple function calls (batch) |
+| `/v1/models/envcp:generateContent` | POST | Gemini-style content generation |
+| `/v1beta/models/envcp:generateContent` | POST | Beta API compatibility |
+
+### GET /v1/models
+
+Returns available models for Gemini compatibility.
+
+```bash
+curl http://localhost:3456/v1/models
+```
+
+```json
+{
+  "models": [{
+    "name": "models/envcp-1.0",
+    "displayName": "EnvCP Tool Server",
+    "description": "Environment variable management tools",
+    "supportedGenerationMethods": ["generateContent"]
+  }]
+}
+```
+
+### POST /v1/function_calls
+
+Process multiple Gemini function calls in batch.
+
+```bash
+curl -X POST \
+  -H "X-Goog-Api-Key: your-secret-key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "functionCalls": [
+      {
+        "name": "envcp_get",
+        "args": { "name": "API_KEY" }
+      },
+      {
+        "name": "envcp_get",
+        "args": { "name": "DATABASE_URL" }
+      }
+    ]
+  }' \
+  http://localhost:3456/v1/function_calls
+```
+
+Response:
+
+```json
+{
+  "functionResponses": [
+    {
+      "name": "envcp_get",
+      "response": {
+        "result": {
+          "name": "API_KEY",
+          "value": "AIza..."
+        }
+      }
+    },
+    {
+      "name": "envcp_get",
+      "response": {
+        "result": {
+          "name": "DATABASE_URL",
+          "value": "postgres://..."
+        }
+      }
+    }
+  ]
+}
+```
+
+### POST /v1/models/envcp:generateContent
+
+Gemini-style content generation endpoint with function calling support.
+
+```bash
+curl -X POST \
+  -H "X-Goog-Api-Key: your-secret-key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "contents": [{
+      "parts": [{
+        "functionCall": {
+          "name": "envcp_get",
+          "args": { "name": "API_KEY" }
+        }
+      }]
+    }]
+  }' \
+  http://localhost:3456/v1/models/envcp:generateContent
+```
+
+Response:
+
+```json
+{
+  "candidates": [{
+    "content": {
+      "parts": [{
+        "functionResponse": {
+          "name": "envcp_get",
+          "response": {
+            "result": {
+              "name": "API_KEY",
+              "value": "AIza..."
+            }
+          }
+        }
+      }],
+      "role": "model"
+    },
+    "finishReason": "STOP"
+  }]
+}
+```
+
+---
+
+## Python Examples
+
+### Using Google AI SDK
+
+```python
+import google.generativeai as genai
+
+# Configure Gemini to use EnvCP
+genai.configure(
+    api_key="your-secret-key",
+    transport="rest",
+    client_options={"api_endpoint": "http://localhost:3456/v1"}
+)
+
+# Get available tools
+import requests
+
+tools_response = requests.get(
+    "http://localhost:3456/v1/tools",
+    headers={"X-Goog-Api-Key": "your-secret-key"}
+).json()
+
+print("Available tools:", tools_response["tools"])
+
+# Call a function directly
+result = requests.post(
+    "http://localhost:3456/v1/functions/call",
+    headers={"X-Goog-Api-Key": "your-secret-key"},
+    json={
+        "name": "envcp_get",
+        "args": {"name": "GEMINI_API_KEY", "show_value": True}
+    }
+).json()
+
+print(f"API Key: {result['response']['result']['value']}")
+```
+
+### Function Calling with Gemini
+
+```python
+import requests
+import json
+
+# EnvCP server config
+envcp_url = "http://localhost:3456/v1"
+envcp_key = "your-secret-key"
+
+# Get function declarations
+tools_response = requests.get(
+    f"{envcp_url}/tools",
+    headers={"X-Goog-Api-Key": envcp_key}
+).json()
+
+# Extract function declarations
+functions = tools_response["tools"][0]["functionDeclarations"]
+
+# Use with Gemini API (actual Google Gemini)
+import google.generativeai as genai
+
+genai.configure(api_key="your-gemini-api-key")
+model = genai.GenerativeModel("gemini-pro")
+
+# Create tools for Gemini
+tools = [genai.protos.Tool(function_declarations=[
+    genai.protos.FunctionDeclaration(
+        name=f["name"],
+        description=f["description"],
+        parameters=f["parameters"]
+    ) for f in functions
+])]
+
+# Chat with function calling
+chat = model.start_chat(enable_automatic_function_calling=False)
+response = chat.send_message(
+    "What's my database URL?",
+    tools=tools
+)
+
+# Process function calls
+if response.candidates[0].content.parts[0].function_call:
+    function_call = response.candidates[0].content.parts[0].function_call
+    
+    # Execute via EnvCP
+    result = requests.post(
+        f"{envcp_url}/functions/call",
+        headers={"X-Goog-Api-Key": envcp_key},
+        json={
+            "name": function_call.name,
+            "args": dict(function_call.args)
+        }
+    ).json()
+    
+    # Send result back to Gemini
+    response = chat.send_message(
+        genai.protos.Part(
+            function_response=genai.protos.FunctionResponse(
+                name=function_call.name,
+                response=result["response"]
+            )
+        )
+    )
+    
+    print(response.text)
+```
+
+### Batch Function Calls
+
+```python
+import requests
+
+# Call multiple functions at once
+function_calls = [
+    {"name": "envcp_get", "args": {"name": "API_KEY"}},
+    {"name": "envcp_get", "args": {"name": "DATABASE_URL"}},
+    {"name": "envcp_get", "args": {"name": "REDIS_URL"}}
+]
+
+response = requests.post(
+    "http://localhost:3456/v1/function_calls",
+    headers={"X-Goog-Api-Key": "your-secret-key"},
+    json={"functionCalls": function_calls}
+).json()
+
+for func_response in response["functionResponses"]:
+    result = func_response["response"]["result"]
+    print(f"{result['name']}: {result.get('value', 'N/A')}")
+```
+
+### Async Usage
+
+```python
+import asyncio
+import aiohttp
+
+async def call_function(session, name, args):
+    async with session.post(
+        "http://localhost:3456/v1/functions/call",
+        headers={"X-Goog-Api-Key": "your-secret-key"},
+        json={"name": name, "args": args}
+    ) as response:
+        result = await response.json()
+        return result["response"]["result"]
+
+async def main():
+    async with aiohttp.ClientSession() as session:
+        tasks = [
+            call_function(session, "envcp_get", {"name": "API_KEY"}),
+            call_function(session, "envcp_get", {"name": "DATABASE_URL"}),
+            call_function(session, "envcp_get", {"name": "REDIS_URL"})
+        ]
+        
+        results = await asyncio.gather(*tasks)
+        
+        for var in results:
+            print(f"{var['name']}: {var.get('value', 'N/A')}")
+
+asyncio.run(main())
+```
+
+---
+
+## Node.js Examples
+
+### Using fetch
+
+```javascript
+// Get available tools
+async function getTools() {
+  const response = await fetch('http://localhost:3456/v1/tools', {
+    headers: {
+      'X-Goog-Api-Key': 'your-secret-key'
+    }
+  });
+  
+  const data = await response.json();
+  return data.tools;
+}
+
+// Call a function
+async function callFunction(name, args) {
+  const response = await fetch('http://localhost:3456/v1/functions/call', {
+    method: 'POST',
+    headers: {
+      'X-Goog-Api-Key': 'your-secret-key',
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ name, args })
+  });
+  
+  const data = await response.json();
+  return data.response.result;
+}
+
+// Usage
+const tools = await getTools();
+console.log('Available tools:', tools);
+
+const apiKey = await callFunction('envcp_get', {
+  name: 'GEMINI_API_KEY',
+  show_value: true
+});
+console.log('API Key:', apiKey.value);
+```
+
+### Using Google AI SDK
+
+```javascript
+import { GoogleGenerativeAI } from '@google/generative-ai';
+
+// Get EnvCP function declarations
+const toolsResponse = await fetch('http://localhost:3456/v1/tools', {
+  headers: { 'X-Goog-Api-Key': 'your-secret-key' }
+});
+const { tools } = await toolsResponse.json();
+
+// Initialize Gemini with tools
+const genAI = new GoogleGenerativeAI('your-gemini-api-key');
+const model = genAI.getGenerativeModel({
+  model: 'gemini-pro',
+  tools: tools
+});
+
+// Chat with function calling
+const chat = model.startChat();
+const result = await chat.sendMessage('Get my database URL');
+
+// Process function calls
+if (result.response.functionCalls()) {
+  const functionCalls = result.response.functionCalls();
+  
+  for (const call of functionCalls) {
+    // Execute via EnvCP
+    const funcResult = await fetch('http://localhost:3456/v1/functions/call', {
+      method: 'POST',
+      headers: {
+        'X-Goog-Api-Key': 'your-secret-key',
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        name: call.name,
+        args: call.args
+      })
+    }).then(r => r.json());
+    
+    // Send result back to model
+    const finalResult = await chat.sendMessage([{
+      functionResponse: {
+        name: call.name,
+        response: funcResult.response
+      }
+    }]);
+    
+    console.log(finalResult.response.text());
+  }
+}
+```
+
+### Batch Processing
+
+```javascript
+// Process multiple function calls
+async function batchCallFunctions(calls) {
+  const response = await fetch('http://localhost:3456/v1/function_calls', {
+    method: 'POST',
+    headers: {
+      'X-Goog-Api-Key': 'your-secret-key',
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      functionCalls: calls
+    })
+  });
+  
+  const data = await response.json();
+  return data.functionResponses;
+}
+
+// Usage
+const results = await batchCallFunctions([
+  { name: 'envcp_get', args: { name: 'API_KEY' } },
+  { name: 'envcp_get', args: { name: 'DATABASE_URL' } },
+  { name: 'envcp_list', args: {} }
+]);
+
+results.forEach(r => {
+  console.log(`${r.name}:`, r.response.result);
+});
+```
+
+---
+
+## Authentication
+
+EnvCP Gemini server supports authentication via Google-style API keys.
+
+### Setting API Key
+
+```bash
+# Set during server start
+envcp serve --mode gemini --api-key your-secret-key
+```
+
+### Using API Key
+
+Include in requests using `X-Goog-Api-Key` header (preferred) or `Authorization` header:
+
+```bash
+# Preferred method
+X-Goog-Api-Key: your-secret-key
+
+# Alternative
+Authorization: Bearer your-secret-key
+```
+
+Example:
+
+```bash
+curl -H "X-Goog-Api-Key: your-secret-key" \
+  http://localhost:3456/v1/tools
+```
+
+**Security Note:** Always use HTTPS in production and keep API keys secure.
+
+---
+
+## Error Handling
+
+### Error Response Format
+
+```json
+{
+  "error": {
+    "code": 400,
+    "message": "Error description",
+    "status": "ERROR_STATUS"
+  }
+}
+```
+
+### Common Error Types
+
+| Status Code | Status | Description |
+|-------------|--------|-------------|
+| 401 | `UNAUTHENTICATED` | Invalid or missing API key |
+| 400 | `INVALID_ARGUMENT` | Invalid request parameters |
+| 404 | `NOT_FOUND` | Endpoint or resource not found |
+| 429 | `RESOURCE_EXHAUSTED` | Rate limit exceeded (60/min default) |
+| 500 | `INTERNAL` | Server error |
+| 503 | `UNAVAILABLE` | Service unavailable |
+
+### Example Error Handling (Python)
+
+```python
+import requests
+
+try:
+    response = requests.post(
+        "http://localhost:3456/v1/functions/call",
+        headers={"X-Goog-Api-Key": "your-secret-key"},
+        json={"name": "envcp_get", "args": {"name": "MISSING_VAR"}}
+    )
+    response.raise_for_status()
+    result = response.json()
+    print(result)
+except requests.exceptions.HTTPError as e:
+    error = e.response.json()
+    print(f"Error: {error['error']['message']}")
+    print(f"Status: {error['error']['status']}")
+    print(f"Code: {error['error']['code']}")
+```
+
+---
+
+## Advanced Usage
+
+### Rate Limiting
+
+EnvCP includes built-in rate limiting (60 requests per minute by default).
+
+```bash
+# Rate limit headers in response
+X-RateLimit-Limit: 60
+X-RateLimit-Remaining: 59
+X-RateLimit-Reset: 1234567890
+```
+
+### CORS Support
+
+EnvCP supports CORS for web applications:
+
+```javascript
+// Browser usage
+fetch('http://localhost:3456/v1/tools', {
+  headers: {
+    'X-Goog-Api-Key': 'your-secret-key'
+  }
+})
+  .then(r => r.json())
+  .then(data => console.log(data));
+```
+
+### Using with Gemini 1.5 Pro
+
+```python
+import google.generativeai as genai
+import requests
+
+# Configure real Gemini
+genai.configure(api_key="your-gemini-api-key")
+
+# Get EnvCP tools
+tools_response = requests.get(
+    "http://localhost:3456/v1/tools",
+    headers={"X-Goog-Api-Key": "your-secret-key"}
+).json()
+
+# Create Gemini model with EnvCP tools
+model = genai.GenerativeModel(
+    "gemini-1.5-pro",
+    tools=[tools_response["tools"][0]["functionDeclarations"]]
+)
+
+# Use in chat
+chat = model.start_chat()
+response = chat.send_message(
+    "Get all my environment variables tagged with 'production'"
+)
+
+# Handle function calls automatically
+# (Implementation depends on your use case)
+```
+
+---
+
+## Troubleshooting
+
+### Server Not Starting
+
+```bash
+# Check if port is already in use
+lsof -i :3456
+
+# Try a different port
+envcp serve --mode gemini --port 3457
+```
+
+### Connection Refused
+
+```bash
+# Ensure server is running
+curl http://localhost:3456/v1/health
+
+# Check server logs
+envcp serve --mode gemini --verbose
+```
+
+### Authentication Errors
+
+```bash
+# Verify API key is set correctly
+envcp serve --mode gemini --api-key test123
+
+# Test with correct key (use X-Goog-Api-Key header)
+curl -H "X-Goog-Api-Key: test123" \
+  http://localhost:3456/v1/tools
+```
+
+### Function Not Found
+
+```bash
+# List available functions
+curl -H "X-Goog-Api-Key: your-secret-key" \
+  http://localhost:3456/v1/tools
+
+# Verify function name spelling
+# Correct: envcp_get
+# Incorrect: get_env, getEnv
+```
+
+### Rate Limit Exceeded
+
+If you hit rate limits:
+
+```python
+import time
+
+# Add delay between requests
+for var in variables:
+    result = call_function("envcp_get", {"name": var})
+    time.sleep(1.1)  # Wait 1.1 seconds
+```
+
+### Beta API Endpoint
+
+If you need beta API compatibility:
+
+```bash
+# Use beta endpoint
+curl -X POST \
+  -H "X-Goog-Api-Key: your-secret-key" \
+  http://localhost:3456/v1beta/models/envcp:generateContent
+```
+
+---
+
+## See Also
+
+- [API Reference](/api-reference/endpoints) - Complete API documentation
+- [OpenAI Integration](/integrations/openai) - OpenAI function calling integration
+- [MCP Integration](/integrations/mcp) - Integration with Claude Desktop, Cursor
+- [Security Best Practices](/security/best-practices) - Security guidelines
+- [Troubleshooting](/advanced/troubleshooting) - Common issues and solutions
+
+---
+
+**Need help?** Open an issue on [GitHub](https://github.com/fentz26/EnvCP/issues) or contact us at contact@fentz.dev

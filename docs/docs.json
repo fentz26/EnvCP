@@ -1,0 +1,143 @@
+{
+  "$schema": "https://mintlify.com/docs.json",
+  "theme": "mint",
+  "name": "EnvCP",
+  "colors": {
+    "primary": "#6B7280",
+    "light": "#9CA3AF",
+    "dark": "#374151"
+  },
+  "favicon": "/favicon.svg",
+  "appearance": {
+    "default": "dark",
+    "theme": "dark"
+  },
+  "styling": {
+    "code": "monospace"
+  },
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Getting Started",
+            "pages": [
+              "index",
+              "installation",
+              "quick-start"
+            ]
+          },
+          {
+            "group": "CLI Reference",
+            "pages": [
+              "cli-reference/commands",
+              "cli-reference/options"
+            ]
+          },
+          {
+            "group": "Configuration",
+            "pages": [
+              "configuration/reference",
+              "configuration/access-control"
+            ]
+          },
+          {
+            "group": "Integrations",
+            "pages": [
+              "integrations/mcp",
+              "integrations/openai",
+              "integrations/gemini",
+              "integrations/local-llm"
+            ]
+          },
+          {
+            "group": "API Reference",
+            "pages": [
+              "api-reference/endpoints",
+              "api-reference/tools"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Advanced",
+        "groups": [
+          {
+            "group": "Security",
+            "pages": [
+              "security/best-practices",
+              "security/encryption"
+            ]
+          },
+          {
+            "group": "Advanced Topics",
+            "pages": [
+              "advanced/session-management",
+              "advanced/troubleshooting"
+            ]
+          }
+        ]
+      }
+    ],
+    "global": {
+      "anchors": [
+        {
+          "anchor": "GitHub",
+          "href": "https://github.com/fentz26/EnvCP",
+          "icon": "github"
+        },
+        {
+          "anchor": "npm",
+          "href": "https://www.npmjs.com/package/@fentz26/envcp",
+          "icon": "box"
+        },
+        {
+          "anchor": "Support",
+          "href": "mailto:contact@fentz.dev",
+          "icon": "envelope"
+        }
+      ]
+    }
+  },
+  "logo": {
+    "light": "/logo/light.svg",
+    "dark": "/logo/dark.svg"
+  },
+  "navbar": {
+    "links": [
+      {
+        "label": "Install",
+        "href": "https://envcp.fentz.dev/install.sh"
+      }
+    ],
+    "primary": {
+      "type": "button",
+      "label": "Get Started",
+      "href": "/quick-start"
+    }
+  },
+  "contextual": {
+    "options": [
+      "copy",
+      "view",
+      "chatgpt",
+      "claude",
+      "perplexity",
+      "mcp",
+      "cursor",
+      "vscode"
+    ]
+  },
+  "footer": {
+    "socials": {
+      "github": "https://github.com/fentz26/EnvCP",
+      "x": "https://x.com/fentz26"
+    }
+  },
+  "integrations": {
+    "vercel": {
+      "deployOnPush": true
+    }
+  }
+}

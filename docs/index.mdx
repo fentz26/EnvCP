@@ -1,0 +1,112 @@
+---
+title: EnvCP Documentation
+---
+
+# EnvCP Documentation
+
+Welcome to EnvCP - Secure environment variable management for AI-assisted coding.
+
+## Quick Navigation
+
+### Getting Started
+- [Installation](/installation)
+- [Quick Start Guide](/quick-start)
+- [Configuration](/configuration/reference)
+
+### Platform Guides
+- [Claude Desktop / Cursor / Cline (MCP)](MCP-Integration)
+- [ChatGPT / OpenAI API](OpenAI-Integration)
+- [Gemini / Google AI](Gemini-Integration)
+- [Local LLMs (Ollama, LM Studio)](Local-LLM-Integration)
+- [REST API](REST-API-Reference)
+
+### Advanced Topics
+- [Security Best Practices](/security/best-practices)
+- [AI Access Control](AI-Access-Control)
+- [Session Management](/advanced/session-management)
+- [Troubleshooting](/advanced/troubleshooting)
+
+### Reference
+- [CLI Commands](CLI-Reference)
+- [Configuration Options](Configuration-Reference)
+- [API Reference](/api-reference/endpoints)
+- [Server Modes](Server-Modes)
+
+## What is EnvCP?
+
+EnvCP is a secure environment variable manager designed specifically for AI-assisted coding workflows. It allows AI agents to reference your secrets and environment variables by name without ever seeing the actual values.
+
+### Key Features
+
+- **Local-only storage** - Your secrets never leave your machine
+- **AES-256-GCM encryption** - Military-grade encryption at rest
+- **Reference-based access** - AI references variables by name, never sees values
+- **Multi-platform support** - Works with Claude, ChatGPT, Gemini, local LLMs, and more
+- **AI access control** - Granular control over what AI can access
+- **Session management** - Unlock once, work seamlessly
+- **Automatic .env sync** - Keep your .env files up to date
+
+### How It Works
+
+1. **You store secrets** - Add your API keys, database URLs, and other secrets to EnvCP
+2. **AI references by name** - When AI needs a secret, it asks for it by variable name
+3. **EnvCP handles access** - EnvCP checks access rules and provides values only when appropriate
+4. **Values stay encrypted** - All data is encrypted at rest with your password
+
+### Why EnvCP?
+
+When working with AI coding assistants, you often need to reference API keys, database credentials, and other secrets. Traditional approaches have problems:
+
+- **Hardcoding secrets** - Insecure and easy to accidentally commit
+- **Pasting secrets in chat** - Exposes them to AI providers and chat logs
+- **Manual .env editing** - Tedious and error-prone
+
+EnvCP solves these problems by providing a secure, encrypted storage layer that AI can reference without seeing actual values.
+
+## Quick Start
+
+```bash
+# Install globally
+npm install -g @fentz26/envcp
+
+# Initialize in your project
+envcp init
+
+# Add your first secret
+envcp add API_KEY --value "your-secret-key"
+
+# Start the server (auto-detects client type)
+envcp serve --mode auto --port 3456
+```
+
+For detailed installation instructions, see the [Installation Guide](Installation).
+
+## Platform Compatibility
+
+EnvCP works with all major AI platforms:
+
+| Platform | Support | Protocol |
+|----------|---------|----------|
+| Claude Desktop | ✓ Native | MCP |
+| Claude Code | ✓ Native | MCP |
+| Cursor | ✓ Native | MCP |
+| Cline (VS Code) | ✓ Native | MCP |
+| Continue.dev | ✓ Native | MCP |
+| Zed Editor | ✓ Native | MCP |
+| ChatGPT | ✓ Via API | OpenAI Function Calling |
+| GPT-4 API | ✓ Via API | OpenAI Function Calling |
+| Gemini | ✓ Via API | Google Function Calling |
+| Gemini API | ✓ Via API | Google Function Calling |
+| Local LLMs (Ollama) | ✓ Via API | REST / OpenAI-compatible |
+| LM Studio | ✓ Via API | REST / OpenAI-compatible |
+| Open WebUI | ✓ Via API | REST |
+| Any HTTP Client | ✓ Via API | REST |
+
+## Support
+
+- **GitHub Issues**: [Report bugs or request features](https://github.com/fentz26/EnvCP/issues)
+- **Security Issues**: [contact@fentz.dev](mailto:contact@fentz.dev)
+
+## License
+
+EnvCP is open source software licensed under the [MIT License](https://github.com/fentz26/EnvCP/blob/main/LICENSE).

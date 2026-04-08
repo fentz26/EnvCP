@@ -1,0 +1,62 @@
+name: Sync Wiki to Docs
+
+on:
+  gollum:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'wiki-content/**'
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Make conversion script executable
+        run: chmod +x scripts/convert-wiki.sh
+
+      - name: Run conversion script
+        run: ./scripts/convert-wiki.sh
+
+      - name: Check for changes
+        id: check_changes
+        run: |
+          git add docs/
+          if git diff --staged --quiet; then
+            echo "has_changes=false" >> $GITHUB_OUTPUT
+          else
+            echo "has_changes=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Commit changes
+        if: steps.check_changes.outputs.has_changes == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git commit -m "docs: sync wiki content to Mintlify docs"
+          git push
+
+      - name: Summary
+        if: steps.check_changes.outputs.has_changes == 'true'
+        run: |
+          echo "✅ Wiki content synced to /docs/ folder" >> $GITHUB_STEP_SUMMARY
+          echo "📝 Changes committed and pushed" >> $GITHUB_STEP_SUMMARY
+
+      - name: No changes
+        if: steps.check_changes.outputs.has_changes != 'true'
+        run: |
+          echo "ℹ️ No changes detected - docs already up to date" >> $GITHUB_STEP_SUMMARY

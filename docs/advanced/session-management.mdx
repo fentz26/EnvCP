@@ -1,0 +1,618 @@
+---
+title: Session Management
+---
+
+# Session Management
+
+Complete guide to EnvCP's session management system, including password-based sessions, timeouts, and security features.
+
+## Table of Contents
+
+- [Overview](#overview)
+- [How Sessions Work](#how-sessions-work)
+- [Configuration](#configuration)
+- [CLI Commands](#cli-commands)
+- [Session Lifecycle](#session-lifecycle)
+- [Security Features](#security-features)
+- [Best Practices](#best-practices)
+- [Troubleshooting](#troubleshooting)
+
+---
+
+## Overview
+
+EnvCP uses a session-based system to securely manage access to encrypted environment variables. Sessions:
+
+- **Unlock storage** with a password for a limited time
+- **Auto-expire** after a timeout period (default: 30 minutes)
+- **Can be extended** up to a maximum number of times
+- **Encrypt the password** for security
+- **Track access** for audit purposes
+
+**Default Settings:**
+- Session timeout: 30 minutes
+- Maximum extensions: 5
+- Session file: `.envcp/.session` (encrypted)
+
+---
+
+## How Sessions Work
+
+### 1. Unlock (Create Session)
+
+When you unlock EnvCP:
+
+```bash
+envcp unlock
+# Enter password: ****
+```
+
+EnvCP:
+1. Prompts for your encryption password
+2. Validates the password by attempting to decrypt storage
+3. Creates an encrypted session file (`.envcp/.session`)
+4. Stores session metadata (ID, created time, expiration, extensions)
+5. Password hash is used for verification (never stored in plain text)
+
+### 2. Active Session
+
+While a session is active:
+
+- **No password prompts** - Commands execute immediately
+- **Auto-extension** - Each access extends the session (up to max extensions)
+- **Remaining time** - Check with `envcp status`
+
+### 3. Session Expiry
+
+Sessions expire when:
+- Timeout period elapses (default: 30 minutes)
+- Maximum extensions reached (default: 5)
+- Manually locked with `envcp lock`
+
+After expiry:
+- Session file is deleted
+- Password required for next operation
+- All cached data is cleared
+
+---
+
+## Configuration
+
+Configure sessions in `envcp.yaml`:
+
+```yaml
+session:
+  enabled: true           # Enable session management
+  timeout_minutes: 30     # Session timeout in minutes
+  max_extensions: 5       # Maximum number of auto-extensions
+  path: .envcp/.session   # Path to session file
+```
+
+### Session Settings
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `enabled` | `true` | Enable/disable session management |
+| `timeout_minutes` | `30` | Minutes before session expires |
+| `max_extensions` | `5` | Max auto-extensions per session |
+| `path` | `.envcp/.session` | Location of encrypted session file |
+
+### Example Configurations
+
+**Short Sessions (High Security):**
+
+```yaml
+session:
+  enabled: true
+  timeout_minutes: 10     # 10 minutes
+  max_extensions: 2       # Only 2 extensions (30 min max)
+```
+
+**Long Sessions (Convenience):**
+
+```yaml
+session:
+  enabled: true
+  timeout_minutes: 60     # 1 hour
+  max_extensions: 10      # Up to 11 hours total
+```
+
+**Disable Sessions:**
+
+```yaml
+session:
+  enabled: false  # Always prompt for password
+```
+
+---
+
+## CLI Commands
+
+### envcp unlock
+
+Unlock storage and create a new session.
+
+```bash
+envcp unlock
+# Enter password: ****
+
+# Output:
+# Session unlocked
+# Session expires in 30 minutes
+# Remaining extensions: 5
+```
+
+**Options:**
+```bash
+# Unlock with password argument (not recommended - exposes in shell history)
+envcp unlock --password mypass
+```
+
+**Use Cases:**
+- Start working on a project
+- After system restart
+- After session expiry
+
+---
+
+### envcp lock
+
+Lock storage immediately and destroy the session.
+
+```bash
+envcp lock
+
+# Output:
+# Session locked
+```
+
+**Use Cases:**
+- Leaving workstation
+- Switching projects
+- Before system sleep/shutdown
+- Security best practice when done
+
+---
+
+### envcp status
+
+Check current session status.
+
+```bash
+envcp status
+
+# Output (when unlocked):
+# Status: unlocked
+# Session ID: abc123xyz
+# Created: 2024-01-01 10:00:00
+# Expires: 2024-01-01 10:30:00
+# Remaining: 25 minutes
+# Extensions: 1/5
+# Last access: 2024-01-01 10:05:00
+```
+
+```bash
+# Output (when locked):
+# Status: locked
+# Storage is encrypted and requires password
+```
+
+**Use Cases:**
+- Check remaining time
+- Verify session is active
+- Audit session information
+
+---
+
+### envcp extend
+
+Manually extend the current session (if not at max extensions).
+
+```bash
+envcp extend
+
+# Output:
+# Session extended
+# New expiration: 2024-01-01 11:00:00
+# Remaining: 30 minutes
+# Extensions: 2/5
+```
+
+**Use Cases:**
+- Continue working without interruption
+- Proactively extend before timeout
+- When you know you'll need more time
+
+---
+
+## Session Lifecycle
+
+### Complete Session Flow
+
+```
++-------------------+
+|   envcp unlock    |
+|  (Enter password) |
++-------------------+
+         |
+         v
++-------------------+
+| Session Created   |
+| - ID generated    |
+| - Password cached |
+| - Expiry set      |
++-------------------+
+         |
+         v
++-------------------+     +------------------+
+| Active Session    |---->| Auto-extension   |
+| - No prompts      |     | (on each access) |
+| - Commands work   |     +------------------+
++-------------------+
+         |
+         v
+    +---------+
+    | Timeout |
+    | OR      |
+    | Lock    |
+    | OR      |
+    | Max ext.|
+    +---------+
+         |
+         v
++-------------------+
+| Session Destroyed |
+| - File deleted    |
+| - Cache cleared   |
++-------------------+
+         |
+         v
++-------------------+
+|   Password        |
+|   Required        |
++-------------------+
+```
+
+### Auto-Extension
+
+Sessions automatically extend on each access:
+
+1. User runs command: `envcp get API_KEY`
+2. EnvCP checks session validity
+3. If valid and extensions remain:
+   - Extends expiry by `timeout_minutes`
+   - Increments extension counter
+   - Updates last access time
+4. Command executes without password prompt
+
+**Example:**
+
+```bash
+# Session created at 10:00, expires at 10:30
+
+envcp get API_KEY           # 10:10 - extends to 10:40 (ext 1/5)
+envcp list                  # 10:20 - extends to 10:50 (ext 2/5)
+envcp set NEW_VAR value     # 10:30 - extends to 11:00 (ext 3/5)
+# ... continues until max extensions
+```
+
+---
+
+## Security Features
+
+### 1. Encrypted Session File
+
+The session file (`.envcp/.session`) is **encrypted** using the same password:
+
+- Password never stored in plain text
+- Only password hash for verification
+- Session metadata encrypted
+- Secure even if file is accessed
+
+### 2. Password Hash Verification
+
+```
+Password → SHA-256 Hash → Stored in encrypted session
+           ↓
+     Used to verify password on session load
+```
+
+Benefits:
+- Password not recoverable from session file
+- Quick password verification
+- No password storage on disk
+
+### 3. Automatic Cleanup
+
+Sessions are automatically cleaned up on:
+- Timeout expiry
+- Max extensions reached
+- Manual lock
+- Invalid decryption (tampered file)
+
+### 4. Audit Trail
+
+All session operations are logged:
+
+```
+2024-01-01 10:00:00 - Session created (ID: abc123)
+2024-01-01 10:10:00 - Session extended (1/5)
+2024-01-01 10:30:00 - Session locked (manual)
+```
+
+---
+
+## Best Practices
+
+### 1. Lock When Done
+
+Always lock your session when finished:
+
+```bash
+# Done for the day
+envcp lock
+```
+
+### 2. Use Appropriate Timeouts
+
+Choose timeout based on security needs:
+
+```yaml
+# High security environment
+session:
+  timeout_minutes: 5
+  max_extensions: 1
+
+# Development environment
+session:
+  timeout_minutes: 30
+  max_extensions: 5
+
+# CI/CD (disable sessions)
+session:
+  enabled: false
+```
+
+### 3. Monitor Session Status
+
+Check status regularly:
+
+```bash
+envcp status
+```
+
+### 4. Protect Session Files
+
+Add to `.gitignore`:
+
+```
+.envcp/.session
+.envcp/store.enc
+.envcp/logs/
+```
+
+### 5. Use in Scripts
+
+For automated scripts, disable sessions:
+
+```bash
+# Always prompt for password (more secure for scripts)
+envcp --no-session get API_KEY
+```
+
+Or provide password via environment variable:
+
+```bash
+ENVCP_PASSWORD=mypass envcp get API_KEY
+```
+
+### 6. Server Mode Sessions
+
+When running as a server, sessions work differently:
+
+```bash
+# Provide password at startup
+envcp serve --mode auto --password mypass
+
+# Session persists for server lifetime
+# No auto-expire (server controls access)
+```
+
+---
+
+## Troubleshooting
+
+### Session File Corrupted
+
+**Error:** `Failed to load session: decryption failed`
+
+**Solution:**
+
+```bash
+# Remove corrupted session file
+rm .envcp/.session
+
+# Unlock again
+envcp unlock
+```
+
+### Session Keeps Expiring
+
+**Issue:** Session expires too quickly
+
+**Solutions:**
+
+1. Increase timeout:
+
+```yaml
+session:
+  timeout_minutes: 60  # Increase to 1 hour
+```
+
+2. Increase max extensions:
+
+```yaml
+session:
+  max_extensions: 10   # Allow more extensions
+```
+
+3. Check system time:
+
+```bash
+# Verify system clock is correct
+date
+```
+
+### Can't Unlock
+
+**Error:** `Invalid password`
+
+**Solutions:**
+
+1. Verify password is correct
+2. Check if storage file is corrupted:
+
+```bash
+ls -la .envcp/store.enc
+```
+
+3. Check recovery file (if enabled):
+
+```yaml
+security:
+  mode: recoverable
+  recovery_file: .envcp/.recovery
+```
+
+### Session Not Extending
+
+**Issue:** Session doesn't auto-extend
+
+**Check:**
+
+1. Extensions remaining:
+
+```bash
+envcp status
+# Look for: Extensions: 5/5 (maxed out)
+```
+
+2. Configuration:
+
+```yaml
+session:
+  max_extensions: 5  # Increase if needed
+```
+
+### Permission Denied
+
+**Error:** `EACCES: permission denied, open '.envcp/.session'`
+
+**Solution:**
+
+```bash
+# Fix permissions
+chmod 600 .envcp/.session
+chmod 700 .envcp/
+
+# Or remove and recreate
+rm .envcp/.session
+envcp unlock
+```
+
+### Multiple Sessions
+
+**Issue:** Session from different project interfering
+
+**Solution:**
+
+EnvCP uses **project-local** sessions (`.envcp/.session` in project root).
+
+Each project has its own session:
+
+```bash
+# Project A
+cd ~/project-a
+envcp unlock  # Creates ~/project-a/.envcp/.session
+
+# Project B
+cd ~/project-b
+envcp unlock  # Creates ~/project-b/.envcp/.session
+```
+
+### Session File Location
+
+**Find session file:**
+
+```bash
+# Default location
+ls -la .envcp/.session
+
+# Custom location (from envcp.yaml)
+# Check session.path in config
+```
+
+---
+
+## Advanced Usage
+
+### Programmatic Session Management
+
+```javascript
+// Node.js example
+import { SessionManager } from '@fentz26/envcp';
+
+const session = new SessionManager('.envcp/.session', 30, 5);
+
+// Initialize
+await session.init();
+
+// Create session
+await session.create('mypassword');
+
+// Check validity
+const isValid = await session.isValid();
+
+// Extend session
+await session.extend();
+
+// Get remaining time
+const minutes = session.getRemainingTime();
+
+// Destroy session
+await session.destroy();
+```
+
+### Session in CI/CD
+
+For CI/CD, disable sessions and use password directly:
+
+```yaml
+# .github/workflows/deploy.yml
+- name: Run with EnvCP
+  env:
+    ENVCP_PASSWORD: ${{ secrets.ENVCP_PASSWORD }}
+  run: |
+    envcp --no-session run deploy -- npm run deploy
+```
+
+Or use config:
+
+```yaml
+# envcp.yaml (for CI)
+session:
+  enabled: false  # Disable sessions in CI
+```
+
+---
+
+## See Also
+
+- [Security Best Practices](/security/best-practices) - Security guidelines
+- [CLI Reference](/cli-reference/commands) - All CLI commands
+- [Configuration Reference](/configuration/reference) - Complete config options
+- [Troubleshooting](/advanced/troubleshooting) - Common issues
+
+---
+
+**Need help?** Open an issue on [GitHub](https://github.com/fentz26/EnvCP/issues) or contact us at contact@fentz.dev

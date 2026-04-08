@@ -1,0 +1,10 @@
+name = "envcp-cloud"
+main = "worker.ts"
+compatibility_date = "2024-01-01"
+
+[vars]
+ENVIRONMENT = "production"
+
+[[routes]]
+pattern = "envcp.fentz.dev/*"
+zone_name = "fentz.dev"

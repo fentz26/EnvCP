@@ -1,0 +1,18 @@
+# Documentation (not needed in npm package)
+docs/
+wiki-content/
+*.md
+!README.md
+
+# Development
+cloudflare/
+.github/
+__tests__/
+*.test.ts
+*.spec.ts
+
+# Config files
+.env
+.env.*
+*.log
+.DS_Store
