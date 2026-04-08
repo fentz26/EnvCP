@@ -97,3 +97,85 @@ export const SessionSchema = z.object({
 });
 
 export type Session = z.infer<typeof SessionSchema>;
+
+// Server mode types
+export const ServerModeSchema = z.enum(['mcp', 'rest', 'openai', 'gemini', 'all', 'auto']);
+export type ServerMode = z.infer<typeof ServerModeSchema>;
+
+export const ServerConfigSchema = z.object({
+  mode: ServerModeSchema.default('auto'),
+  port: z.number().default(3456),
+  host: z.string().default('127.0.0.1'),
+  cors: z.boolean().default(true),
+  api_key: z.string().optional(),
+  auto_detect: z.boolean().default(true),
+});
+
+export type ServerConfig = z.infer<typeof ServerConfigSchema>;
+
+// Tool definition for adapters
+export interface ToolDefinition {
+  name: string;
+  description: string;
+  parameters: Record<string, unknown>;
+  handler: (params: Record<string, unknown>) => Promise<unknown>;
+}
+
+// OpenAI function calling format
+export interface OpenAIFunction {
+  name: string;
+  description: string;
+  parameters: {
+    type: 'object';
+    properties: Record<string, unknown>;
+    required?: string[];
+  };
+}
+
+export interface OpenAIToolCall {
+  id: string;
+  type: 'function';
+  function: {
+    name: string;
+    arguments: string;
+  };
+}
+
+export interface OpenAIMessage {
+  role: 'system' | 'user' | 'assistant' | 'tool';
+  content: string | null;
+  tool_calls?: OpenAIToolCall[];
+  tool_call_id?: string;
+}
+
+// Gemini function calling format
+export interface GeminiFunctionDeclaration {
+  name: string;
+  description: string;
+  parameters: {
+    type: 'object';
+    properties: Record<string, unknown>;
+    required?: string[];
+  };
+}
+
+export interface GeminiFunctionCall {
+  name: string;
+  args: Record<string, unknown>;
+}
+
+export interface GeminiFunctionResponse {
+  name: string;
+  response: Record<string, unknown>;
+}
+
+// REST API types
+export interface RESTResponse<T = unknown> {
+  success: boolean;
+  data?: T;
+  error?: string;
+  timestamp: string;
+}
+
+// Detected client type
+export type ClientType = 'mcp' | 'openai' | 'gemini' | 'rest' | 'unknown';

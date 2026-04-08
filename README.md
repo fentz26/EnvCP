@@ -2,7 +2,7 @@
 
 **Secure Environment Variable Management for AI-Assisted Coding**
 
-EnvCP is a Model Context Protocol (MCP) server that allows developers to safely use AI assistants for coding without exposing sensitive environment variables, API keys, or secrets.
+EnvCP is a universal tool server that allows developers to safely use AI assistants for coding without exposing sensitive environment variables, API keys, or secrets. Works with Claude, ChatGPT, Gemini, Cursor, and any AI tool.
 
 ## Why EnvCP?
 
@@ -13,10 +13,31 @@ When using AI coding assistants, you often need to reference environment variabl
 - **Reference-based access** - AI references variables by name, never sees the actual values
 - **Automatic .env injection** - Values can be automatically injected into your .env files
 - **AI Access Control** - Block AI from proactively checking or listing your secrets
-- **Session Management** - Unlock once, stay unlocked for configurable duration
+- **Universal Compatibility** - Works with any AI tool via multiple protocols
+
+## Platform Compatibility
+
+| Platform | Support | Protocol |
+|----------|---------|----------|
+| Claude Desktop | Native | MCP |
+| Claude Code | Native | MCP |
+| Cursor | Native | MCP |
+| Cline (VS Code) | Native | MCP |
+| Continue.dev | Native | MCP |
+| Zed Editor | Native | MCP |
+| ChatGPT | Via API | OpenAI Function Calling |
+| GPT-4 API | Via API | OpenAI Function Calling |
+| Gemini | Via API | Google Function Calling |
+| Gemini API | Via API | Google Function Calling |
+| Local LLMs (Ollama) | Via API | REST / OpenAI-compatible |
+| LM Studio | Via API | REST / OpenAI-compatible |
+| Open WebUI | Via API | REST |
+| Any HTTP Client | Via API | REST |
 
 ## Features
 
+- **Multi-Protocol Support** - MCP, REST API, OpenAI, and Gemini protocols
+- **Auto-Detection** - Automatically detects client type from request headers
 - **AES-256-GCM Encryption** - Military-grade encryption with PBKDF2-SHA512 key derivation
 - **Flexible Passwords** - No complexity requirements - use any password you want
 - **Session Management** - Quick password mode with configurable session duration
@@ -24,25 +45,7 @@ When using AI coding assistants, you often need to reference environment variabl
 - **Blacklist Patterns** - Block AI access to sensitive variables matching patterns
 - **Project-based Organization** - Separate environments per project
 - **Auto .env Sync** - Automatically sync to .env files
-- **Reference System** - AI references `${VAR_NAME}` and EnvCP resolves it
-- **MCP Integration** - Works with Claude Desktop and other MCP clients
 - **Audit Logging** - All operations logged for security review
-
-## Security Architecture
-
-EnvCP uses **AES-256-GCM** (Advanced Encryption Standard with Galois/Counter Mode) for all encrypted storage:
-
-- **Key Derivation**: PBKDF2-SHA512 with 100,000 iterations
-- **Random Salt**: 64 bytes (512 bits) per encryption operation
-- **Random IV**: 16 bytes (128 bits) per encryption operation
-- **Authentication**: Built-in authentication tag (16 bytes) for integrity verification
-- **Output Format**: `salt(128 hex) + iv(32 hex) + authTag(32 hex) + ciphertext`
-
-This means:
-- Each variable is encrypted with a unique salt and IV
-- Password cracking requires brute-forcing each variable individually
-- Any tampering attempt is detected via authentication tag verification
-- No rainbow tables or pre-computed attacks are possible
 
 ## Installation
 
@@ -64,50 +67,193 @@ npx envcp init
 envcp init
 ```
 
-This creates an `envcp.yaml` configuration file in your project.
-
-### 2. Unlock your session (Quick Password Mode)
-
-```bash
-envcp unlock
-# Enter your password once, stay unlocked for 30 minutes (default)
-```
-
-### 3. Add your first secret
+### 2. Add your secrets
 
 ```bash
 envcp add API_KEY --value "your-secret-key"
+envcp add DATABASE_URL --value "postgres://..."
 ```
 
-Or use interactive mode:
+### 3. Start the server
 
 ```bash
-envcp add
+# Auto mode - detects client type automatically (recommended)
+envcp serve --mode auto --port 3456
+
+# Or specific modes:
+envcp serve --mode mcp       # For Claude Desktop, Cursor, etc.
+envcp serve --mode rest      # For REST API clients
+envcp serve --mode openai    # For ChatGPT/OpenAI-compatible
+envcp serve --mode gemini    # For Google Gemini
+envcp serve --mode all       # All protocols on same port
 ```
 
-### 4. Configure Claude Desktop
+## Integration Guides
 
-Add to your Claude Desktop config (`~/Library/Application Support/Claude/claude_desktop_config.json`):
+### Claude Desktop / Cursor / Cline (MCP)
+
+Add to your config file:
 
 ```json
 {
   "mcpServers": {
     "envcp": {
       "command": "npx",
-      "args": ["envcp", "serve"]
+      "args": ["envcp", "serve", "--mode", "mcp"]
     }
   }
 }
 ```
 
-### 5. Use in your AI conversations
+### ChatGPT / OpenAI API
+
+Start the server in OpenAI mode:
+
+```bash
+envcp serve --mode openai --port 3456 --api-key your-secret-key
+```
+
+Use with OpenAI client:
+
+```python
+import openai
+
+# Point to EnvCP server
+client = openai.OpenAI(
+    base_url="http://localhost:3456/v1",
+    api_key="your-secret-key"
+)
+
+# Get available functions
+functions = client.get("/functions")
+
+# Call a function
+result = client.post("/functions/call", json={
+    "name": "envcp_get",
+    "arguments": {"name": "API_KEY"}
+})
+```
+
+### Gemini / Google AI
+
+Start the server in Gemini mode:
+
+```bash
+envcp serve --mode gemini --port 3456 --api-key your-secret-key
+```
+
+Use with Gemini:
+
+```python
+import requests
+
+# Get available tools
+tools = requests.get(
+    "http://localhost:3456/v1/tools",
+    headers={"X-Goog-Api-Key": "your-secret-key"}
+).json()
+
+# Call a function
+result = requests.post(
+    "http://localhost:3456/v1/functions/call",
+    headers={"X-Goog-Api-Key": "your-secret-key"},
+    json={"name": "envcp_get", "args": {"name": "API_KEY"}}
+).json()
+```
+
+### Local LLMs (Ollama, LM Studio)
+
+For local LLMs, use REST API mode or OpenAI-compatible mode:
+
+```bash
+# REST API (universal)
+envcp serve --mode rest --port 3456
+
+# OpenAI-compatible (works with most local LLM tools)
+envcp serve --mode openai --port 3456
+```
+
+Then configure your LLM tool to use `http://localhost:3456` as the tool server.
+
+### REST API (Universal)
+
+Start the server:
+
+```bash
+envcp serve --mode rest --port 3456 --api-key your-secret-key
+```
+
+Endpoints:
 
 ```
-AI: I need to connect to your database. What's the connection string?
+GET    /api/health              - Health check
+GET    /api/variables           - List variables
+GET    /api/variables/:name     - Get variable
+POST   /api/variables           - Create variable
+PUT    /api/variables/:name     - Update variable
+DELETE /api/variables/:name     - Delete variable
+POST   /api/sync                - Sync to .env
+POST   /api/run                 - Run command with env vars
+GET    /api/tools               - List available tools
+POST   /api/tools/:name         - Call tool by name
+```
 
-You: Use the DB_CONNECTION_STRING from EnvCP.
+Example:
 
-AI: [Uses EnvCP tool to get the connection string without seeing the actual value]
+```bash
+# List variables
+curl -H "X-API-Key: your-secret-key" http://localhost:3456/api/variables
+
+# Get a variable
+curl -H "X-API-Key: your-secret-key" http://localhost:3456/api/variables/API_KEY
+
+# Create a variable
+curl -X POST -H "X-API-Key: your-secret-key" \
+  -H "Content-Type: application/json" \
+  -d '{"name": "NEW_VAR", "value": "secret123"}' \
+  http://localhost:3456/api/variables
+```
+
+## Server Modes
+
+| Mode | Description | Use Case |
+|------|-------------|----------|
+| `mcp` | Model Context Protocol (stdio) | Claude Desktop, Cursor, Cline |
+| `rest` | REST API (HTTP) | Any HTTP client, custom integrations |
+| `openai` | OpenAI function calling format | ChatGPT, GPT-4 API, OpenAI-compatible tools |
+| `gemini` | Google function calling format | Gemini, Google AI |
+| `all` | All HTTP protocols on same port | Multiple clients |
+| `auto` | Auto-detect client from headers | Universal (recommended for HTTP) |
+
+## CLI Commands
+
+```bash
+# Initialize
+envcp init [options]
+
+# Session Management
+envcp unlock              # Unlock session with password
+envcp lock                # Lock session immediately
+envcp status              # Check session status
+envcp extend [minutes]    # Extend session duration
+
+# Variable Management
+envcp add <name> [options]
+envcp list [--show-values]
+envcp get <name>
+envcp remove <name>
+
+# Sync and Export
+envcp sync                # Sync to .env file
+envcp export [--format env|json|yaml]
+
+# Server
+envcp serve [options]
+  --mode, -m      Server mode: mcp, rest, openai, gemini, all, auto
+  --port          HTTP port (default: 3456)
+  --host          HTTP host (default: 127.0.0.1)
+  --api-key, -k   API key for authentication
+  --password, -p  Encryption password
 ```
 
 ## Configuration
@@ -118,248 +264,112 @@ AI: [Uses EnvCP tool to get the connection string without seeing the actual valu
 version: "1.0"
 project: my-project
 
-# Storage settings
 storage:
-  path: .envcp/store.enc # Where to store the encrypted data
-  encrypted: true # Enable encryption (AES-256-GCM)
-  algorithm: aes-256-gcm # Encryption algorithm
+  path: .envcp/store.enc
+  encrypted: true
+  algorithm: aes-256-gcm
 
-# Session settings (Quick Password Mode)
 session:
-  enabled: true # Enable session-based unlocking
-  timeout: 1800 # Session duration in seconds (default: 30 minutes)
+  enabled: true
+  timeout: 1800  # 30 minutes
 
-# Access rules
 access:
-  allow_ai_read: true # Allow AI to read variable names (not values)
-  allow_ai_write: false # Allow AI to create new variables
-  allow_ai_active_check: false # Prevent AI from proactively checking/listing variables
-  require_confirmation: true # Require confirmation before operations
-  blacklist: # Patterns to block AI access completely
+  allow_ai_read: true
+  allow_ai_write: false
+  allow_ai_active_check: false  # Prevent AI from proactively listing
+  require_confirmation: true
+  blacklist:
     - "*_SECRET"
     - "*_PRIVATE"
     - "ADMIN_*"
-    - "*_KEY"
 
-# Password validation (all optional, disabled by default)
 password:
-  min_length: 1 # Minimum password length (default: 1)
-  require_uppercase: false # Require uppercase letters
-  require_lowercase: false # Require lowercase letters
-  require_numbers: false # Require numbers
-  require_special: false # Require special characters
-
-# Auto-sync to .env
-sync:
-  enabled: true
-  target: .env # Target .env file
-  exclude:
-    - "*_PRIVATE" # Exclude patterns from syncing
-    - "*_SECRET"
-
-# Variables are stored separately in encrypted format
-```
-
-## CLI Commands
-
-```bash
-# Initialize EnvCP
-envcp init [options]
-
-# Session Management (Quick Password Mode)
-envcp unlock              # Unlock session with password
-envcp lock                # Lock session immediately
-envcp status              # Check session status
-envcp extend [minutes]    # Extend session duration
-
-# Variable Management
-envcp add <name> [options]
-  --value, -v    Variable value
-  --encrypt, -e  Encrypt the value
-  --tags, -t     Tags for organization
-
-envcp list [options]
-  --show-values  Show actual values (requires unlocked session)
-
-envcp get <name> [options]
-
-envcp remove <name>
-
-# Sync and Export
-envcp sync [options]      # Sync to .env file
-
-envcp export [options]
-  --format       Output format: env, json, yaml
-
-# MCP Server
-envcp serve [options]     # Start MCP server
-```
-
-## MCP Tools
-
-When using with Claude or other MCP clients, the following tools are available:
-
-### `envcp_list`
-List all available variable names (values are never shown to AI).
-
-**Note**: This tool respects `allow_ai_active_check` setting. If disabled, AI cannot proactively list variables.
-
-### `envcp_get`
-Request a variable value. The value is masked by default and only shown to you, not the AI.
-
-**Note**: Variables matching blacklist patterns are completely inaccessible to AI.
-
-### `envcp_set`
-Create or update a variable (if allowed by configuration).
-
-### `envcp_sync`
-Sync variables to .env file.
-
-### `envcp_run`
-Execute a command with environment variables injected.
-
-### `envcp_check_access`
-Check if AI can access a specific variable (respects blacklist and access rules).
-
-## AI Access Control
-
-EnvCP provides fine-grained control over what AI assistants can access:
-
-### Disable Active Checking
-
-By default, AI cannot proactively list or check your variables:
-
-```yaml
-access:
-  allow_ai_active_check: false  # AI can't list variables without user request
-```
-
-When disabled:
-- AI cannot use `envcp_list` to see what variables exist
-- AI cannot proactively check for common variable names
-- AI can only access variables when you explicitly tell it to
-
-### Blacklist Patterns
-
-Block AI from accessing sensitive variables entirely:
-
-```yaml
-access:
-  blacklist:
-    - "*_SECRET"      # Blocks DATABASE_SECRET, API_SECRET, etc.
-    - "*_PRIVATE"     # Blocks SSH_PRIVATE, PRIVATE_KEY, etc.
-    - "ADMIN_*"       # Blocks ADMIN_PASSWORD, ADMIN_TOKEN, etc.
-    - "ROOT_*"        # Blocks ROOT_PASSWORD, etc.
-```
-
-Blacklisted variables:
-- Cannot be read by AI (even by name)
-- Cannot be listed by AI
-- Only accessible via CLI or direct user action
-
-## Password Flexibility
-
-EnvCP allows any password you want - no complexity requirements by default:
-
-```yaml
-password:
-  min_length: 1           # Even "1" is valid
+  min_length: 1  # No requirements by default
   require_uppercase: false
   require_lowercase: false
   require_numbers: false
   require_special: false
+
+sync:
+  enabled: true
+  target: .env
+  exclude:
+    - "*_PRIVATE"
+    - "*_SECRET"
 ```
 
-You can enable stricter requirements if desired:
+## Available Tools
+
+All protocols expose the same tools:
+
+| Tool | Description |
+|------|-------------|
+| `envcp_list` | List variable names (not values) |
+| `envcp_get` | Get a variable (masked by default) |
+| `envcp_set` | Create/update a variable |
+| `envcp_delete` | Delete a variable |
+| `envcp_sync` | Sync to .env file |
+| `envcp_run` | Run command with env vars injected |
+| `envcp_check_access` | Check if variable is accessible |
+
+## AI Access Control
+
+### Disable Active Checking
+
+Prevent AI from proactively listing your variables:
 
 ```yaml
-password:
-  min_length: 8
-  require_uppercase: true
-  require_lowercase: true
-  require_numbers: true
-  require_special: true
+access:
+  allow_ai_active_check: false
 ```
 
-## Session Management
+### Blacklist Patterns
 
-Quick Password Mode allows you to unlock once and stay unlocked:
+Block AI from accessing sensitive variables:
+
+```yaml
+access:
+  blacklist:
+    - "*_SECRET"
+    - "*_PRIVATE"
+    - "ADMIN_*"
+    - "ROOT_*"
+```
+
+## Security
+
+### Encryption
+
+- **Cipher**: AES-256-GCM
+- **Key Derivation**: PBKDF2-SHA512 (100,000 iterations)
+- **Salt**: 64 bytes per encryption
+- **IV**: 16 bytes per encryption
+- **Auth Tag**: 16 bytes for integrity
+
+### API Authentication
+
+When using HTTP modes, always set an API key:
 
 ```bash
-# Unlock for 30 minutes (default)
-envcp unlock
-
-# Check status
-envcp status
-# Output: Session active, expires in 28 minutes
-
-# Extend session by 15 minutes
-envcp extend 15
-
-# Lock immediately
-envcp lock
+envcp serve --mode rest --api-key your-secret-key
 ```
 
-Configure session duration in config:
-
-```yaml
-session:
-  enabled: true
-  timeout: 3600  # 1 hour
-```
-
-## Security Details
-
-### Encryption Algorithm
-
-- **Cipher**: AES-256-GCM (256-bit key, Galois/Counter Mode)
-- **Key Derivation**: PBKDF2 with SHA-512
-- **Iterations**: 100,000 (configurable)
-- **Salt Length**: 64 bytes (512 bits)
-- **IV Length**: 16 bytes (128 bits)
-- **Auth Tag**: 16 bytes (128 bits)
-
-### Why This Is Secure
-
-1. **AES-256-GCM**: Approved by NSA for TOP SECRET information
-2. **PBKDF2**: Key derivation function that makes brute-force attacks computationally expensive
-3. **100,000 iterations**: Each password attempt requires 100,000 SHA-512 computations
-4. **Unique salt per encryption**: Prevents rainbow table attacks and pre-computation
-5. **Unique IV per encryption**: Same plaintext encrypted multiple times produces different ciphertexts
-6. **Authentication tag**: Detects any tampering or corruption
-
-### Password Security Note
-
-While EnvCP allows simple passwords, keep in mind:
-- Simple passwords (like "1" or "123") can be cracked instantly
-- The encryption is only as strong as your password
-- For sensitive data, use strong passwords even though they're not required
-
-## Project Structure
+Clients must include the key in requests:
 
 ```
-your-project/
-├── .envcp/
-│   ├── config.yaml    # Project configuration
-│   ├── store.enc      # Encrypted variable storage
-│   ├── session.json   # Session state (auto-generated)
-│   └── logs/          # Operation logs
-├── .env               # Synced environment file
-└── envcp.yaml         # Main config file
+X-API-Key: your-secret-key
+# or
+Authorization: Bearer your-secret-key
 ```
 
 ## Best Practices
 
 1. **Never commit `.envcp/`** - Add to `.gitignore`
-2. **Use strong passwords for sensitive data** - Simple passwords are allowed but not recommended
-3. **Configure AI access rules** - Disable `allow_ai_active_check` for maximum security
-4. **Use blacklist patterns** - Block sensitive variable patterns from AI access
-5. **Review access logs** - Check `.envcp/logs/` regularly
-6. **Separate projects** - Use different EnvCP instances per project
-
-## Contributing
-
-Contributions are welcome! Please read our contributing guidelines.
+2. **Use API keys for HTTP modes** - Protect your server endpoints
+3. **Disable `allow_ai_active_check`** - Prevent AI from probing for variables
+4. **Use blacklist patterns** - Block sensitive variable patterns
+5. **Use `auto` mode for HTTP** - Let EnvCP detect the client type
+6. **Review access logs** - Check `.envcp/logs/` regularly
 
 ## License
 

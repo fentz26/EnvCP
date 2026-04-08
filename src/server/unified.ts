@@ -1,0 +1,483 @@
+import { EnvCPConfig, ServerMode, ServerConfig, ClientType } from '../types.js';
+import { RESTAdapter } from '../adapters/rest.js';
+import { OpenAIAdapter } from '../adapters/openai.js';
+import { GeminiAdapter } from '../adapters/gemini.js';
+import { EnvCPServer } from '../mcp/server.js';
+import * as http from 'http';
+import * as url from 'url';
+
+export class UnifiedServer {
+  private config: EnvCPConfig;
+  private serverConfig: ServerConfig;
+  private projectPath: string;
+  private password?: string;
+
+  private restAdapter: RESTAdapter | null = null;
+  private openaiAdapter: OpenAIAdapter | null = null;
+  private geminiAdapter: GeminiAdapter | null = null;
+  private mcpServer: EnvCPServer | null = null;
+  private httpServer: http.Server | null = null;
+
+  constructor(config: EnvCPConfig, serverConfig: ServerConfig, projectPath: string, password?: string) {
+    this.config = config;
+    this.serverConfig = serverConfig;
+    this.projectPath = projectPath;
+    this.password = password;
+  }
+
+  // Detect client type from request headers
+  detectClientType(req: http.IncomingMessage): ClientType {
+    const userAgent = req.headers['user-agent']?.toLowerCase() || '';
+    const contentType = req.headers['content-type'] || '';
+    const pathname = url.parse(req.url || '/', true).pathname || '/';
+
+    // Check for OpenAI-style requests
+    if (pathname.startsWith('/v1/chat') ||
+        pathname.startsWith('/v1/functions') ||
+        pathname.startsWith('/v1/tool_calls') ||
+        req.headers['openai-organization'] ||
+        userAgent.includes('openai')) {
+      return 'openai';
+    }
+
+    // Check for Gemini-style requests
+    if (pathname.includes(':generateContent') ||
+        pathname.startsWith('/v1beta') ||
+        pathname.startsWith('/v1/function_calls') ||
+        req.headers['x-goog-api-key'] ||
+        userAgent.includes('google') ||
+        userAgent.includes('gemini')) {
+      return 'gemini';
+    }
+
+    // Check for MCP (typically stdio, but could be HTTP)
+    if (req.headers['x-mcp-version'] ||
+        userAgent.includes('mcp') ||
+        userAgent.includes('claude')) {
+      return 'mcp';
+    }
+
+    // Default to REST for standard HTTP requests
+    if (pathname.startsWith('/api')) {
+      return 'rest';
+    }
+
+    return 'unknown';
+  }
+
+  private setCorsHeaders(res: http.ServerResponse): void {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-API-Key, X-Goog-Api-Key, OpenAI-Organization');
+  }
+
+  private sendJson(res: http.ServerResponse, status: number, data: unknown): void {
+    res.writeHead(status, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(data));
+  }
+
+  async start(): Promise<void> {
+    const { mode, port, host, api_key } = this.serverConfig;
+
+    // MCP mode uses stdio, not HTTP
+    if (mode === 'mcp') {
+      this.mcpServer = new EnvCPServer(this.config, this.projectPath, this.password);
+      await this.mcpServer.start();
+      return;
+    }
+
+    // Initialize adapters based on mode
+    if (mode === 'rest' || mode === 'all' || mode === 'auto') {
+      this.restAdapter = new RESTAdapter(this.config, this.projectPath, this.password);
+      await this.restAdapter.init();
+    }
+
+    if (mode === 'openai' || mode === 'all' || mode === 'auto') {
+      this.openaiAdapter = new OpenAIAdapter(this.config, this.projectPath, this.password);
+      await this.openaiAdapter.init();
+    }
+
+    if (mode === 'gemini' || mode === 'all' || mode === 'auto') {
+      this.geminiAdapter = new GeminiAdapter(this.config, this.projectPath, this.password);
+      await this.geminiAdapter.init();
+    }
+
+    // Single mode - start specific adapter server
+    if (mode === 'rest') {
+      await this.restAdapter!.startServer(port, host, api_key);
+      return;
+    }
+
+    if (mode === 'openai') {
+      await this.openaiAdapter!.startServer(port, host, api_key);
+      return;
+    }
+
+    if (mode === 'gemini') {
+      await this.geminiAdapter!.startServer(port, host, api_key);
+      return;
+    }
+
+    // Auto or All mode - unified server that routes based on detection
+    this.httpServer = http.createServer(async (req, res) => {
+      this.setCorsHeaders(res);
+
+      if (req.method === 'OPTIONS') {
+        res.writeHead(204);
+        res.end();
+        return;
+      }
+
+      // API key validation
+      if (api_key) {
+        const providedKey = req.headers['x-api-key'] ||
+                           req.headers['x-goog-api-key'] ||
+                           req.headers['authorization']?.replace('Bearer ', '');
+        if (providedKey !== api_key) {
+          this.sendJson(res, 401, { error: 'Invalid API key' });
+          return;
+        }
+      }
+
+      const parsedUrl = url.parse(req.url || '/', true);
+      const pathname = parsedUrl.pathname || '/';
+
+      // Root endpoint - show server info and detected mode
+      if (pathname === '/' && req.method === 'GET') {
+        const detectedType = this.serverConfig.auto_detect ? this.detectClientType(req) : 'unknown';
+        this.sendJson(res, 200, {
+          name: 'EnvCP Unified Server',
+          version: '1.0.0',
+          mode: mode,
+          detected_client: detectedType,
+          auto_detect: this.serverConfig.auto_detect,
+          available_modes: ['rest', 'openai', 'gemini', 'mcp'],
+          endpoints: {
+            rest: '/api/*',
+            openai: '/v1/chat/completions, /v1/functions/*, /v1/tool_calls',
+            gemini: '/v1/models/envcp:generateContent, /v1/function_calls',
+          },
+        });
+        return;
+      }
+
+      // Detect client type
+      let clientType: ClientType = 'unknown';
+      if (this.serverConfig.auto_detect) {
+        clientType = this.detectClientType(req);
+      }
+
+      // Force mode query param
+      const forceMode = parsedUrl.query.mode as string | undefined;
+      if (forceMode && ['rest', 'openai', 'gemini'].includes(forceMode)) {
+        clientType = forceMode as ClientType;
+      }
+
+      try {
+        // Route to appropriate adapter
+        // REST API routes
+        if ((clientType === 'rest' || clientType === 'unknown') && pathname.startsWith('/api')) {
+          await this.handleRESTRequest(req, res);
+          return;
+        }
+
+        // OpenAI routes
+        if (clientType === 'openai' || pathname.startsWith('/v1/chat') || pathname.startsWith('/v1/functions') || pathname === '/v1/tool_calls' || pathname === '/v1/models') {
+          await this.handleOpenAIRequest(req, res);
+          return;
+        }
+
+        // Gemini routes
+        if (clientType === 'gemini' || pathname.includes(':generateContent') || pathname === '/v1/function_calls' || pathname === '/v1/tools') {
+          await this.handleGeminiRequest(req, res);
+          return;
+        }
+
+        // Default to REST for unknown paths
+        if (pathname.startsWith('/api')) {
+          await this.handleRESTRequest(req, res);
+          return;
+        }
+
+        // 404 with helpful info
+        this.sendJson(res, 404, {
+          error: 'Not found',
+          hint: 'Use /api/* for REST, /v1/* for OpenAI, or include :generateContent for Gemini',
+          available_endpoints: {
+            rest: '/api/variables, /api/tools',
+            openai: '/v1/functions, /v1/chat/completions',
+            gemini: '/v1/models/envcp:generateContent',
+          },
+        });
+
+      } catch (error: any) {
+        this.sendJson(res, 500, { error: error.message });
+      }
+    });
+
+    return new Promise((resolve) => {
+      this.httpServer!.listen(port, host, () => {
+        resolve();
+      });
+    });
+  }
+
+  private async handleRESTRequest(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+    // Delegate to REST adapter's internal handling
+    const parsedUrl = url.parse(req.url || '/', true);
+    const pathname = parsedUrl.pathname || '/';
+    const segments = pathname.split('/').filter(Boolean);
+
+    if (!this.restAdapter) {
+      this.sendJson(res, 503, { success: false, error: 'REST adapter not initialized' });
+      return;
+    }
+
+    const body = await this.parseBody(req);
+
+    try {
+      if (segments[0] === 'api') {
+        const resource = segments[1];
+
+        // Health
+        if (pathname === '/api/health' || pathname === '/api') {
+          this.sendJson(res, 200, { success: true, data: { status: 'ok', mode: 'rest' }, timestamp: new Date().toISOString() });
+          return;
+        }
+
+        // Tools
+        if (resource === 'tools' && !segments[2] && req.method === 'GET') {
+          const tools = this.restAdapter.getToolDefinitions().map(t => ({ name: t.name, description: t.description }));
+          this.sendJson(res, 200, { success: true, data: { tools }, timestamp: new Date().toISOString() });
+          return;
+        }
+
+        if (resource === 'tools' && segments[2] && req.method === 'POST') {
+          const result = await this.restAdapter.callTool(segments[2], body);
+          this.sendJson(res, 200, { success: true, data: result, timestamp: new Date().toISOString() });
+          return;
+        }
+
+        // Variables
+        if (resource === 'variables') {
+          if (!segments[2] && req.method === 'GET') {
+            const result = await this.restAdapter.callTool('list', {});
+            this.sendJson(res, 200, { success: true, data: result, timestamp: new Date().toISOString() });
+            return;
+          }
+          if (!segments[2] && req.method === 'POST') {
+            const result = await this.restAdapter.callTool('set', body);
+            this.sendJson(res, 201, { success: true, data: result, timestamp: new Date().toISOString() });
+            return;
+          }
+          if (segments[2] && req.method === 'GET') {
+            const result = await this.restAdapter.callTool('get', { name: segments[2], show_value: parsedUrl.query.show_value === 'true' });
+            this.sendJson(res, 200, { success: true, data: result, timestamp: new Date().toISOString() });
+            return;
+          }
+          if (segments[2] && req.method === 'PUT') {
+            const result = await this.restAdapter.callTool('set', { ...body, name: segments[2] });
+            this.sendJson(res, 200, { success: true, data: result, timestamp: new Date().toISOString() });
+            return;
+          }
+          if (segments[2] && req.method === 'DELETE') {
+            const result = await this.restAdapter.callTool('delete', { name: segments[2] });
+            this.sendJson(res, 200, { success: true, data: result, timestamp: new Date().toISOString() });
+            return;
+          }
+        }
+
+        // Sync
+        if (resource === 'sync' && req.method === 'POST') {
+          const result = await this.restAdapter.callTool('sync', {});
+          this.sendJson(res, 200, { success: true, data: result, timestamp: new Date().toISOString() });
+          return;
+        }
+
+        // Run
+        if (resource === 'run' && req.method === 'POST') {
+          const result = await this.restAdapter.callTool('run', body);
+          this.sendJson(res, 200, { success: true, data: result, timestamp: new Date().toISOString() });
+          return;
+        }
+      }
+
+      this.sendJson(res, 404, { success: false, error: 'Not found', timestamp: new Date().toISOString() });
+
+    } catch (error: any) {
+      this.sendJson(res, 500, { success: false, error: error.message, timestamp: new Date().toISOString() });
+    }
+  }
+
+  private async handleOpenAIRequest(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+    if (!this.openaiAdapter) {
+      this.sendJson(res, 503, { error: { message: 'OpenAI adapter not initialized', type: 'service_unavailable' } });
+      return;
+    }
+
+    const parsedUrl = url.parse(req.url || '/', true);
+    const pathname = parsedUrl.pathname || '/';
+    const body = await this.parseBody(req);
+
+    try {
+      if (pathname === '/v1/models' && req.method === 'GET') {
+        this.sendJson(res, 200, {
+          object: 'list',
+          data: [{ id: 'envcp-1.0', object: 'model', created: Date.now(), owned_by: 'envcp' }],
+        });
+        return;
+      }
+
+      if (pathname === '/v1/functions' && req.method === 'GET') {
+        this.sendJson(res, 200, { object: 'list', data: this.openaiAdapter.getOpenAIFunctions() });
+        return;
+      }
+
+      if (pathname === '/v1/functions/call' && req.method === 'POST') {
+        const { name, arguments: args } = body as any;
+        const result = await this.openaiAdapter.callTool(name, args || {});
+        this.sendJson(res, 200, { object: 'function_result', name, result });
+        return;
+      }
+
+      if (pathname === '/v1/tool_calls' && req.method === 'POST') {
+        const { tool_calls } = body as any;
+        const results = await this.openaiAdapter.processToolCalls(tool_calls);
+        this.sendJson(res, 200, { object: 'list', data: results });
+        return;
+      }
+
+      if (pathname === '/v1/chat/completions' && req.method === 'POST') {
+        const messages = (body as any).messages;
+        const lastMessage = messages?.[messages.length - 1];
+        
+        if (lastMessage?.tool_calls) {
+          const results = await this.openaiAdapter.processToolCalls(lastMessage.tool_calls);
+          this.sendJson(res, 200, {
+            id: `chatcmpl-${Date.now()}`,
+            object: 'chat.completion',
+            model: 'envcp-1.0',
+            choices: [{ index: 0, message: { role: 'assistant', content: null }, finish_reason: 'tool_calls' }],
+            tool_results: results,
+          });
+          return;
+        }
+
+        this.sendJson(res, 200, {
+          id: `chatcmpl-${Date.now()}`,
+          object: 'chat.completion',
+          model: 'envcp-1.0',
+          choices: [{ index: 0, message: { role: 'assistant', content: 'EnvCP tools available.' }, finish_reason: 'stop' }],
+          available_tools: this.openaiAdapter.getOpenAIFunctions().map(f => ({ type: 'function', function: f })),
+        });
+        return;
+      }
+
+      this.sendJson(res, 404, { error: { message: 'Not found', type: 'not_found' } });
+
+    } catch (error: any) {
+      this.sendJson(res, 500, { error: { message: error.message, type: 'internal_error' } });
+    }
+  }
+
+  private async handleGeminiRequest(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+    if (!this.geminiAdapter) {
+      this.sendJson(res, 503, { error: { code: 503, message: 'Gemini adapter not initialized', status: 'UNAVAILABLE' } });
+      return;
+    }
+
+    const parsedUrl = url.parse(req.url || '/', true);
+    const pathname = parsedUrl.pathname || '/';
+    const body = await this.parseBody(req);
+
+    try {
+      if (pathname === '/v1/tools' && req.method === 'GET') {
+        this.sendJson(res, 200, { tools: [{ functionDeclarations: this.geminiAdapter.getGeminiFunctionDeclarations() }] });
+        return;
+      }
+
+      if (pathname === '/v1/functions/call' && req.method === 'POST') {
+        const { name, args } = body as any;
+        const result = await this.geminiAdapter.callTool(name, args || {});
+        this.sendJson(res, 200, { name, response: { result } });
+        return;
+      }
+
+      if (pathname === '/v1/function_calls' && req.method === 'POST') {
+        const { functionCalls } = body as any;
+        const results = await this.geminiAdapter.processFunctionCalls(functionCalls);
+        this.sendJson(res, 200, { functionResponses: results });
+        return;
+      }
+
+      if (pathname.includes(':generateContent') && req.method === 'POST') {
+        const contents = (body as any).contents;
+        const functionCalls: any[] = [];
+        
+        if (contents) {
+          for (const content of contents) {
+            for (const part of content.parts || []) {
+              if (part.functionCall) functionCalls.push(part.functionCall);
+            }
+          }
+        }
+
+        if (functionCalls.length > 0) {
+          const results = await this.geminiAdapter.processFunctionCalls(functionCalls);
+          this.sendJson(res, 200, {
+            candidates: [{
+              content: { parts: results.map(r => ({ functionResponse: r })), role: 'model' },
+              finishReason: 'STOP',
+            }],
+          });
+          return;
+        }
+
+        this.sendJson(res, 200, {
+          candidates: [{
+            content: { parts: [{ text: 'EnvCP tools available.' }], role: 'model' },
+            finishReason: 'STOP',
+          }],
+          availableTools: [{ functionDeclarations: this.geminiAdapter.getGeminiFunctionDeclarations() }],
+        });
+        return;
+      }
+
+      this.sendJson(res, 404, { error: { code: 404, message: 'Not found', status: 'NOT_FOUND' } });
+
+    } catch (error: any) {
+      this.sendJson(res, 500, { error: { code: 500, message: error.message, status: 'INTERNAL' } });
+    }
+  }
+
+  private parseBody(req: http.IncomingMessage): Promise<Record<string, unknown>> {
+    return new Promise((resolve, reject) => {
+      let body = '';
+      req.on('data', chunk => { body += chunk; });
+      req.on('end', () => {
+        try {
+          resolve(body ? JSON.parse(body) : {});
+        } catch {
+          reject(new Error('Invalid JSON body'));
+        }
+      });
+      req.on('error', reject);
+    });
+  }
+
+  stop(): void {
+    if (this.httpServer) {
+      this.httpServer.close();
+      this.httpServer = null;
+    }
+    if (this.restAdapter) {
+      this.restAdapter.stopServer();
+    }
+    if (this.openaiAdapter) {
+      this.openaiAdapter.stopServer();
+    }
+    if (this.geminiAdapter) {
+      this.geminiAdapter.stopServer();
+    }
+  }
+}

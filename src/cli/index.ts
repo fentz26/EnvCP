@@ -443,10 +443,13 @@ program
 
 program
   .command('serve')
-  .description('Start MCP server')
+  .description('Start EnvCP server')
   .option('-p, --password <password>', 'Encryption password')
+  .option('-m, --mode <mode>', 'Server mode: mcp, rest, openai, gemini, all, auto', 'auto')
+  .option('--port <port>', 'HTTP port (for non-MCP modes)', '3456')
+  .option('--host <host>', 'HTTP host', '127.0.0.1')
+  .option('-k, --api-key <key>', 'API key for HTTP authentication')
   .action(async (options) => {
-    const { EnvCPServer } = await import('../mcp/server.js');
     const projectPath = process.cwd();
     const config = await loadConfig(projectPath);
     
@@ -477,8 +480,76 @@ program
     
     password = sessionManager.getPassword() || password;
 
-    const server = new EnvCPServer(config, projectPath, password);
+    const mode = options.mode as string;
+    const port = parseInt(options.port, 10);
+    const host = options.host;
+    const apiKey = options.apiKey;
+
+    // MCP mode uses stdio
+    if (mode === 'mcp') {
+      const { EnvCPServer } = await import('../mcp/server.js');
+      const server = new EnvCPServer(config, projectPath, password);
+      await server.start();
+      return;
+    }
+
+    // HTTP-based modes
+    const { UnifiedServer } = await import('../server/unified.js');
+    
+    const serverConfig = {
+      mode: mode as any,
+      port,
+      host,
+      api_key: apiKey,
+      cors: true,
+      auto_detect: mode === 'auto',
+    };
+
+    const server = new UnifiedServer(config, serverConfig, projectPath, password);
+    
+    console.log(chalk.blue('Starting EnvCP server...'));
+    console.log(chalk.gray(`  Mode: ${mode}`));
+    console.log(chalk.gray(`  Host: ${host}`));
+    console.log(chalk.gray(`  Port: ${port}`));
+    if (apiKey) console.log(chalk.gray(`  API Key: ${apiKey.substring(0, 4)}...`));
+    console.log('');
+    
     await server.start();
+    
+    console.log(chalk.green(`EnvCP server running at http://${host}:${port}`));
+    console.log('');
+    console.log(chalk.blue('Available endpoints:'));
+    
+    if (mode === 'auto' || mode === 'all') {
+      console.log(chalk.gray('  REST API:     /api/*'));
+      console.log(chalk.gray('  OpenAI:       /v1/chat/completions, /v1/functions/*'));
+      console.log(chalk.gray('  Gemini:       /v1/models/envcp:generateContent'));
+      console.log('');
+      console.log(chalk.yellow('Auto-detection enabled: Server will detect client type from request headers'));
+    } else if (mode === 'rest') {
+      console.log(chalk.gray('  GET    /api/variables       - List variables'));
+      console.log(chalk.gray('  GET    /api/variables/:name - Get variable'));
+      console.log(chalk.gray('  POST   /api/variables       - Create variable'));
+      console.log(chalk.gray('  PUT    /api/variables/:name - Update variable'));
+      console.log(chalk.gray('  DELETE /api/variables/:name - Delete variable'));
+      console.log(chalk.gray('  POST   /api/sync            - Sync to .env'));
+      console.log(chalk.gray('  POST   /api/tools/:name     - Call tool'));
+    } else if (mode === 'openai') {
+      console.log(chalk.gray('  GET    /v1/models           - List models'));
+      console.log(chalk.gray('  GET    /v1/functions        - List functions'));
+      console.log(chalk.gray('  POST   /v1/functions/call   - Call function'));
+      console.log(chalk.gray('  POST   /v1/tool_calls       - Process tool calls'));
+      console.log(chalk.gray('  POST   /v1/chat/completions - Chat completions'));
+    } else if (mode === 'gemini') {
+      console.log(chalk.gray('  GET    /v1/models           - List models'));
+      console.log(chalk.gray('  GET    /v1/tools            - List tools'));
+      console.log(chalk.gray('  POST   /v1/functions/call   - Call function'));
+      console.log(chalk.gray('  POST   /v1/function_calls   - Process function calls'));
+      console.log(chalk.gray('  POST   /v1/models/envcp:generateContent'));
+    }
+    
+    console.log('');
+    console.log(chalk.gray('Press Ctrl+C to stop'));
   });
 
 program
