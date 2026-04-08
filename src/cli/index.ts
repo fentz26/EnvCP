@@ -501,7 +501,11 @@ program
         output = yaml.dump(variables);
         break;
       default:
-        const lines = Object.entries(variables).map(([k, v]) => `${k}=${v.value}`);
+        const lines = Object.entries(variables).map(([k, v]) => {
+          const needsQuoting = /[\s#"'\\]/.test(v.value);
+          const val = needsQuoting ? `"${v.value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"` : v.value;
+          return `${k}=${val}`;
+        });
         output = lines.join('\n');
     }
 

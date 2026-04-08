@@ -289,17 +289,20 @@ export abstract class BaseAdapter {
 
     const envVars = dotenv.parse(content);
 
+    const needsQuoting = /[\s#"'\\]/.test(variable.value);
+    const quotedValue = needsQuoting ? `"${variable.value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"` : variable.value;
+
     if (envVars[args.name]) {
       const lines = content.split('\n');
       const newLines = lines.map(line => {
         if (line.startsWith(`${args.name}=`)) {
-          return `${args.name}=${variable.value}`;
+          return `${args.name}=${quotedValue}`;
         }
         return line;
       });
       content = newLines.join('\n');
     } else {
-      content += `\n${args.name}=${variable.value}`;
+      content += `\n${args.name}=${quotedValue}`;
     }
 
     await fs.writeFile(envPath, content, 'utf8');
