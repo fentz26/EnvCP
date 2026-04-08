@@ -4,7 +4,7 @@
   <img src="./assets/logo-ascii.png" alt="EnvCP" width="100%">
 </p>
 <p align="center">
-  <strong>Secure Environment Variable Management for AI-Assisted Coding</strong>
+  <strong>Secure Environment Variable Management for AI agent</strong>
 </p>
 
 ##
