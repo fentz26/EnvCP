@@ -6,7 +6,7 @@ import * as fs from 'fs-extra';
 import { loadConfig, initConfig, parseEnvFile, registerMcpConfig } from '../config/manager.js';
 import { StorageManager } from '../storage/index.js';
 import { SessionManager } from '../utils/session.js';
-import { maskValue, validatePassword } from '../utils/crypto.js';
+import { maskValue, validatePassword, encrypt, decrypt } from '../utils/crypto.js';
 import { Variable, EnvCPConfig } from '../types.js';
 
 async function withSession(fn: (storage: StorageManager, password: string, config: EnvCPConfig, projectPath: string) => Promise<void>): Promise<void> {
@@ -587,6 +587,102 @@ program
     }
 
     console.log(output);
+    });
+  });
+
+program
+  .command('backup')
+  .description('Create an encrypted backup of all variables')
+  .option('-o, --output <path>', 'Output file path')
+  .action(async (options) => {
+    await withSession(async (storage, password, config, projectPath) => {
+      const variables = await storage.load();
+      const count = Object.keys(variables).length;
+
+      if (count === 0) {
+        console.log(chalk.yellow('No variables to backup'));
+        return;
+      }
+
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+      const defaultPath = path.join(projectPath, `.envcp/backup-${timestamp}.enc`);
+      const outputPath = options.output || defaultPath;
+
+      const backupData = JSON.stringify({
+        meta: {
+          project: config.project,
+          timestamp: new Date().toISOString(),
+          count,
+          version: '1.0',
+        },
+        variables,
+      }, null, 2);
+
+      const encrypted = encrypt(backupData, password);
+      await fs.ensureDir(path.dirname(outputPath));
+      await fs.writeFile(outputPath, encrypted, 'utf8');
+
+      console.log(chalk.green(`Backup created: ${outputPath}`));
+      console.log(chalk.gray(`  Variables: ${count}`));
+      console.log(chalk.gray(`  Encrypted: yes`));
+    });
+  });
+
+program
+  .command('restore <file>')
+  .description('Restore variables from an encrypted backup')
+  .option('--merge', 'Merge with existing variables (default: replace)')
+  .action(async (file, options) => {
+    await withSession(async (storage, password) => {
+      if (!await fs.pathExists(file)) {
+        console.log(chalk.red(`Backup file not found: ${file}`));
+        return;
+      }
+
+      const encrypted = await fs.readFile(file, 'utf8');
+      let backupData: Record<string, unknown>;
+
+      try {
+        const decrypted = decrypt(encrypted, password);
+        backupData = JSON.parse(decrypted);
+      } catch {
+        console.log(chalk.red('Failed to decrypt backup. Wrong password or corrupted file.'));
+        return;
+      }
+
+      const meta = backupData.meta as { project?: string; timestamp?: string; count?: number } | undefined;
+      const variables = backupData.variables as Record<string, Variable>;
+
+      if (!variables || typeof variables !== 'object') {
+        console.log(chalk.red('Invalid backup format'));
+        return;
+      }
+
+      if (meta) {
+        console.log(chalk.blue('Backup info:'));
+        if (meta.project) console.log(chalk.gray(`  Project: ${meta.project}`));
+        if (meta.timestamp) console.log(chalk.gray(`  Created: ${meta.timestamp}`));
+        console.log(chalk.gray(`  Variables: ${meta.count || Object.keys(variables).length}`));
+      }
+
+      const { confirm } = await inquirer.prompt([
+        { type: 'confirm', name: 'confirm', message: options.merge ? 'Merge backup into current store?' : 'Replace current store with backup?', default: false }
+      ]);
+
+      if (!confirm) {
+        console.log(chalk.yellow('Restore cancelled'));
+        return;
+      }
+
+      if (options.merge) {
+        const current = await storage.load();
+        const merged = { ...current, ...variables };
+        await storage.save(merged);
+        console.log(chalk.green(`Merged ${Object.keys(variables).length} variables from backup`));
+      } else {
+        await storage.save(variables);
+        console.log(chalk.green(`Restored ${Object.keys(variables).length} variables from backup`));
+      }
     });
   });
 
