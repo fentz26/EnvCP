@@ -1,7 +1,7 @@
 import { StorageManager, LogManager } from '../storage/index.js';
 import { EnvCPConfig, Variable, ToolDefinition } from '../types.js';
 import { maskValue } from '../utils/crypto.js';
-import { canAccess, isBlacklisted, canAIActiveCheck, requiresUserReference, validateVariableName } from '../config/manager.js';
+import { canAccess, isBlacklisted, canAIActiveCheck, requiresUserReference, validateVariableName, matchesPattern } from '../config/manager.js';
 import { SessionManager } from '../utils/session.js';
 import * as fs from 'fs-extra';
 import * as path from 'path';
@@ -237,10 +237,7 @@ export abstract class BaseAdapter {
         continue;
       }
 
-      const excluded = this.config.sync.exclude?.some(pattern => {
-        const regex = new RegExp('^' + pattern.replace(/\*/g, '.*') + '$');
-        return regex.test(name);
-      });
+      const excluded = this.config.sync.exclude?.some(pattern => matchesPattern(name, pattern));
 
       if (excluded || !variable.sync_to_env) {
         continue;
