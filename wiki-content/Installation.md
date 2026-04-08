@@ -1,0 +1,304 @@
+# Installation Guide
+
+This guide covers installing EnvCP on different platforms and environments.
+
+## Prerequisites
+
+- **Node.js**: Version 14.x or higher
+- **npm**: Version 6.x or higher (comes with Node.js)
+
+To check if you have Node.js and npm installed:
+
+```bash
+node --version
+npm --version
+```
+
+If you don't have Node.js installed, download it from [nodejs.org](https://nodejs.org/).
+
+## Installation Methods
+
+### Global Installation (Recommended)
+
+Install EnvCP globally to use it across all your projects:
+
+```bash
+npm install -g @fentz26/envcp
+```
+
+Verify the installation:
+
+```bash
+envcp --version
+```
+
+### npx (No Installation Required)
+
+Use EnvCP without installing:
+
+```bash
+npx @fentz26/envcp init
+npx @fentz26/envcp add API_KEY --value "your-key"
+npx @fentz26/envcp serve
+```
+
+### Local Project Installation
+
+Install EnvCP as a dev dependency in a specific project:
+
+```bash
+cd your-project
+npm install --save-dev @fentz26/envcp
+```
+
+Then use it via npm scripts or npx:
+
+```bash
+npx envcp init
+```
+
+## Platform-Specific Setup
+
+### macOS
+
+```bash
+# Install Node.js via Homebrew (if needed)
+brew install node
+
+# Install EnvCP globally
+npm install -g @fentz26/envcp
+
+# Verify installation
+envcp --version
+```
+
+### Linux (Ubuntu/Debian)
+
+```bash
+# Install Node.js (if needed)
+curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
+sudo apt-get install -y nodejs
+
+# Install EnvCP globally
+sudo npm install -g @fentz26/envcp
+
+# Verify installation
+envcp --version
+```
+
+### Windows
+
+```bash
+# Install Node.js from nodejs.org first
+
+# Install EnvCP globally (run as Administrator if needed)
+npm install -g @fentz26/envcp
+
+# Verify installation
+envcp --version
+```
+
+### Docker
+
+Create a Dockerfile:
+
+```dockerfile
+FROM node:18-alpine
+
+# Install EnvCP
+RUN npm install -g @fentz26/envcp
+
+# Set working directory
+WORKDIR /workspace
+
+# Default command
+CMD ["envcp", "serve", "--mode", "auto", "--host", "0.0.0.0"]
+```
+
+Build and run:
+
+```bash
+docker build -t envcp .
+docker run -p 3456:3456 -v $(pwd):/workspace envcp
+```
+
+## First-Time Setup
+
+After installation, initialize EnvCP in your project:
+
+```bash
+# Navigate to your project directory
+cd your-project
+
+# Initialize EnvCP
+envcp init
+
+# You'll be prompted for:
+# - Project name
+# - Encryption password (can be anything, even "1" or "123")
+```
+
+This creates:
+- `.envcp/` directory for encrypted storage and logs
+- `envcp.yaml` configuration file
+
+**Important**: Add `.envcp/` to your `.gitignore`:
+
+```bash
+echo ".envcp/" >> .gitignore
+```
+
+## Upgrading
+
+### Global Installation
+
+```bash
+npm update -g @fentz26/envcp
+```
+
+### Local Installation
+
+```bash
+npm update @fentz26/envcp
+```
+
+### Check Current Version
+
+```bash
+envcp --version
+```
+
+### Version History
+
+To see what's new in each version:
+
+```bash
+npm view @fentz26/envcp versions
+npm view @fentz26/envcp@latest
+```
+
+## Uninstallation
+
+### Global
+
+```bash
+npm uninstall -g @fentz26/envcp
+```
+
+### Local
+
+```bash
+npm uninstall @fentz26/envcp
+```
+
+### Clean Up Project Data
+
+If you want to remove all EnvCP data from a project:
+
+```bash
+rm -rf .envcp/
+rm envcp.yaml
+```
+
+**Warning**: This permanently deletes all your encrypted secrets. Make sure to export them first if you need them:
+
+```bash
+envcp export --format json > backup.json
+```
+
+## Verification
+
+After installation, verify everything works:
+
+```bash
+# Check version
+envcp --version
+
+# Initialize a test project
+mkdir envcp-test
+cd envcp-test
+envcp init
+
+# Add a test variable
+envcp add TEST_VAR --value "test123"
+
+# List variables
+envcp list
+
+# Get the variable
+envcp get TEST_VAR
+
+# Clean up
+cd ..
+rm -rf envcp-test
+```
+
+## Troubleshooting Installation
+
+### Permission Errors (Linux/macOS)
+
+If you get permission errors during global installation:
+
+```bash
+# Option 1: Use sudo (not recommended)
+sudo npm install -g @fentz26/envcp
+
+# Option 2: Change npm's default directory (recommended)
+mkdir ~/.npm-global
+npm config set prefix '~/.npm-global'
+echo 'export PATH=~/.npm-global/bin:$PATH' >> ~/.bashrc
+source ~/.bashrc
+npm install -g @fentz26/envcp
+```
+
+### Command Not Found
+
+If `envcp` command is not found after installation:
+
+```bash
+# Check if npm global bin is in PATH
+npm config get prefix
+
+# Add to PATH (replace with your npm prefix)
+export PATH="$(npm config get prefix)/bin:$PATH"
+
+# Make permanent (add to .bashrc or .zshrc)
+echo 'export PATH="$(npm config get prefix)/bin:$PATH"' >> ~/.bashrc
+```
+
+### Windows PATH Issues
+
+If the command doesn't work on Windows:
+
+1. Find npm's global directory: `npm config get prefix`
+2. Add it to your PATH environment variable
+3. Restart your terminal
+
+### Node Version Issues
+
+EnvCP requires Node.js 14+. If you have an older version:
+
+```bash
+# Check current version
+node --version
+
+# Update Node.js
+# macOS (via Homebrew)
+brew upgrade node
+
+# Linux (via nvm)
+nvm install 18
+nvm use 18
+
+# Windows
+# Download latest installer from nodejs.org
+```
+
+## Next Steps
+
+Once installed, check out:
+
+- [Quick Start Guide](Quick-Start-Guide) - Get started in 5 minutes
+- [Configuration](Configuration) - Customize EnvCP for your needs
+- [MCP Integration](MCP-Integration) - Set up with Claude Desktop
+- [CLI Reference](CLI-Reference) - Learn all available commands

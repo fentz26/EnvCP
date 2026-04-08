@@ -1,0 +1,498 @@
+# Configuration Reference
+
+Complete guide to configuring EnvCP via `envcp.yaml`.
+
+## Configuration File Location
+
+The `envcp.yaml` file is created in your project root when you run `envcp init`. It controls all aspects of EnvCP's behavior.
+
+## Complete Configuration Example
+
+```yaml
+version: "1.0"
+project: my-awesome-project
+
+# Storage settings
+storage:
+  path: .envcp/store.enc
+  encrypted: true
+  algorithm: aes-256-gcm
+  log_path: .envcp/logs
+
+# Session management
+session:
+  enabled: true
+  timeout: 1800  # 30 minutes in seconds
+  auto_extend: true
+  extend_time: 900  # 15 minutes
+
+# AI access control
+access:
+  allow_ai_read: true
+  allow_ai_write: false
+  allow_ai_active_check: false
+  require_confirmation: true
+  blacklist:
+    - "*_SECRET"
+    - "*_PRIVATE"
+    - "ADMIN_*"
+    - "ROOT_*"
+    - "MASTER_*"
+  whitelist: []
+
+# Password requirements
+password:
+  min_length: 1
+  max_length: 128
+  require_uppercase: false
+  require_lowercase: false
+  require_numbers: false
+  require_special: false
+
+# .env sync settings
+sync:
+  enabled: true
+  target: .env
+  backup: true
+  backup_path: .envcp/backups
+  exclude:
+    - "*_PRIVATE"
+    - "*_SECRET"
+  format: env  # env, json, yaml
+
+# Logging
+logging:
+  enabled: true
+  level: info  # debug, info, warn, error
+  max_size: 10485760  # 10MB
+  max_files: 5
+```
+
+## Configuration Sections
+
+### Basic Settings
+
+```yaml
+version: "1.0"
+project: my-project-name
+```
+
+- **version**: Configuration schema version (always "1.0" for now)
+- **project**: Human-readable project name
+
+### Storage
+
+```yaml
+storage:
+  path: .envcp/store.enc
+  encrypted: true
+  algorithm: aes-256-gcm
+  log_path: .envcp/logs
+```
+
+- **path**: Location of encrypted storage file (relative to project root)
+- **encrypted**: Whether to encrypt the storage (always `true`)
+- **algorithm**: Encryption algorithm (currently only `aes-256-gcm` supported)
+- **log_path**: Directory for log files
+
+### Session Management
+
+```yaml
+session:
+  enabled: true
+  timeout: 1800
+  auto_extend: true
+  extend_time: 900
+```
+
+- **enabled**: Enable quick password mode (unlock once, stay unlocked)
+- **timeout**: Session duration in seconds (default: 1800 = 30 minutes)
+- **auto_extend**: Automatically extend session on activity
+- **extend_time**: How many seconds to extend by (default: 900 = 15 minutes)
+
+**Examples**:
+- 5 minutes: `300`
+- 30 minutes: `1800`
+- 1 hour: `3600`
+- 8 hours: `28800`
+- 24 hours: `86400`
+
+### Access Control
+
+```yaml
+access:
+  allow_ai_read: true
+  allow_ai_write: false
+  allow_ai_active_check: false
+  require_confirmation: true
+  blacklist:
+    - "*_SECRET"
+    - "*_PRIVATE"
+  whitelist: []
+```
+
+#### allow_ai_read
+
+- **Type**: boolean
+- **Default**: `true`
+- **Description**: Allow AI to read variable values when explicitly requested
+
+```yaml
+# AI can get variables when you ask
+allow_ai_read: true
+
+# AI cannot get any variables
+allow_ai_read: false
+```
+
+#### allow_ai_write
+
+- **Type**: boolean
+- **Default**: `false`
+- **Description**: Allow AI to create/update variables
+
+```yaml
+# AI can create/update variables
+allow_ai_write: true
+
+# AI cannot modify variables (recommended)
+allow_ai_write: false
+```
+
+#### allow_ai_active_check
+
+- **Type**: boolean
+- **Default**: `false`
+- **Description**: Allow AI to proactively list or check variables
+
+When `false`, AI can only access variables when you explicitly ask. This prevents AI from scanning your secrets.
+
+```yaml
+# AI cannot proactively list variables (recommended)
+allow_ai_active_check: false
+
+# AI can list and check variables on its own
+allow_ai_active_check: true
+```
+
+#### require_confirmation
+
+- **Type**: boolean
+- **Default**: `true`
+- **Description**: Require user confirmation before providing values to AI
+
+```yaml
+# Prompt user before giving values to AI
+require_confirmation: true
+
+# Provide values without confirmation
+require_confirmation: false
+```
+
+#### blacklist
+
+- **Type**: array of strings (glob patterns)
+- **Default**: `["*_SECRET", "*_PRIVATE", "ADMIN_*"]`
+- **Description**: Variable patterns that AI cannot access
+
+Glob patterns:
+- `*`: Matches any characters
+- `?`: Matches single character
+- `[abc]`: Matches any character in brackets
+
+Examples:
+```yaml
+blacklist:
+  # Ends with _SECRET
+  - "*_SECRET"
+  
+  # Ends with _PRIVATE
+  - "*_PRIVATE"
+  
+  # Starts with ADMIN_
+  - "ADMIN_*"
+  
+  # Starts with ROOT_
+  - "ROOT_*"
+  
+  # Exact match
+  - "MASTER_PASSWORD"
+  
+  # Contains SECRET
+  - "*SECRET*"
+  
+  # Production databases
+  - "PROD_DB_*"
+  - "PRODUCTION_*"
+```
+
+#### whitelist
+
+- **Type**: array of strings (glob patterns)
+- **Default**: `[]`
+- **Description**: If not empty, ONLY these patterns are accessible to AI
+
+When whitelist is set, it overrides blacklist. Only whitelisted variables are accessible.
+
+```yaml
+# Only allow specific variables
+whitelist:
+  - "API_KEY"
+  - "PUBLIC_*"
+  - "DEV_*"
+
+# When whitelist is set, these won't be accessible even if not blacklisted
+# ADMIN_KEY - not in whitelist
+# PRIVATE_KEY - not in whitelist
+```
+
+### Password Requirements
+
+```yaml
+password:
+  min_length: 1
+  max_length: 128
+  require_uppercase: false
+  require_lowercase: false
+  require_numbers: false
+  require_special: false
+```
+
+- **min_length**: Minimum password length (default: 1, allows any password)
+- **max_length**: Maximum password length
+- **require_uppercase**: Require at least one uppercase letter
+- **require_lowercase**: Require at least one lowercase letter
+- **require_numbers**: Require at least one number
+- **require_special**: Require at least one special character
+
+**Default behavior**: No requirements (even "1" or "123" is allowed). This is intentional - you decide your security level.
+
+**Strict example**:
+```yaml
+password:
+  min_length: 12
+  max_length: 128
+  require_uppercase: true
+  require_lowercase: true
+  require_numbers: true
+  require_special: true
+```
+
+### Sync Settings
+
+```yaml
+sync:
+  enabled: true
+  target: .env
+  backup: true
+  backup_path: .envcp/backups
+  exclude:
+    - "*_PRIVATE"
+    - "*_SECRET"
+  format: env
+```
+
+- **enabled**: Enable syncing to .env file
+- **target**: Target file path (default: `.env`)
+- **backup**: Create backup before overwriting
+- **backup_path**: Where to store backups
+- **exclude**: Variable patterns to exclude from sync (glob patterns)
+- **format**: Output format (`env`, `json`, or `yaml`)
+
+**Example: Multiple .env files**:
+```yaml
+sync:
+  enabled: true
+  target: .env.local
+  exclude:
+    - "*_PROD_*"
+    - "*_SECRET"
+```
+
+**Example: JSON format**:
+```yaml
+sync:
+  enabled: true
+  target: config.json
+  format: json
+```
+
+### Logging
+
+```yaml
+logging:
+  enabled: true
+  level: info
+  max_size: 10485760
+  max_files: 5
+```
+
+- **enabled**: Enable logging
+- **level**: Log level (`debug`, `info`, `warn`, `error`)
+- **max_size**: Maximum log file size in bytes (default: 10MB)
+- **max_files**: Number of log files to keep
+
+**Log levels**:
+- `debug`: Everything (verbose)
+- `info`: Normal operations
+- `warn`: Warnings only
+- `error`: Errors only
+
+## Environment-Specific Configurations
+
+You can create different configurations for different environments:
+
+```bash
+# Development
+envcp.dev.yaml
+
+# Production
+envcp.prod.yaml
+
+# Testing
+envcp.test.yaml
+```
+
+Specify which config to use:
+
+```bash
+envcp --config envcp.dev.yaml serve
+```
+
+## Configuration Examples
+
+### Maximum Security
+
+```yaml
+version: "1.0"
+project: secure-project
+
+storage:
+  path: .envcp/store.enc
+  encrypted: true
+  algorithm: aes-256-gcm
+
+session:
+  enabled: true
+  timeout: 300  # 5 minutes only
+  auto_extend: false
+
+access:
+  allow_ai_read: true
+  allow_ai_write: false
+  allow_ai_active_check: false
+  require_confirmation: true
+  blacklist:
+    - "*_SECRET"
+    - "*_PRIVATE"
+    - "*_KEY"
+    - "ADMIN_*"
+    - "ROOT_*"
+    - "MASTER_*"
+    - "*PASSWORD*"
+    - "*TOKEN*"
+
+password:
+  min_length: 16
+  require_uppercase: true
+  require_lowercase: true
+  require_numbers: true
+  require_special: true
+
+sync:
+  enabled: false  # Don't sync to plain text files
+
+logging:
+  enabled: true
+  level: debug
+```
+
+### Development Friendly
+
+```yaml
+version: "1.0"
+project: dev-project
+
+storage:
+  path: .envcp/store.enc
+  encrypted: true
+  algorithm: aes-256-gcm
+
+session:
+  enabled: true
+  timeout: 28800  # 8 hours
+  auto_extend: true
+
+access:
+  allow_ai_read: true
+  allow_ai_write: true  # Let AI help manage variables
+  allow_ai_active_check: false
+  require_confirmation: false
+  blacklist:
+    - "*_PROD_*"
+    - "*_PRODUCTION_*"
+
+password:
+  min_length: 1  # Easy password for dev
+
+sync:
+  enabled: true
+  target: .env.local
+  backup: true
+  exclude:
+    - "*_PROD_*"
+
+logging:
+  enabled: true
+  level: info
+```
+
+### Team Shared Settings
+
+```yaml
+version: "1.0"
+project: team-project
+
+storage:
+  path: .envcp/store.enc
+  encrypted: true
+  algorithm: aes-256-gcm
+
+session:
+  enabled: true
+  timeout: 3600  # 1 hour
+
+access:
+  allow_ai_read: true
+  allow_ai_write: false
+  allow_ai_active_check: false
+  require_confirmation: true
+  blacklist:
+    - "*_PROD_*"
+    - "*_SECRET"
+    - "ADMIN_*"
+  whitelist: []
+
+password:
+  min_length: 8
+  require_uppercase: true
+  require_numbers: true
+
+sync:
+  enabled: true
+  target: .env.local
+  exclude:
+    - "*_SECRET"
+    - "*_PROD_*"
+
+logging:
+  enabled: true
+  level: info
+```
+
+## Next Steps
+
+- [AI Access Control](AI-Access-Control) - Deep dive into access control
+- [Security Best Practices](Security-Best-Practices) - Secure your setup
+- [Session Management](Session-Management) - Understanding sessions
+- [CLI Reference](CLI-Reference) - All CLI commands
