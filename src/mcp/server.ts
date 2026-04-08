@@ -490,7 +490,18 @@ export class EnvCPServer {
   }
 
   private async handleRun(args: { command: string; variables: string[] }): Promise<any> {
+    if (!this.config.access.allow_ai_execute) {
+      throw new Error('AI command execution is disabled');
+    }
+
     this.validateCommand(args.command);
+
+    const program = this.parseCommand(args.command).program;
+    if (this.config.access.allowed_commands && this.config.access.allowed_commands.length > 0) {
+      if (!this.config.access.allowed_commands.includes(program)) {
+        throw new Error(`Command '${program}' is not in the allowed commands list`);
+      }
+    }
 
     const { spawn } = await import('child_process');
     const { program, args: cmdArgs } = this.parseCommand(args.command);
