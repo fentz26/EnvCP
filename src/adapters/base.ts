@@ -318,9 +318,7 @@ export abstract class BaseAdapter {
 
   protected async checkAccess(args: { name: string }): Promise<{
     name: string;
-    exists: boolean;
     accessible: boolean;
-    blacklisted: boolean;
     message: string;
   }> {
     const variable = await this.storage.get(args.name);
@@ -389,15 +387,14 @@ export abstract class BaseAdapter {
 
     this.validateCommand(args.command);
 
-    const program = this.parseCommand(args.command).program;
+    const { spawn } = await import('child_process');
+    const { program: prog, args: cmdArgs } = this.parseCommand(args.command);
+
     if (this.config.access.allowed_commands && this.config.access.allowed_commands.length > 0) {
-      if (!this.config.access.allowed_commands.includes(program)) {
-        throw new Error(`Command '${program}' is not in the allowed commands list`);
+      if (!this.config.access.allowed_commands.includes(prog)) {
+        throw new Error(`Command '${prog}' is not in the allowed commands list`);
       }
     }
-
-    const { spawn } = await import('child_process');
-    const { program, args: cmdArgs } = this.parseCommand(args.command);
     const env: Record<string, string> = { ...process.env } as Record<string, string>;
 
     for (const name of args.variables) {
@@ -413,7 +410,7 @@ export abstract class BaseAdapter {
     const TIMEOUT_MS = 30000;
 
     return new Promise((resolve) => {
-      const proc = spawn(program, cmdArgs, {
+      const proc = spawn(prog, cmdArgs, {
         env,
         cwd: this.projectPath,
       });
