@@ -465,7 +465,9 @@ program
     }
 
     for (const [name, variable] of Object.entries(variables)) {
-      lines.push(`${name}=${variable.value}`);
+      const needsQuoting = /[\s#"'\\]/.test(variable.value);
+      const val = needsQuoting ? `"${variable.value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"` : variable.value;
+      lines.push(`${name}=${val}`);
     }
 
     await fs.writeFile(path.join(projectPath, config.sync.target), lines.join('\n'), 'utf8');

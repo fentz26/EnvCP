@@ -246,7 +246,9 @@ export abstract class BaseAdapter {
         continue;
       }
 
-      lines.push(`${name}=${variable.value}`);
+      const needsQuoting = /[\s#"'\\]/.test(variable.value);
+      const val = needsQuoting ? `"${variable.value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"` : variable.value;
+      lines.push(`${name}=${val}`);
     }
 
     const envPath = path.join(this.projectPath, this.config.sync.target);
