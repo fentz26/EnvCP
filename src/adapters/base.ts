@@ -1,7 +1,7 @@
 import { StorageManager, LogManager } from '../storage/index.js';
 import { EnvCPConfig, Variable, ToolDefinition } from '../types.js';
 import { maskValue } from '../utils/crypto.js';
-import { canAccess, isBlacklisted, canAIActiveCheck, requiresUserReference } from '../config/manager.js';
+import { canAccess, isBlacklisted, canAIActiveCheck, requiresUserReference, validateVariableName } from '../config/manager.js';
 import { SessionManager } from '../utils/session.js';
 import * as fs from 'fs-extra';
 import * as path from 'path';
@@ -156,6 +156,10 @@ export abstract class BaseAdapter {
   }): Promise<{ success: boolean; message: string }> {
     if (!this.config.access.allow_ai_write) {
       throw new Error('AI write access is disabled');
+    }
+
+    if (!validateVariableName(args.name)) {
+      throw new Error(`Invalid variable name '${args.name}'. Must match [A-Za-z_][A-Za-z0-9_]*`);
     }
 
     if (isBlacklisted(args.name, this.config)) {
