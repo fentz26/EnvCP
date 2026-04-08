@@ -21,7 +21,7 @@
 npm install -g @fentz26/envcp
 ```
 
-### One-line install (curl)
+### curl
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/fentz26/EnvCP/main/scripts/install.sh | bash
