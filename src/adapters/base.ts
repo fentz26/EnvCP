@@ -410,6 +410,8 @@ export abstract class BaseAdapter {
       }
     }
 
+    const TIMEOUT_MS = 30000;
+
     return new Promise((resolve) => {
       const proc = spawn(program, cmdArgs, {
         env,
@@ -418,11 +420,22 @@ export abstract class BaseAdapter {
 
       let stdout = '';
       let stderr = '';
+      let killed = false;
+
+      const timer = setTimeout(() => {
+        killed = true;
+        proc.kill('SIGTERM');
+        setTimeout(() => { if (!proc.killed) proc.kill('SIGKILL'); }, 5000);
+      }, TIMEOUT_MS);
 
       proc.stdout.on('data', (data) => { stdout += data; });
       proc.stderr.on('data', (data) => { stderr += data; });
 
       proc.on('close', (code) => {
+        clearTimeout(timer);
+        if (killed) {
+          stderr += '\n[Process killed: exceeded 30s timeout]';
+        }
         resolve({ exitCode: code, stdout, stderr });
       });
     });

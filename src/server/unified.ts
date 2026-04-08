@@ -210,6 +210,13 @@ export class UnifiedServer {
       }
     });
 
+    const shutdown = () => {
+      this.stop();
+      process.exit(0);
+    };
+    process.on('SIGTERM', shutdown);
+    process.on('SIGINT', shutdown);
+
     return new Promise((resolve) => {
       this.httpServer!.listen(port, host, () => {
         resolve();
@@ -219,7 +226,7 @@ export class UnifiedServer {
 
   private async handleRESTRequest(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
     // Delegate to REST adapter's internal handling
-    const parsedUrl = url.parse(req.url || '/', true);
+    const parsedUrl = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
     const pathname = parsedUrl.pathname || '/';
     const segments = pathname.split('/').filter(Boolean);
 
@@ -310,7 +317,7 @@ export class UnifiedServer {
       return;
     }
 
-    const parsedUrl = url.parse(req.url || '/', true);
+    const parsedUrl = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
     const pathname = parsedUrl.pathname || '/';
     const body = await parseBody(req);
 
@@ -381,7 +388,7 @@ export class UnifiedServer {
       return;
     }
 
-    const parsedUrl = url.parse(req.url || '/', true);
+    const parsedUrl = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
     const pathname = parsedUrl.pathname || '/';
     const body = await parseBody(req);
 
