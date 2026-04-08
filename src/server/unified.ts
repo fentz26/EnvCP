@@ -3,7 +3,7 @@ import { RESTAdapter } from '../adapters/rest.js';
 import { OpenAIAdapter } from '../adapters/openai.js';
 import { GeminiAdapter } from '../adapters/gemini.js';
 import { EnvCPServer } from '../mcp/server.js';
-import { setCorsHeaders, sendJson, parseBody, validateApiKey } from '../utils/http.js';
+import { setCorsHeaders, sendJson, parseBody, validateApiKey, RateLimiter, rateLimitMiddleware } from '../utils/http.js';
 import * as http from 'http';
 import * as url from 'url';
 
@@ -18,6 +18,7 @@ export class UnifiedServer {
   private geminiAdapter: GeminiAdapter | null = null;
   private mcpServer: EnvCPServer | null = null;
   private httpServer: http.Server | null = null;
+  private rateLimiter: RateLimiter = new RateLimiter(60, 60000);
 
   constructor(config: EnvCPConfig, serverConfig: ServerConfig, projectPath: string, password?: string) {
     this.config = config;
@@ -116,6 +117,10 @@ export class UnifiedServer {
       if (req.method === 'OPTIONS') {
         res.writeHead(204);
         res.end();
+        return;
+      }
+
+      if (!rateLimitMiddleware(this.rateLimiter, req, res)) {
         return;
       }
 
