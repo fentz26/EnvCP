@@ -8,10 +8,12 @@ export class StorageManager {
   private encrypted: boolean;
   private password?: string;
   private cache: Record<string, Variable> | null = null;
+  private maxBackups: number;
 
-  constructor(storePath: string, encrypted: boolean = true) {
+  constructor(storePath: string, encrypted: boolean = true, maxBackups: number = 3) {
     this.storePath = storePath;
     this.encrypted = encrypted;
+    this.maxBackups = maxBackups;
   }
 
   setPassword(password: string): void {
@@ -39,6 +41,12 @@ export class StorageManager {
         this.cache = JSON.parse(decrypted);
         return this.cache!;
       } catch (error) {
+        // Try auto-restore from backups
+        const restored = await this.tryRestoreFromBackup();
+        if (restored !== null) {
+          this.cache = restored;
+          return this.cache;
+        }
         throw new Error('Failed to decrypt storage. Invalid password or corrupted data.');
       }
     }
@@ -53,6 +61,9 @@ export class StorageManager {
 
     await fs.ensureDir(path.dirname(this.storePath));
 
+    // Rotate backups before writing
+    await this.rotateBackups();
+
     const content = this.encrypted && this.password
       ? encrypt(data, this.password)
       : data;
@@ -61,6 +72,46 @@ export class StorageManager {
     const tmpPath = this.storePath + '.tmp';
     await fs.writeFile(tmpPath, content, 'utf8');
     await fs.rename(tmpPath, this.storePath);
+  }
+
+  private async rotateBackups(): Promise<void> {
+    if (this.maxBackups <= 0) return;
+    if (!await fs.pathExists(this.storePath)) return;
+
+    // Shift existing backups: .bak.2 -> .bak.3, .bak.1 -> .bak.2, etc.
+    for (let i = this.maxBackups; i > 1; i--) {
+      const from = `${this.storePath}.bak.${i - 1}`;
+      const to = `${this.storePath}.bak.${i}`;
+      if (await fs.pathExists(from)) {
+        await fs.rename(from, to);
+      }
+    }
+
+    // Copy current store to .bak.1
+    await fs.copy(this.storePath, `${this.storePath}.bak.1`);
+  }
+
+  private async tryRestoreFromBackup(): Promise<Record<string, Variable> | null> {
+    if (!this.encrypted || !this.password) return null;
+
+    for (let i = 1; i <= this.maxBackups; i++) {
+      const bakPath = `${this.storePath}.bak.${i}`;
+      if (!await fs.pathExists(bakPath)) continue;
+
+      try {
+        const data = await fs.readFile(bakPath, 'utf8');
+        const decrypted = decrypt(data, this.password);
+        const variables = JSON.parse(decrypted);
+
+        // Restore: copy backup to primary store
+        await fs.copy(bakPath, this.storePath);
+        return variables;
+      } catch {
+        // This backup is also bad, try next
+      }
+    }
+
+    return null;
   }
 
   async get(name: string): Promise<Variable | undefined> {
