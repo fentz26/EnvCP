@@ -134,10 +134,5 @@
       "github": "https://github.com/fentz26/EnvCP",
       "x": "https://x.com/fentz26"
     }
-  },
-  "integrations": {
-    "vercel": {
-      "deployOnPush": true
-    }
   }
 }
