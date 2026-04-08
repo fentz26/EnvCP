@@ -37,6 +37,10 @@ const DEFAULT_CONFIG: Partial<EnvCPConfig> = {
     max_extensions: 5,
     path: '.envcp/.session',
   },
+  security: {
+    mode: 'recoverable',
+    recovery_file: '.envcp/.recovery',
+  },
   password: {
     min_length: 1,
     require_complexity: false,

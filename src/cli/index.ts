@@ -3,10 +3,10 @@ import inquirer from 'inquirer';
 import chalk from 'chalk';
 import * as path from 'path';
 import * as fs from 'fs-extra';
-import { loadConfig, initConfig, parseEnvFile, registerMcpConfig } from '../config/manager.js';
+import { loadConfig, initConfig, saveConfig, parseEnvFile, registerMcpConfig } from '../config/manager.js';
 import { StorageManager } from '../storage/index.js';
 import { SessionManager } from '../utils/session.js';
-import { maskValue, validatePassword, encrypt, decrypt } from '../utils/crypto.js';
+import { maskValue, validatePassword, encrypt, decrypt, generateRecoveryKey, createRecoveryData, recoverPassword } from '../utils/crypto.js';
 import { Variable, EnvCPConfig } from '../types.js';
 
 async function withSession(fn: (storage: StorageManager, password: string, config: EnvCPConfig, projectPath: string) => Promise<void>): Promise<void> {
@@ -71,10 +71,28 @@ program
 
     const config = await initConfig(projectPath, projectName);
 
+    // Security mode selection
+    const { securityMode } = await inquirer.prompt([
+      {
+        type: 'list',
+        name: 'securityMode',
+        message: 'Security mode:',
+        choices: [
+          { name: 'Recoverable - Generate a recovery key (recommended)', value: 'recoverable' },
+          { name: 'Hard-lock - Lose password = lose everything (maximum security)', value: 'hard-lock' },
+        ],
+        default: 'recoverable',
+      }
+    ]);
+
+    config.security = { mode: securityMode, recovery_file: '.envcp/.recovery' };
+    await saveConfig(config, projectPath);
+
     console.log(chalk.green('EnvCP initialized successfully!'));
     console.log(chalk.gray(`  Project: ${config.project}`));
     console.log(chalk.gray(`  Storage: ${config.storage.path}`));
     console.log(chalk.gray(`  Encrypted: ${config.storage.encrypted}`));
+    console.log(chalk.gray(`  Security: ${securityMode}`));
     console.log(chalk.gray(`  Session timeout: ${config.session?.timeout_minutes || 30} minutes`));
     console.log(chalk.gray(`  AI active check: ${config.access?.allow_ai_active_check ? 'enabled' : 'disabled'}`));
 
@@ -128,6 +146,20 @@ program
               );
               await sessionManager.init();
               await sessionManager.create(pwd);
+
+              // Generate recovery key if recoverable mode
+              if (securityMode === 'recoverable') {
+                const recoveryKey = generateRecoveryKey();
+                const recoveryData = createRecoveryData(pwd, recoveryKey);
+                const recoveryPath = path.join(projectPath, config.security?.recovery_file || '.envcp/.recovery');
+                await fs.writeFile(recoveryPath, recoveryData, 'utf8');
+
+                console.log('');
+                console.log(chalk.yellow.bold('  RECOVERY KEY (save this somewhere safe!):'));
+                console.log(chalk.yellow.bold(`  ${recoveryKey}`));
+                console.log(chalk.gray('  This key is shown ONCE. If you lose it, you cannot recover your password.'));
+                console.log('');
+              }
 
               console.log(chalk.green(`  Imported ${count} variables from .env`));
               console.log(chalk.gray(`  Variables: ${Object.keys(vars).join(', ')}`));
@@ -206,6 +238,23 @@ program
         console.log(chalk.red('Passwords do not match'));
         return;
       }
+
+      // Generate recovery key for new stores in recoverable mode
+      if (config.security?.mode === 'recoverable') {
+        const recoveryPath = path.join(projectPath, config.security.recovery_file || '.envcp/.recovery');
+        if (!await fs.pathExists(recoveryPath)) {
+          const recoveryKey = generateRecoveryKey();
+          const recoveryData = createRecoveryData(password, recoveryKey);
+          await fs.ensureDir(path.dirname(recoveryPath));
+          await fs.writeFile(recoveryPath, recoveryData, 'utf8');
+
+          console.log('');
+          console.log(chalk.yellow.bold('RECOVERY KEY (save this somewhere safe!):'));
+          console.log(chalk.yellow.bold(`  ${recoveryKey}`));
+          console.log(chalk.gray('This key is shown ONCE. If you lose it, you cannot recover your password.'));
+          console.log('');
+        }
+      }
     }
 
     try {
@@ -216,7 +265,7 @@ program
     }
 
     const session = await sessionManager.create(password);
-    
+
     console.log(chalk.green('Session unlocked!'));
     console.log(chalk.gray(`  Session ID: ${session.id}`));
     console.log(chalk.gray(`  Expires in: ${config.session?.timeout_minutes || 30} minutes`));
@@ -315,6 +364,97 @@ program
     console.log(chalk.green('Session extended!'));
     console.log(chalk.gray(`  Remaining: ${sessionManager.getRemainingTime()} minutes`));
     console.log(chalk.gray(`  Extensions remaining: ${maxExt - session.extensions}/${maxExt}`));
+  });
+
+program
+  .command('recover')
+  .description('Recover access using recovery key (reset password)')
+  .action(async () => {
+    const projectPath = process.cwd();
+    const config = await loadConfig(projectPath);
+
+    if (config.security?.mode === 'hard-lock') {
+      console.log(chalk.red('Recovery is not available in hard-lock mode.'));
+      console.log(chalk.gray('Hard-lock mode means lost password = lost data.'));
+      return;
+    }
+
+    const recoveryPath = path.join(projectPath, config.security?.recovery_file || '.envcp/.recovery');
+    if (!await fs.pathExists(recoveryPath)) {
+      console.log(chalk.red('No recovery file found. Recovery is not available.'));
+      return;
+    }
+
+    const { recoveryKey } = await inquirer.prompt([
+      { type: 'password', name: 'recoveryKey', message: 'Enter your recovery key:', mask: '*' }
+    ]);
+
+    const recoveryData = await fs.readFile(recoveryPath, 'utf8');
+
+    let oldPassword: string;
+    try {
+      oldPassword = recoverPassword(recoveryData, recoveryKey);
+    } catch {
+      console.log(chalk.red('Invalid recovery key.'));
+      return;
+    }
+
+    // Verify old password actually works by loading the store
+    const storage = new StorageManager(
+      path.join(projectPath, config.storage.path),
+      config.storage.encrypted
+    );
+    storage.setPassword(oldPassword);
+
+    let variables: Record<string, Variable>;
+    try {
+      variables = await storage.load();
+    } catch {
+      console.log(chalk.red('Recovery key decrypted but store could not be loaded. Data may be corrupted.'));
+      return;
+    }
+
+    console.log(chalk.green('Recovery key verified. Store contains ' + Object.keys(variables).length + ' variables.'));
+
+    // Set new password
+    const { newPassword } = await inquirer.prompt([
+      { type: 'password', name: 'newPassword', message: 'Set new password:', mask: '*' }
+    ]);
+    const { confirmPassword } = await inquirer.prompt([
+      { type: 'password', name: 'confirmPassword', message: 'Confirm new password:', mask: '*' }
+    ]);
+
+    if (newPassword !== confirmPassword) {
+      console.log(chalk.red('Passwords do not match'));
+      return;
+    }
+
+    // Re-encrypt store with new password
+    storage.invalidateCache();
+    storage.setPassword(newPassword);
+    await storage.save(variables);
+
+    // Update recovery file with new password
+    const newRecoveryKey = generateRecoveryKey();
+    const newRecoveryData = createRecoveryData(newPassword, newRecoveryKey);
+    await fs.writeFile(recoveryPath, newRecoveryData, 'utf8');
+
+    console.log(chalk.green('Password reset successfully!'));
+    console.log('');
+    console.log(chalk.yellow.bold('NEW RECOVERY KEY (save this somewhere safe!):'));
+    console.log(chalk.yellow.bold(`  ${newRecoveryKey}`));
+    console.log(chalk.gray('Your old recovery key no longer works.'));
+
+    // Create a session with new password
+    const sessionManager = new SessionManager(
+      path.join(projectPath, config.session?.path || '.envcp/.session'),
+      config.session?.timeout_minutes || 30,
+      config.session?.max_extensions || 5
+    );
+    await sessionManager.init();
+    await sessionManager.create(newPassword);
+
+    console.log(chalk.green('Session unlocked with new password.'));
   });
 
 program

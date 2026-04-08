@@ -98,3 +98,18 @@ export function validatePassword(password: string, config: {
 export function quickHash(input: string): string {
   return crypto.createHash('sha256').update(input).digest('hex').slice(0, 16);
 }
+
+// Recovery key: a random 48-byte hex string (shown to user once)
+export function generateRecoveryKey(): string {
+  return crypto.randomBytes(24).toString('hex');
+}
+
+// Wrap the user's password with the recovery key so it can be recovered later
+export function createRecoveryData(password: string, recoveryKey: string): string {
+  return encrypt(password, recoveryKey);
+}
+
+// Unwrap the password using the recovery key
+export function recoverPassword(recoveryData: string, recoveryKey: string): string {
+  return decrypt(recoveryData, recoveryKey);
+}
