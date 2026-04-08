@@ -2,6 +2,7 @@ import { Command } from 'commander';
 import inquirer from 'inquirer';
 import chalk from 'chalk';
 import * as path from 'path';
+import * as os from 'os';
 import fs from 'fs-extra';
 import { loadConfig, initConfig, saveConfig, parseEnvFile, registerMcpConfig } from '../config/manager.js';
 import { StorageManager } from '../storage/index.js';
@@ -1203,5 +1204,40 @@ program
       console.log(chalk.green('All checks passed.'));
     }
   });
+
+// Show welcome screen on first ever run
+const firstRunMarker = path.join(os.homedir(), '.envcp', '.welcomed');
+if (!await fs.pathExists(firstRunMarker)) {
+  await fs.ensureDir(path.dirname(firstRunMarker));
+  await fs.writeFile(firstRunMarker, new Date().toISOString());
+  console.log(`
+   ███████╗███╗   ██╗██╗   ██╗ ██████╗██████╗
+   ██╔════╝████╗  ██║██║   ██║██╔════╝██╔══██╗
+   █████╗  ██╔██╗ ██║██║   ██║██║     ██████╔╝
+   ██╔══╝  ██║╚██╗██║╚██╗ ██╔╝██║     ██╔═══╝
+   ███████╗██║ ╚████║ ╚████╔╝ ╚██████╗██║
+   ╚══════╝╚═╝  ╚═══╝  ╚═══╝   ╚═════╝╚═╝
+
+   Thanks for installing EnvCP!
+   Keep your secrets safe from AI agents.
+
+   ─────────────────────────────────────────────
+
+   Setup options:
+
+     Simple (one-time setup):
+       $ envcp init           # Interactive guided setup
+
+     Advanced (manual config):
+       $ envcp init --advanced   # Full config options
+       $ envcp add KEY           # Add a secret manually
+       $ envcp config set KEY VALUE  # Set config values
+
+     Explore:
+       $ envcp --help         # See all commands
+
+   Docs: https://github.com/fentz26/EnvCP
+`);
+}
 
 program.parse();
