@@ -7,7 +7,47 @@ import { loadConfig, saveConfig, initConfig } from '../config/manager.js';
 import { StorageManager, LogManager } from '../storage/index.js';
 import { SessionManager } from '../utils/session.js';
 import { maskValue, validatePassword } from '../utils/crypto.js';
-import { Variable } from '../types.js';
+import { Variable, EnvCPConfig } from '../types.js';
+
+async function withSession(fn: (storage: StorageManager, password: string, config: EnvCPConfig, projectPath: string) => Promise<void>): Promise<void> {
+  const projectPath = process.cwd();
+  const config = await loadConfig(projectPath);
+
+  const sessionManager = new SessionManager(
+    path.join(projectPath, config.session?.path || '.envcp/.session'),
+    config.session?.timeout_minutes || 30,
+    config.session?.max_extensions || 5
+  );
+  await sessionManager.init();
+
+  let session = await sessionManager.load();
+  let password = '';
+
+  if (!session) {
+    const answer = await inquirer.prompt([
+      { type: 'password', name: 'password', message: 'Enter password:', mask: '*' }
+    ]);
+    password = answer.password;
+
+    const validation = validatePassword(password, config.password || {});
+    if (!validation.valid) {
+      console.log(chalk.red(validation.error));
+      return;
+    }
+
+    session = await sessionManager.create(password);
+  }
+
+  password = sessionManager.getPassword() || password;
+
+  const storage = new StorageManager(
+    path.join(projectPath, config.storage.path),
+    config.storage.encrypted
+  );
+  if (password) storage.setPassword(password);
+
+  await fn(storage, password, config, projectPath);
+}
 
 const program = new Command();
 
@@ -207,74 +247,39 @@ program
   .option('-t, --tags <tags>', 'Tags (comma-separated)')
   .option('-d, --description <desc>', 'Description')
   .action(async (name, options) => {
-    const projectPath = process.cwd();
-    const config = await loadConfig(projectPath);
-    
-    const sessionManager = new SessionManager(
-      path.join(projectPath, config.session?.path || '.envcp/.session'),
-      config.session?.timeout_minutes || 30,
-      config.session?.max_extensions || 5
-    );
-    await sessionManager.init();
-    
-    let session = await sessionManager.load();
-    let password = '';
-    
-    if (!session) {
-      const answer = await inquirer.prompt([
-        { type: 'password', name: 'password', message: 'Enter password:', mask: '*' }
-      ]);
-      password = answer.password;
-      
-      const validation = validatePassword(password, config.password || {});
-      if (!validation.valid) {
-        console.log(chalk.red(validation.error));
-        return;
+    await withSession(async (storage, _password, config) => {
+      let value = options.value;
+      let tags: string[] = [];
+      let description = options.description;
+
+      if (!value) {
+        const answers = await inquirer.prompt([
+          { type: 'password', name: 'value', message: 'Enter value:', mask: '*' },
+          { type: 'input', name: 'tags', message: 'Tags (comma-separated):' },
+          { type: 'input', name: 'description', message: 'Description:' },
+        ]);
+        value = answers.value;
+        tags = answers.tags.split(',').map((t: string) => t.trim()).filter(Boolean);
+        description = answers.description;
+      } else if (options.tags) {
+        tags = options.tags.split(',').map((t: string) => t.trim()).filter(Boolean);
       }
-      
-      session = await sessionManager.create(password);
-    }
-    
-    password = sessionManager.getPassword() || password;
-    
-    let value = options.value;
-    let tags: string[] = [];
-    let description = options.description;
-    
-    if (!value) {
-      const answers = await inquirer.prompt([
-        { type: 'password', name: 'value', message: 'Enter value:', mask: '*' },
-        { type: 'input', name: 'tags', message: 'Tags (comma-separated):' },
-        { type: 'input', name: 'description', message: 'Description:' },
-      ]);
-      value = answers.value;
-      tags = answers.tags.split(',').map((t: string) => t.trim()).filter(Boolean);
-      description = answers.description;
-    } else if (options.tags) {
-      tags = options.tags.split(',').map((t: string) => t.trim()).filter(Boolean);
-    }
 
-    const storage = new StorageManager(
-      path.join(projectPath, config.storage.path),
-      config.storage.encrypted
-    );
-    if (password) storage.setPassword(password);
+      const now = new Date().toISOString();
+      const variable: Variable = {
+        name,
+        value,
+        encrypted: config.storage.encrypted,
+        tags: tags.length > 0 ? tags : undefined,
+        description,
+        created: now,
+        updated: now,
+        sync_to_env: true,
+      };
 
-    const now = new Date().toISOString();
-    const variable: Variable = {
-      name,
-      value,
-      encrypted: config.storage.encrypted,
-      tags: tags.length > 0 ? tags : undefined,
-      description,
-      created: now,
-      updated: now,
-      sync_to_env: true,
-    };
-
-    await storage.set(name, variable);
-
-    console.log(chalk.green(`Variable '${name}' added successfully`));
+      await storage.set(name, variable);
+      console.log(chalk.green(`Variable '${name}' added successfully`));
+    });
   });
 
 program
@@ -282,196 +287,88 @@ program
   .description('List all variables (names only, values hidden)')
   .option('-v, --show-values', 'Show actual values')
   .action(async (options) => {
-    const projectPath = process.cwd();
-    const config = await loadConfig(projectPath);
-    
-    const sessionManager = new SessionManager(
-      path.join(projectPath, config.session?.path || '.envcp/.session'),
-      config.session?.timeout_minutes || 30,
-      config.session?.max_extensions || 5
-    );
-    await sessionManager.init();
-    
-    let session = await sessionManager.load();
-    let password = '';
-    
-    if (!session) {
-      const answer = await inquirer.prompt([
-        { type: 'password', name: 'password', message: 'Enter password:', mask: '*' }
-      ]);
-      password = answer.password;
-      session = await sessionManager.create(password);
-    }
-    
-    password = sessionManager.getPassword() || password;
+    await withSession(async (storage) => {
+      const variables = await storage.load();
+      const names = Object.keys(variables);
 
-    const storage = new StorageManager(
-      path.join(projectPath, config.storage.path),
-      config.storage.encrypted
-    );
-    if (password) storage.setPassword(password);
+      if (names.length === 0) {
+        console.log(chalk.yellow('No variables found'));
+        return;
+      }
 
-    const variables = await storage.load();
-    const names = Object.keys(variables);
+      console.log(chalk.blue(`\nVariables (${names.length}):\n`));
 
-    if (names.length === 0) {
-      console.log(chalk.yellow('No variables found'));
-      return;
-    }
+      for (const name of names) {
+        const v = variables[name];
+        const value = options.showValues ? v.value : maskValue(v.value);
+        const tags = v.tags ? chalk.gray(` [${v.tags.join(', ')}]`) : '';
+        console.log(`  ${chalk.cyan(name)} = ${value}${tags}`);
+      }
 
-    console.log(chalk.blue(`\nVariables (${names.length}):\n`));
-    
-    for (const name of names) {
-      const v = variables[name];
-      const value = options.showValues ? v.value : maskValue(v.value);
-      const tags = v.tags ? chalk.gray(` [${v.tags.join(', ')}]`) : '';
-      console.log(`  ${chalk.cyan(name)} = ${value}${tags}`);
-    }
-    
-    console.log('');
+      console.log('');
+    });
   });
 
 program
   .command('get <name>')
   .description('Get a variable value')
   .action(async (name) => {
-    const projectPath = process.cwd();
-    const config = await loadConfig(projectPath);
-    
-    const sessionManager = new SessionManager(
-      path.join(projectPath, config.session?.path || '.envcp/.session'),
-      config.session?.timeout_minutes || 30,
-      config.session?.max_extensions || 5
-    );
-    await sessionManager.init();
-    
-    let session = await sessionManager.load();
-    let password = '';
-    
-    if (!session) {
-      const answer = await inquirer.prompt([
-        { type: 'password', name: 'password', message: 'Enter password:', mask: '*' }
-      ]);
-      password = answer.password;
-      session = await sessionManager.create(password);
-    }
-    
-    password = sessionManager.getPassword() || password;
+    await withSession(async (storage) => {
+      const variable = await storage.get(name);
 
-    const storage = new StorageManager(
-      path.join(projectPath, config.storage.path),
-      config.storage.encrypted
-    );
-    if (password) storage.setPassword(password);
+      if (!variable) {
+        console.log(chalk.red(`Variable '${name}' not found`));
+        return;
+      }
 
-    const variable = await storage.get(name);
-    
-    if (!variable) {
-      console.log(chalk.red(`Variable '${name}' not found`));
-      return;
-    }
-
-    console.log(chalk.cyan(name));
-    console.log(`  Value: ${variable.value}`);
-    if (variable.tags) console.log(`  Tags: ${variable.tags.join(', ')}`);
-    if (variable.description) console.log(`  Description: ${variable.description}`);
+      console.log(chalk.cyan(name));
+      console.log(`  Value: ${variable.value}`);
+      if (variable.tags) console.log(`  Tags: ${variable.tags.join(', ')}`);
+      if (variable.description) console.log(`  Description: ${variable.description}`);
+    });
   });
 
 program
   .command('remove <name>')
   .description('Remove a variable')
   .action(async (name) => {
-    const projectPath = process.cwd();
-    const config = await loadConfig(projectPath);
-    
-    const sessionManager = new SessionManager(
-      path.join(projectPath, config.session?.path || '.envcp/.session'),
-      config.session?.timeout_minutes || 30,
-      config.session?.max_extensions || 5
-    );
-    await sessionManager.init();
-    
-    let session = await sessionManager.load();
-    let password = '';
-    
-    if (!session) {
-      const answer = await inquirer.prompt([
-        { type: 'password', name: 'password', message: 'Enter password:', mask: '*' }
-      ]);
-      password = answer.password;
-      session = await sessionManager.create(password);
-    }
-    
-    password = sessionManager.getPassword() || password;
+    await withSession(async (storage) => {
+      const deleted = await storage.delete(name);
 
-    const storage = new StorageManager(
-      path.join(projectPath, config.storage.path),
-      config.storage.encrypted
-    );
-    if (password) storage.setPassword(password);
-
-    const deleted = await storage.delete(name);
-    
-    if (deleted) {
-      console.log(chalk.green(`Variable '${name}' removed`));
-    } else {
-      console.log(chalk.red(`Variable '${name}' not found`));
-    }
+      if (deleted) {
+        console.log(chalk.green(`Variable '${name}' removed`));
+      } else {
+        console.log(chalk.red(`Variable '${name}' not found`));
+      }
+    });
   });
 
 program
   .command('sync')
   .description('Sync variables to .env file')
   .action(async () => {
-    const projectPath = process.cwd();
-    const config = await loadConfig(projectPath);
-    
-    if (!config.sync.enabled) {
-      console.log(chalk.yellow('Sync is disabled in configuration'));
-      return;
-    }
+    await withSession(async (storage, _password, config, projectPath) => {
+      if (!config.sync.enabled) {
+        console.log(chalk.yellow('Sync is disabled in configuration'));
+        return;
+      }
 
-    const sessionManager = new SessionManager(
-      path.join(projectPath, config.session?.path || '.envcp/.session'),
-      config.session?.timeout_minutes || 30,
-      config.session?.max_extensions || 5
-    );
-    await sessionManager.init();
-    
-    let session = await sessionManager.load();
-    let password = '';
-    
-    if (!session) {
-      const answer = await inquirer.prompt([
-        { type: 'password', name: 'password', message: 'Enter password:', mask: '*' }
-      ]);
-      password = answer.password;
-      session = await sessionManager.create(password);
-    }
-    
-    password = sessionManager.getPassword() || password;
+      const variables = await storage.load();
+      const lines: string[] = [];
 
-    const storage = new StorageManager(
-      path.join(projectPath, config.storage.path),
-      config.storage.encrypted
-    );
-    if (password) storage.setPassword(password);
+      if (config.sync.header) {
+        lines.push(config.sync.header);
+      }
 
-    const variables = await storage.load();
-    const lines: string[] = [];
+      for (const [name, variable] of Object.entries(variables)) {
+        const needsQuoting = /[\s#"'\\]/.test(variable.value);
+        const val = needsQuoting ? `"${variable.value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"` : variable.value;
+        lines.push(`${name}=${val}`);
+      }
 
-    if (config.sync.header) {
-      lines.push(config.sync.header);
-    }
-
-    for (const [name, variable] of Object.entries(variables)) {
-      const needsQuoting = /[\s#"'\\]/.test(variable.value);
-      const val = needsQuoting ? `"${variable.value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"` : variable.value;
-      lines.push(`${name}=${val}`);
-    }
-
-    await fs.writeFile(path.join(projectPath, config.sync.target), lines.join('\n'), 'utf8');
-    console.log(chalk.green(`Synced ${lines.length} variables to ${config.sync.target}`));
+      await fs.writeFile(path.join(projectPath, config.sync.target), lines.join('\n'), 'utf8');
+      console.log(chalk.green(`Synced ${lines.length} variables to ${config.sync.target}`));
+    });
   });
 
 program
@@ -590,35 +487,7 @@ program
   .description('Export variables')
   .option('-f, --format <format>', 'Output format: env, json, yaml', 'env')
   .action(async (options) => {
-    const projectPath = process.cwd();
-    const config = await loadConfig(projectPath);
-    
-    const sessionManager = new SessionManager(
-      path.join(projectPath, config.session?.path || '.envcp/.session'),
-      config.session?.timeout_minutes || 30,
-      config.session?.max_extensions || 5
-    );
-    await sessionManager.init();
-    
-    let session = await sessionManager.load();
-    let password = '';
-    
-    if (!session) {
-      const answer = await inquirer.prompt([
-        { type: 'password', name: 'password', message: 'Enter password:', mask: '*' }
-      ]);
-      password = answer.password;
-      session = await sessionManager.create(password);
-    }
-    
-    password = sessionManager.getPassword() || password;
-
-    const storage = new StorageManager(
-      path.join(projectPath, config.storage.path),
-      config.storage.encrypted
-    );
-    if (password) storage.setPassword(password);
-
+    await withSession(async (storage) => {
     const variables = await storage.load();
     
     let output: string;
@@ -637,6 +506,7 @@ program
     }
 
     console.log(output);
+    });
   });
 
 program.parse();
