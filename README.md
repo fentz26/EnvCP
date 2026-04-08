@@ -7,13 +7,13 @@ EnvCP lets you safely use AI assistants (Claude, ChatGPT, Gemini, Cursor, etc.) 
 ## Installation
 
 ```bash
-npm install -g envcp
+npm install -g @fentz26/envcp
 ```
 
 Or use without installing:
 
 ```bash
-npx envcp init
+npx @fentz26/envcp init
 ```
 
 ## Quick Start
@@ -71,7 +71,7 @@ Add to your MCP config file:
   "mcpServers": {
     "envcp": {
       "command": "npx",
-      "args": ["envcp", "serve", "--mode", "mcp"]
+      "args": ["@fentz26/envcp", "serve", "--mode", "mcp"]
     }
   }
 }
