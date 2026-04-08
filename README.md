@@ -7,7 +7,7 @@
 </p>
 
 <p align="center">
-  EnvCP lets you safely use AI assistants (Claude, ChatGPT, Gemini, Cursor, etc.) without exposing your secrets.<br>
+  EnvCP lets you safely use AI agent without exposing your secrets.<br>
   Your API keys and environment variables stay encrypted on your machine — AI only references them by name.
 </p>
 
