@@ -337,10 +337,8 @@ export abstract class BaseAdapter {
 
     return {
       name: args.name,
-      exists,
       accessible,
-      blacklisted,
-      message: accessible ? 'Variable exists and can be accessed' : 'Variable cannot be accessed or does not exist',
+      message: accessible ? 'Variable exists and can be accessed' : 'Variable cannot be accessed',
     };
   }
 
