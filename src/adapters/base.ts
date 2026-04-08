@@ -502,7 +502,12 @@ export abstract class BaseAdapter {
         throw new Error(`Command '${prog}' is not in the allowed commands list`);
       }
     }
-    const env: Record<string, string> = { ...process.env } as Record<string, string>;
+    // Build a minimal env: only inherit safe system vars + requested secrets
+    const SAFE_INHERIT = ['PATH', 'HOME', 'USER', 'SHELL', 'LANG', 'TERM', 'NODE_ENV', 'TMPDIR', 'TMP', 'TEMP'];
+    const env: Record<string, string> = {};
+    for (const key of SAFE_INHERIT) {
+      if (process.env[key]) env[key] = process.env[key]!;
+    }
 
     for (const name of args.variables) {
       if (isBlacklisted(name, this.config)) {

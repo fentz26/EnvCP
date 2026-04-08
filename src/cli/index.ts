@@ -635,7 +635,8 @@ program
 program
   .command('sync')
   .description('Sync variables to .env file')
-  .action(async () => {
+  .option('--dry-run', 'Preview changes without writing')
+  .action(async (options) => {
     await withSession(async (storage, _password, config, projectPath) => {
       if (!config.sync.enabled) {
         console.log(chalk.yellow('Sync is disabled in configuration'));
@@ -653,6 +654,48 @@ program
         const needsQuoting = /[\s#"'\\]/.test(variable.value);
         const val = needsQuoting ? `"${variable.value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"` : variable.value;
         lines.push(`${name}=${val}`);
+      }
+
+      if (options.dryRun) {
+        const envPath = path.join(projectPath, config.sync.target);
+        const existing: Record<string, string> = {};
+        if (await fs.pathExists(envPath)) {
+          const content = await fs.readFile(envPath, 'utf8');
+          Object.assign(existing, parseEnvFile(content));
+        }
+
+        const newVars: string[] = [];
+        const updated: string[] = [];
+        const removed: string[] = [];
+
+        for (const [name, variable] of Object.entries(variables)) {
+          if (name in existing) {
+            if (existing[name] !== variable.value) updated.push(name);
+          } else {
+            newVars.push(name);
+          }
+        }
+
+        const storeNames = new Set(Object.keys(variables));
+        for (const name of Object.keys(existing)) {
+          if (!storeNames.has(name)) removed.push(name);
+        }
+
+        console.log(chalk.blue(`Dry run: sync to ${config.sync.target}\n`));
+        if (newVars.length > 0) {
+          for (const n of newVars) console.log(chalk.green(`  + ${n} = ${maskValue(variables[n].value)}`));
+        }
+        if (updated.length > 0) {
+          for (const n of updated) console.log(chalk.yellow(`  ~ ${n} = ${maskValue(variables[n].value)}`));
+        }
+        if (removed.length > 0) {
+          for (const n of removed) console.log(chalk.red(`  - ${n}`));
+        }
+        if (newVars.length === 0 && updated.length === 0 && removed.length === 0) {
+          console.log(chalk.gray('  No changes'));
+        }
+        console.log(chalk.gray('\nNo files were modified.'));
+        return;
       }
 
       await fs.writeFile(path.join(projectPath, config.sync.target), lines.join('\n'), 'utf8');
@@ -858,6 +901,7 @@ program
   .command('import <file>')
   .description('Import variables from an encrypted export file')
   .option('--merge', 'Merge with existing variables (default: replace)')
+  .option('--dry-run', 'Preview what would be imported without writing')
   .action(async (file, options) => {
     await withSession(async (storage) => {
       if (!await fs.pathExists(file)) {
@@ -893,6 +937,43 @@ program
         if (meta.project) console.log(chalk.gray(`  From project: ${meta.project}`));
         if (meta.timestamp) console.log(chalk.gray(`  Exported: ${meta.timestamp}`));
         console.log(chalk.gray(`  Variables: ${meta.count || Object.keys(variables).length}`));
+      }
+
+      if (options.dryRun) {
+        const current = await storage.load();
+        const importNames = Object.keys(variables);
+
+        console.log(chalk.blue(`\nDry run: import ${options.merge ? '(merge)' : '(replace)'}\n`));
+
+        const newVars: string[] = [];
+        const updated: string[] = [];
+
+        for (const name of importNames) {
+          if (name in current) {
+            if (current[name].value !== variables[name].value) updated.push(name);
+          } else {
+            newVars.push(name);
+          }
+        }
+
+        if (!options.merge) {
+          const removed = Object.keys(current).filter(n => !importNames.includes(n));
+          if (removed.length > 0) {
+            for (const n of removed) console.log(chalk.red(`  - ${n} (will be removed)`));
+          }
+        }
+
+        if (newVars.length > 0) {
+          for (const n of newVars) console.log(chalk.green(`  + ${n} = ${maskValue(variables[n].value)}`));
+        }
+        if (updated.length > 0) {
+          for (const n of updated) console.log(chalk.yellow(`  ~ ${n} = ${maskValue(variables[n].value)}`));
+        }
+        if (newVars.length === 0 && updated.length === 0) {
+          console.log(chalk.gray('  No changes'));
+        }
+        console.log(chalk.gray('\nNo files were modified.'));
+        return;
       }
 
       const { confirm } = await inquirer.prompt([
@@ -1009,6 +1090,118 @@ program
         console.log(chalk.green(`Restored ${Object.keys(variables).length} variables from backup`));
       }
     });
+  });
+
+program
+  .command('doctor')
+  .description('Diagnose common issues and check system health')
+  .action(async () => {
+    const projectPath = process.cwd();
+    const checks: { name: string; status: 'pass' | 'fail' | 'warn'; detail: string }[] = [];
+
+    // 1. Config check
+    try {
+      const config = await loadConfig(projectPath);
+      checks.push({ name: 'Config', status: 'pass', detail: `Loaded (project: ${config.project || 'unnamed'})` });
+
+      // 2. Encryption mode
+      const encrypted = config.encryption?.enabled !== false;
+      checks.push({ name: 'Encryption', status: 'pass', detail: encrypted ? `Enabled (${config.storage.algorithm})` : 'Disabled (passwordless)' });
+
+      // 3. Security mode
+      checks.push({ name: 'Security mode', status: 'pass', detail: config.security?.mode || 'recoverable' });
+
+      // 4. Store file
+      const storePath = path.join(projectPath, config.storage.path);
+      if (await fs.pathExists(storePath)) {
+        const stat = await fs.stat(storePath);
+        checks.push({ name: 'Store file', status: 'pass', detail: `Exists (${stat.size} bytes)` });
+      } else {
+        checks.push({ name: 'Store file', status: 'warn', detail: 'Not found (no variables stored yet)' });
+      }
+
+      // 5. Session status
+      if (encrypted) {
+        const sessionManager = new SessionManager(
+          path.join(projectPath, config.session?.path || '.envcp/.session'),
+          config.session?.timeout_minutes || 30,
+          config.session?.max_extensions || 5
+        );
+        await sessionManager.init();
+        const session = await sessionManager.load();
+        if (session) {
+          const remaining = sessionManager.getRemainingTime();
+          checks.push({ name: 'Session', status: 'pass', detail: `Active (${remaining}min remaining)` });
+        } else {
+          checks.push({ name: 'Session', status: 'warn', detail: 'No active session — run `envcp unlock`' });
+        }
+      } else {
+        checks.push({ name: 'Session', status: 'pass', detail: 'Not needed (passwordless mode)' });
+      }
+
+      // 6. Recovery file
+      if (config.security?.mode === 'recoverable') {
+        const recoveryPath = path.join(projectPath, config.security.recovery_file || '.envcp/.recovery');
+        if (await fs.pathExists(recoveryPath)) {
+          checks.push({ name: 'Recovery file', status: 'pass', detail: 'Present' });
+        } else {
+          checks.push({ name: 'Recovery file', status: 'warn', detail: 'Missing — password recovery will not work' });
+        }
+      } else if (config.security?.mode === 'hard-lock') {
+        checks.push({ name: 'Recovery file', status: 'pass', detail: 'N/A (hard-lock mode)' });
+      }
+
+      // 7. .envcp directory
+      const envcpDir = path.join(projectPath, '.envcp');
+      if (await fs.pathExists(envcpDir)) {
+        checks.push({ name: '.envcp directory', status: 'pass', detail: 'Exists' });
+      } else {
+        checks.push({ name: '.envcp directory', status: 'fail', detail: 'Missing — run `envcp init`' });
+      }
+
+      // 8. .gitignore check
+      const gitignorePath = path.join(projectPath, '.gitignore');
+      if (await fs.pathExists(gitignorePath)) {
+        const gitignore = await fs.readFile(gitignorePath, 'utf8');
+        if (gitignore.includes('.envcp/')) {
+          checks.push({ name: '.gitignore', status: 'pass', detail: '.envcp/ is ignored' });
+        } else {
+          checks.push({ name: '.gitignore', status: 'warn', detail: '.envcp/ not in .gitignore — secrets may be committed' });
+        }
+      } else {
+        checks.push({ name: '.gitignore', status: 'warn', detail: 'No .gitignore found' });
+      }
+
+      // 9. MCP registration
+      const mcpResult = await registerMcpConfig(projectPath);
+      const totalMcp = mcpResult.registered.length + mcpResult.alreadyConfigured.length;
+      if (totalMcp > 0) {
+        checks.push({ name: 'MCP registration', status: 'pass', detail: `${mcpResult.alreadyConfigured.length} tool(s) configured` });
+      } else {
+        checks.push({ name: 'MCP registration', status: 'warn', detail: 'No AI tools detected' });
+      }
+
+    } catch (error) {
+      checks.push({ name: 'Config', status: 'fail', detail: `Failed to load: ${(error as Error).message}` });
+    }
+
+    // Print results
+    console.log(chalk.blue('\nEnvCP Doctor\n'));
+    for (const check of checks) {
+      const icon = check.status === 'pass' ? chalk.green('PASS') : check.status === 'warn' ? chalk.yellow('WARN') : chalk.red('FAIL');
+      console.log(`  [${icon}] ${check.name}: ${chalk.gray(check.detail)}`);
+    }
+
+    const fails = checks.filter(c => c.status === 'fail').length;
+    const warns = checks.filter(c => c.status === 'warn').length;
+    console.log('');
+    if (fails > 0) {
+      console.log(chalk.red(`${fails} issue(s) need attention.`));
+    } else if (warns > 0) {
+      console.log(chalk.yellow(`All checks passed with ${warns} warning(s).`));
+    } else {
+      console.log(chalk.green('All checks passed.'));
+    }
   });
 
 program.parse();
