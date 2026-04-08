@@ -149,18 +149,18 @@ export class StorageManager {
   }
 
   async verify(): Promise<{ valid: boolean; error?: string; count?: number; backups?: number }> {
-    if (!await fs.pathExists(this.storePath)) {
-      return { valid: false, error: 'Store file does not exist' };
+    let data: string;
+    try {
+      data = await fs.readFile(this.storePath, 'utf8');
+    } catch {
+      return { valid: false, error: 'Store file does not exist or cannot be read' };
     }
 
-    const stat = await fs.stat(this.storePath);
-    if (stat.size === 0) {
+    if (data.length === 0) {
       return { valid: false, error: 'Store file is empty' };
     }
 
     try {
-      const data = await fs.readFile(this.storePath, 'utf8');
-
       let variables: Record<string, Variable>;
       if (this.encrypted && this.password) {
         const decrypted = decrypt(data, this.password);

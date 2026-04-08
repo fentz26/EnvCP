@@ -38,8 +38,29 @@ export function setCorsHeaders(res: http.ServerResponse, allowedOrigin?: string,
 }
 
 export function sendJson(res: http.ServerResponse, status: number, data: unknown): void {
+  const safeData = status >= 400 ? sanitizeError(data) : data;
   res.writeHead(status, { 'Content-Type': 'application/json' });
-  res.end(JSON.stringify(data));
+  res.end(JSON.stringify(safeData));
+}
+
+function sanitizeError(data: unknown): unknown {
+  if (data instanceof Error) {
+    return { error: data.message };
+  }
+  if (typeof data === 'object' && data !== null) {
+    const sanitized: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(data)) {
+      if (value instanceof Error) {
+        sanitized[key] = value.message;
+      } else if (key === 'stack' || key === 'trace') {
+        continue;
+      } else {
+        sanitized[key] = value;
+      }
+    }
+    return sanitized;
+  }
+  return data;
 }
 
 export function parseBody(req: http.IncomingMessage): Promise<Record<string, unknown>> {
