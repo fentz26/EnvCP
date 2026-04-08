@@ -2,7 +2,7 @@ import { Command } from 'commander';
 import inquirer from 'inquirer';
 import chalk from 'chalk';
 import * as path from 'path';
-import * as fs from 'fs-extra';
+import fs from 'fs-extra';
 import { loadConfig, initConfig, saveConfig, parseEnvFile, registerMcpConfig } from '../config/manager.js';
 import { StorageManager } from '../storage/index.js';
 import { SessionManager } from '../utils/session.js';
