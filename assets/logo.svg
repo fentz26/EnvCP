@@ -1,7 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="520" height="128" viewBox="0 0 520 128">
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Fira+Code:wght@400&amp;display=swap');
-    .t { font-family: 'Fira Code', 'Consolas', 'Monaco', monospace; font-size: 14px; fill: #9ca3af; white-space: pre; text-anchor: middle; }
+    .t { font-family: 'Fira Code', 'Consolas', 'Monaco', monospace; font-size: 14px; fill: #d1d5db; white-space: pre; text-anchor: middle; }
   </style>
   <text class="t" x="260.0" y="20">███████╗███╗   ██╗██╗   ██╗ ██████╗██████╗ </text>
   <text class="t" x="260.0" y="38">██╔════╝████╗  ██║██║   ██║██╔════╝██╔══██╗</text>
