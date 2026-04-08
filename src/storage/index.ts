@@ -147,6 +147,47 @@ export class StorageManager {
   invalidateCache(): void {
     this.cache = null;
   }
+
+  async verify(): Promise<{ valid: boolean; error?: string; count?: number; backups?: number }> {
+    if (!await fs.pathExists(this.storePath)) {
+      return { valid: false, error: 'Store file does not exist' };
+    }
+
+    const stat = await fs.stat(this.storePath);
+    if (stat.size === 0) {
+      return { valid: false, error: 'Store file is empty' };
+    }
+
+    try {
+      const data = await fs.readFile(this.storePath, 'utf8');
+
+      let variables: Record<string, Variable>;
+      if (this.encrypted && this.password) {
+        const decrypted = decrypt(data, this.password);
+        variables = JSON.parse(decrypted);
+      } else {
+        variables = JSON.parse(data);
+      }
+
+      // Verify structure
+      if (typeof variables !== 'object' || variables === null) {
+        return { valid: false, error: 'Store data is not a valid object' };
+      }
+
+      // Count valid backups
+      let backups = 0;
+      for (let i = 1; i <= this.maxBackups; i++) {
+        if (await fs.pathExists(`${this.storePath}.bak.${i}`)) {
+          backups++;
+        }
+      }
+
+      return { valid: true, count: Object.keys(variables).length, backups };
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      return { valid: false, error: `Store verification failed: ${message}` };
+    }
+  }
 }
 
 export class LogManager {

@@ -458,6 +458,37 @@ program
   });
 
 program
+  .command('verify')
+  .description('Verify store integrity and check backups')
+  .action(async () => {
+    await withSession(async (storage, _password, config, projectPath) => {
+      const result = await storage.verify();
+
+      if (result.valid) {
+        console.log(chalk.green('Store integrity: OK'));
+        console.log(chalk.gray(`  Variables: ${result.count}`));
+        console.log(chalk.gray(`  Backups: ${result.backups}`));
+
+        // Check recovery file
+        if (config.security?.mode === 'recoverable') {
+          const recoveryPath = path.join(projectPath, config.security.recovery_file || '.envcp/.recovery');
+          const hasRecovery = await fs.pathExists(recoveryPath);
+          console.log(chalk.gray(`  Recovery: ${hasRecovery ? 'available' : 'not found'}`));
+        } else {
+          console.log(chalk.gray(`  Recovery: hard-lock mode (disabled)`));
+        }
+      } else {
+        console.log(chalk.red(`Store integrity: FAILED`));
+        console.log(chalk.red(`  Error: ${result.error}`));
+
+        if (result.backups && result.backups > 0) {
+          console.log(chalk.yellow(`  ${result.backups} backup(s) available — store may auto-restore on next load`));
+        }
+      }
+    });
+  });
+
+program
   .command('add <name>')
   .description('Add a new environment variable')
   .option('-v, --value <value>', 'Variable value')
