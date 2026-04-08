@@ -432,8 +432,45 @@ export class EnvCPServer {
     };
   }
 
+  private parseCommand(command: string): { program: string; args: string[] } {
+    const tokens: string[] = [];
+    let current = '';
+    let inSingle = false;
+    let inDouble = false;
+
+    for (let i = 0; i < command.length; i++) {
+      const ch = command[i];
+      if (ch === "'" && !inDouble) {
+        inSingle = !inSingle;
+      } else if (ch === '"' && !inSingle) {
+        inDouble = !inDouble;
+      } else if (ch === ' ' && !inSingle && !inDouble) {
+        if (current.length > 0) {
+          tokens.push(current);
+          current = '';
+        }
+      } else {
+        current += ch;
+      }
+    }
+    if (current.length > 0) tokens.push(current);
+
+    if (tokens.length === 0) throw new Error('Empty command');
+    return { program: tokens[0], args: tokens.slice(1) };
+  }
+
+  private validateCommand(command: string): void {
+    const shellMetachars = /[;&|`$(){}!><\n\\]/;
+    if (shellMetachars.test(command)) {
+      throw new Error('Command contains disallowed shell metacharacters: ; & | ` $ ( ) { } ! > < \\');
+    }
+  }
+
   private async handleRun(args: { command: string; variables: string[] }): Promise<any> {
+    this.validateCommand(args.command);
+
     const { spawn } = await import('child_process');
+    const { program, args: cmdArgs } = this.parseCommand(args.command);
     const env: Record<string, string> = { ...process.env };
 
     for (const name of args.variables) {
@@ -447,8 +484,7 @@ export class EnvCPServer {
     }
 
     return new Promise((resolve) => {
-      const proc = spawn(args.command, [], {
-        shell: true,
+      const proc = spawn(program, cmdArgs, {
         env,
         cwd: this.projectPath,
       });
