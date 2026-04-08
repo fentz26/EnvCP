@@ -131,10 +131,11 @@ export class GeminiAdapter extends BaseAdapter {
           name: call.name,
           response: { result },
         });
-      } catch (error: any) {
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error);
         results.push({
           name: call.name,
-          response: { error: error.message },
+          response: { error: message },
         });
       }
     }
@@ -297,8 +298,9 @@ export class GeminiAdapter extends BaseAdapter {
         // 404
         sendJson(res, 404, { error: { code: 404, message: 'Not found', status: 'NOT_FOUND' } });
 
-      } catch (error: any) {
-        sendJson(res, 500, { error: { code: 500, message: error.message, status: 'INTERNAL' } });
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error);
+        sendJson(res, 500, { error: { code: 500, message, status: 'INTERNAL' } });
       }
     });
 

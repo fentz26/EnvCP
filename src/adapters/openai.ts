@@ -133,11 +133,12 @@ export class OpenAIAdapter extends BaseAdapter {
           tool_call_id: call.id,
           content: JSON.stringify(result),
         });
-      } catch (error: any) {
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error);
         results.push({
           role: 'tool',
           tool_call_id: call.id,
-          content: JSON.stringify({ error: error.message }),
+          content: JSON.stringify({ error: message }),
         });
       }
     }
@@ -307,8 +308,9 @@ export class OpenAIAdapter extends BaseAdapter {
         // 404
         sendJson(res, 404, { error: { message: 'Not found', type: 'not_found' } });
 
-      } catch (error: any) {
-        sendJson(res, 500, { error: { message: error.message, type: 'internal_error' } });
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error);
+        sendJson(res, 500, { error: { message, type: 'internal_error' } });
       }
     });
 

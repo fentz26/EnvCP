@@ -204,8 +204,9 @@ export class UnifiedServer {
           },
         });
 
-      } catch (error: any) {
-        sendJson(res, 500, { error: error.message });
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error);
+        sendJson(res, 500, { error: message });
       }
     });
 
@@ -305,8 +306,9 @@ export class UnifiedServer {
 
       sendJson(res, 404, { success: false, error: 'Not found', timestamp: new Date().toISOString() });
 
-    } catch (error: any) {
-      sendJson(res, 500, { success: false, error: error.message, timestamp: new Date().toISOString() });
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      sendJson(res, 500, { success: false, error: message, timestamp: new Date().toISOString() });
     }
   }
 
@@ -376,8 +378,9 @@ export class UnifiedServer {
 
       sendJson(res, 404, { error: { message: 'Not found', type: 'not_found' } });
 
-    } catch (error: any) {
-      sendJson(res, 500, { error: { message: error.message, type: 'internal_error' } });
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      sendJson(res, 500, { error: { message, type: 'internal_error' } });
     }
   }
 
@@ -446,8 +449,9 @@ export class UnifiedServer {
 
       sendJson(res, 404, { error: { code: 404, message: 'Not found', status: 'NOT_FOUND' } });
 
-    } catch (error: any) {
-      sendJson(res, 500, { error: { code: 500, message: error.message, status: 'INTERNAL' } });
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      sendJson(res, 500, { error: { code: 500, message, status: 'INTERNAL' } });
     }
   }
 

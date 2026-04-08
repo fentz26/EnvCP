@@ -236,11 +236,12 @@ export class RESTAdapter extends BaseAdapter {
         // 404
         sendJson(res, 404, this.createResponse(false, undefined, 'Not found'));
 
-      } catch (error: any) {
-        const status = error.message.includes('locked') ? 401 :
-                       error.message.includes('not found') ? 404 :
-                       error.message.includes('disabled') ? 403 : 500;
-        sendJson(res, status, this.createResponse(false, undefined, error.message));
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error);
+        const status = message.includes('locked') ? 401 :
+                       message.includes('not found') ? 404 :
+                       message.includes('disabled') ? 403 : 500;
+        sendJson(res, status, this.createResponse(false, undefined, message));
       }
     });
 
