@@ -53,7 +53,7 @@ export class OpenAIAdapter extends BaseAdapter {
           },
           required: ['name', 'value'],
         },
-        handler: async (params) => this.setVariable(params as any),
+        handler: async (params) => this.setVariable(params as { name: string; value: string; tags?: string[]; description?: string }),
       },
       {
         name: 'envcp_delete',
@@ -113,8 +113,8 @@ export class OpenAIAdapter extends BaseAdapter {
       description: tool.description,
       parameters: {
         type: 'object' as const,
-        properties: (tool.parameters as any).properties || {},
-        required: (tool.parameters as any).required,
+        properties: (tool.parameters as Record<string, unknown>).properties as Record<string, unknown> || {},
+        required: (tool.parameters as Record<string, unknown>).required as string[] | undefined,
       },
     }));
   }

@@ -195,28 +195,30 @@ export class EnvCPServer {
       try {
         await this.ensurePassword();
         
+        const params = (args || {}) as Record<string, unknown>;
         switch (name) {
           case 'envcp_list':
-            return await this.handleList(args as any);
+            return await this.handleList(params as { tags?: string[] });
           case 'envcp_get':
-            return await this.handleGet(args as any);
+            return await this.handleGet(params as { name: string; show_value?: boolean });
           case 'envcp_set':
-            return await this.handleSet(args as any);
+            return await this.handleSet(params as { name: string; value: string; tags?: string[]; description?: string });
           case 'envcp_delete':
-            return await this.handleDelete(args as any);
+            return await this.handleDelete(params as { name: string });
           case 'envcp_sync':
             return await this.handleSync();
           case 'envcp_run':
-            return await this.handleRun(args as any);
+            return await this.handleRun(params as { command: string; variables: string[] });
           case 'envcp_add_to_env':
-            return await this.handleAddToEnv(args as any);
+            return await this.handleAddToEnv(params as { name: string; env_file?: string });
           case 'envcp_check_access':
-            return await this.handleCheckAccess(args as any);
+            return await this.handleCheckAccess(params as { name: string });
           default:
             throw new McpError(ErrorCode.MethodNotFound, `Unknown tool: ${name}`);
         }
-      } catch (error: any) {
-        throw new McpError(ErrorCode.InternalError, error.message);
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error);
+        throw new McpError(ErrorCode.InternalError, message);
       }
     });
   }

@@ -38,7 +38,7 @@ export class RESTAdapter extends BaseAdapter {
           tags: { type: 'array', items: { type: 'string' }, description: 'Tags' },
           description: { type: 'string', description: 'Description' },
         },
-        handler: async (params) => this.setVariable(params as any),
+        handler: async (params) => this.setVariable(params as { name: string; value: string; tags?: string[]; description?: string }),
       },
       {
         name: 'envcp_delete',

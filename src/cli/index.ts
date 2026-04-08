@@ -530,7 +530,7 @@ program
     const { UnifiedServer } = await import('../server/unified.js');
     
     const serverConfig = {
-      mode: mode as any,
+      mode: mode as 'mcp' | 'rest' | 'openai' | 'gemini' | 'all' | 'auto',
       port,
       host,
       api_key: apiKey,
