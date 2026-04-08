@@ -1,10 +1,11 @@
 import { BaseAdapter } from './base.js';
 import { EnvCPConfig, OpenAIFunction, OpenAIToolCall, OpenAIMessage, ToolDefinition } from '../types.js';
-import { setCorsHeaders, sendJson, parseBody, validateApiKey } from '../utils/http.js';
+import { setCorsHeaders, sendJson, parseBody, validateApiKey, RateLimiter, rateLimitMiddleware } from '../utils/http.js';
 import * as http from 'http';
 
 export class OpenAIAdapter extends BaseAdapter {
   private server: http.Server | null = null;
+  private rateLimiter = new RateLimiter(60, 60000);
 
   constructor(config: EnvCPConfig, projectPath: string, password?: string) {
     super(config, projectPath, password);
@@ -154,6 +155,10 @@ export class OpenAIAdapter extends BaseAdapter {
       if (req.method === 'OPTIONS') {
         res.writeHead(204);
         res.end();
+        return;
+      }
+
+      if (!rateLimitMiddleware(this.rateLimiter, req, res)) {
         return;
       }
 
