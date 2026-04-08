@@ -79,6 +79,18 @@ program
     );
     storage.setPassword(password);
 
+    const storeExists = await storage.exists();
+
+    if (!storeExists) {
+      const confirm = await inquirer.prompt([
+        { type: 'password', name: 'password', message: 'Confirm password:', mask: '*' }
+      ]);
+      if (confirm.password !== password) {
+        console.log(chalk.red('Passwords do not match'));
+        return;
+      }
+    }
+
     try {
       await storage.load();
     } catch (error) {
@@ -91,7 +103,8 @@ program
     console.log(chalk.green('Session unlocked!'));
     console.log(chalk.gray(`  Session ID: ${session.id}`));
     console.log(chalk.gray(`  Expires in: ${config.session?.timeout_minutes || 30} minutes`));
-    console.log(chalk.gray(`  Extensions remaining: ${session.extensions}/${config.session?.max_extensions || 5}`));
+    const maxExt = config.session?.max_extensions || 5;
+    console.log(chalk.gray(`  Extensions remaining: ${maxExt - session.extensions}/${maxExt}`));
   });
 
 program
@@ -127,20 +140,25 @@ program
     );
 
     await sessionManager.init();
-    const session = await sessionManager.load();
-    
+
+    const answer = await inquirer.prompt([
+      { type: 'password', name: 'password', message: 'Enter password:', mask: '*' }
+    ]);
+    const session = await sessionManager.load(answer.password);
+
     if (!session) {
-      console.log(chalk.yellow('No active session'));
+      console.log(chalk.yellow('No active session (expired, invalid password, or not unlocked)'));
       console.log(chalk.gray('Run: envcp unlock'));
       return;
     }
 
     const remaining = sessionManager.getRemainingTime();
-    
+    const maxExt = config.session?.max_extensions || 5;
+
     console.log(chalk.green('Session active'));
     console.log(chalk.gray(`  Session ID: ${session.id}`));
     console.log(chalk.gray(`  Remaining: ${remaining} minutes`));
-    console.log(chalk.gray(`  Extensions used: ${session.extensions}/${config.session?.max_extensions || 5}`));
+    console.log(chalk.gray(`  Extensions remaining: ${maxExt - session.extensions}/${maxExt}`));
   });
 
 program
@@ -157,16 +175,29 @@ program
     );
 
     await sessionManager.init();
+
+    const answer = await inquirer.prompt([
+      { type: 'password', name: 'password', message: 'Enter password:', mask: '*' }
+    ]);
+    const loaded = await sessionManager.load(answer.password);
+
+    if (!loaded) {
+      console.log(chalk.red('Cannot extend session. No active session or invalid password.'));
+      return;
+    }
+
     const session = await sessionManager.extend();
-    
+
     if (!session) {
       console.log(chalk.red('Cannot extend session. Session expired or max extensions reached.'));
       return;
     }
 
+    const maxExt = config.session?.max_extensions || 5;
+
     console.log(chalk.green('Session extended!'));
     console.log(chalk.gray(`  Remaining: ${sessionManager.getRemainingTime()} minutes`));
-    console.log(chalk.gray(`  Extensions used: ${session.extensions}/${config.session?.max_extensions || 5}`));
+    console.log(chalk.gray(`  Extensions remaining: ${maxExt - session.extensions}/${maxExt}`));
   });
 
 program
