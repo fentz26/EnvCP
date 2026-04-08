@@ -3,7 +3,29 @@ import * as http from 'http';
 
 const MAX_BODY_SIZE = 1024 * 1024; // 1MB
 
+/**
+ * Set security headers to protect against common web vulnerabilities
+ */
+export function setSecurityHeaders(res: http.ServerResponse): void {
+  // Prevent MIME type sniffing
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  // Prevent clickjacking
+  res.setHeader('X-Frame-Options', 'DENY');
+  // Legacy XSS protection for older browsers
+  res.setHeader('X-XSS-Protection', '1; mode=block');
+  // Restrict resource loading to same origin
+  res.setHeader('Content-Security-Policy', "default-src 'none'; frame-ancestors 'none'");
+  // Prevent caching of sensitive data
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+  res.setHeader('Pragma', 'no-cache');
+  // Remove server identification
+  res.removeHeader('X-Powered-By');
+}
+
 export function setCorsHeaders(res: http.ServerResponse, allowedOrigin?: string, requestOrigin?: string): void {
+  // Apply security headers first
+  setSecurityHeaders(res);
+  
   const localOrigins = ['http://127.0.0.1', 'http://localhost', 'http://[::1]'];
   let origin = allowedOrigin || '*';
   if (!allowedOrigin && requestOrigin) {
