@@ -29,7 +29,6 @@ const message = `
      Advanced (manual config):
        $ envcp init --advanced             # Full config options
        $ envcp add [NAME] [VALUE]          # Add a secret manually
-       $ envcp config set [KEY] [VALUE]    # Set config values
 
      Explore:
        $ envcp --help                      # See all commands
