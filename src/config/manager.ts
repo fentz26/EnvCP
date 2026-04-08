@@ -330,8 +330,10 @@ export function parseEnvFile(content: string): Record<string, string> {
     const key = trimmed.substring(0, eqIndex).trim();
     let value = trimmed.substring(eqIndex + 1).trim();
 
-    // Strip quotes
-    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+    // Strip quotes and unescape
+    if (value.startsWith('"') && value.endsWith('"')) {
+      value = value.slice(1, -1).replace(/\\"/g, '"').replace(/\\\\/g, '\\');
+    } else if (value.startsWith("'") && value.endsWith("'")) {
       value = value.slice(1, -1);
     }
 
