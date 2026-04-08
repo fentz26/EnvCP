@@ -5,7 +5,8 @@ import * as path from 'path';
 import * as fs from 'fs-extra';
 import { loadConfig, saveConfig, initConfig } from '../config/manager.js';
 import { StorageManager, LogManager } from '../storage/index.js';
-import { maskValue } from '../utils/crypto.js';
+import { SessionManager } from '../utils/session.js';
+import { maskValue, validatePassword } from '../utils/crypto.js';
 import { Variable } from '../types.js';
 
 const program = new Command();
@@ -28,22 +29,182 @@ program
     
     const config = await initConfig(projectPath, projectName);
     
-    console.log(chalk.green('✓ EnvCP initialized successfully!'));
+    console.log(chalk.green('EnvCP initialized successfully!'));
     console.log(chalk.gray(`  Project: ${config.project}`));
     console.log(chalk.gray(`  Storage: ${config.storage.path}`));
     console.log(chalk.gray(`  Encrypted: ${config.storage.encrypted}`));
+    console.log(chalk.gray(`  Session timeout: ${config.session?.timeout_minutes || 30} minutes`));
+    console.log(chalk.gray(`  AI active check: ${config.access?.allow_ai_active_check ? 'enabled' : 'disabled'}`));
+  });
+
+program
+  .command('unlock')
+  .description('Unlock EnvCP session with password')
+  .option('-p, --password <password>', 'Password (will prompt if not provided)')
+  .action(async (options) => {
+    const projectPath = process.cwd();
+    const config = await loadConfig(projectPath);
+    
+    let password = options.password;
+    
+    if (!password) {
+      const answer = await inquirer.prompt([
+        { 
+          type: 'password', 
+          name: 'password', 
+          message: 'Enter password:', 
+          mask: '*' 
+        }
+      ]);
+      password = answer.password;
+    }
+
+    const validation = validatePassword(password, config.password || {});
+    if (!validation.valid) {
+      console.log(chalk.red(validation.error));
+      return;
+    }
+
+    const sessionManager = new SessionManager(
+      path.join(projectPath, config.session?.path || '.envcp/.session'),
+      config.session?.timeout_minutes || 30,
+      config.session?.max_extensions || 5
+    );
+
+    await sessionManager.init();
+    
+    const storage = new StorageManager(
+      path.join(projectPath, config.storage.path),
+      config.storage.encrypted
+    );
+    storage.setPassword(password);
+
+    try {
+      await storage.load();
+    } catch (error) {
+      console.log(chalk.red('Invalid password'));
+      return;
+    }
+
+    const session = await sessionManager.create(password);
+    
+    console.log(chalk.green('Session unlocked!'));
+    console.log(chalk.gray(`  Session ID: ${session.id}`));
+    console.log(chalk.gray(`  Expires in: ${config.session?.timeout_minutes || 30} minutes`));
+    console.log(chalk.gray(`  Extensions remaining: ${session.extensions}/${config.session?.max_extensions || 5}`));
+  });
+
+program
+  .command('lock')
+  .description('Lock EnvCP session')
+  .action(async () => {
+    const projectPath = process.cwd();
+    const config = await loadConfig(projectPath);
+    
+    const sessionManager = new SessionManager(
+      path.join(projectPath, config.session?.path || '.envcp/.session'),
+      config.session?.timeout_minutes || 30,
+      config.session?.max_extensions || 5
+    );
+
+    await sessionManager.init();
+    await sessionManager.destroy();
+    
+    console.log(chalk.green('Session locked'));
+  });
+
+program
+  .command('status')
+  .description('Check session status')
+  .action(async () => {
+    const projectPath = process.cwd();
+    const config = await loadConfig(projectPath);
+    
+    const sessionManager = new SessionManager(
+      path.join(projectPath, config.session?.path || '.envcp/.session'),
+      config.session?.timeout_minutes || 30,
+      config.session?.max_extensions || 5
+    );
+
+    await sessionManager.init();
+    const session = await sessionManager.load();
+    
+    if (!session) {
+      console.log(chalk.yellow('No active session'));
+      console.log(chalk.gray('Run: envcp unlock'));
+      return;
+    }
+
+    const remaining = sessionManager.getRemainingTime();
+    
+    console.log(chalk.green('Session active'));
+    console.log(chalk.gray(`  Session ID: ${session.id}`));
+    console.log(chalk.gray(`  Remaining: ${remaining} minutes`));
+    console.log(chalk.gray(`  Extensions used: ${session.extensions}/${config.session?.max_extensions || 5}`));
+  });
+
+program
+  .command('extend')
+  .description('Extend session timeout')
+  .action(async () => {
+    const projectPath = process.cwd();
+    const config = await loadConfig(projectPath);
+    
+    const sessionManager = new SessionManager(
+      path.join(projectPath, config.session?.path || '.envcp/.session'),
+      config.session?.timeout_minutes || 30,
+      config.session?.max_extensions || 5
+    );
+
+    await sessionManager.init();
+    const session = await sessionManager.extend();
+    
+    if (!session) {
+      console.log(chalk.red('Cannot extend session. Session expired or max extensions reached.'));
+      return;
+    }
+
+    console.log(chalk.green('Session extended!'));
+    console.log(chalk.gray(`  Remaining: ${sessionManager.getRemainingTime()} minutes`));
+    console.log(chalk.gray(`  Extensions used: ${session.extensions}/${config.session?.max_extensions || 5}`));
   });
 
 program
   .command('add <name>')
   .description('Add a new environment variable')
   .option('-v, --value <value>', 'Variable value')
-  .option('-e, --encrypt', 'Encrypt the value', true)
   .option('-t, --tags <tags>', 'Tags (comma-separated)')
   .option('-d, --description <desc>', 'Description')
   .action(async (name, options) => {
     const projectPath = process.cwd();
     const config = await loadConfig(projectPath);
+    
+    const sessionManager = new SessionManager(
+      path.join(projectPath, config.session?.path || '.envcp/.session'),
+      config.session?.timeout_minutes || 30,
+      config.session?.max_extensions || 5
+    );
+    await sessionManager.init();
+    
+    let session = await sessionManager.load();
+    let password: string | undefined;
+    
+    if (!session) {
+      const answer = await inquirer.prompt([
+        { type: 'password', name: 'password', message: 'Enter password:', mask: '*' }
+      ]);
+      password = answer.password;
+      
+      const validation = validatePassword(password, config.password || {});
+      if (!validation.valid) {
+        console.log(chalk.red(validation.error));
+        return;
+      }
+      
+      session = await sessionManager.create(password);
+    }
+    
+    password = sessionManager.getPassword() || password;
     
     let value = options.value;
     let tags: string[] = [];
@@ -66,21 +227,13 @@ program
       path.join(projectPath, config.storage.path),
       config.storage.encrypted
     );
-
-    let password: string | undefined;
-    if (config.storage.encrypted) {
-      const answer = await inquirer.prompt([
-        { type: 'password', name: 'password', message: 'Enter encryption password:', mask: '*' }
-      ]);
-      password = answer.password;
-      storage.setPassword(password);
-    }
+    if (password) storage.setPassword(password);
 
     const now = new Date().toISOString();
     const variable: Variable = {
       name,
       value,
-      encrypted: options.encrypt,
+      encrypted: config.storage.encrypted,
       tags: tags.length > 0 ? tags : undefined,
       description,
       created: now,
@@ -90,28 +243,42 @@ program
 
     await storage.set(name, variable);
 
-    console.log(chalk.green(`✓ Variable '${name}' added successfully`));
+    console.log(chalk.green(`Variable '${name}' added successfully`));
   });
 
 program
   .command('list')
   .description('List all variables (names only, values hidden)')
-  .option('-v, --show-values', 'Show actual values (requires password)')
+  .option('-v, --show-values', 'Show actual values')
   .action(async (options) => {
     const projectPath = process.cwd();
     const config = await loadConfig(projectPath);
     
+    const sessionManager = new SessionManager(
+      path.join(projectPath, config.session?.path || '.envcp/.session'),
+      config.session?.timeout_minutes || 30,
+      config.session?.max_extensions || 5
+    );
+    await sessionManager.init();
+    
+    let session = await sessionManager.load();
+    let password: string | undefined;
+    
+    if (!session) {
+      const answer = await inquirer.prompt([
+        { type: 'password', name: 'password', message: 'Enter password:', mask: '*' }
+      ]);
+      password = answer.password;
+      session = await sessionManager.create(password);
+    }
+    
+    password = sessionManager.getPassword() || password;
+
     const storage = new StorageManager(
       path.join(projectPath, config.storage.path),
       config.storage.encrypted
     );
-
-    if (options.showValues && config.storage.encrypted) {
-      const answer = await inquirer.prompt([
-        { type: 'password', name: 'password', message: 'Enter encryption password:', mask: '*' }
-      ]);
-      storage.setPassword(answer.password);
-    }
+    if (password) storage.setPassword(password);
 
     const variables = await storage.load();
     const names = Object.keys(variables);
@@ -140,17 +307,31 @@ program
     const projectPath = process.cwd();
     const config = await loadConfig(projectPath);
     
+    const sessionManager = new SessionManager(
+      path.join(projectPath, config.session?.path || '.envcp/.session'),
+      config.session?.timeout_minutes || 30,
+      config.session?.max_extensions || 5
+    );
+    await sessionManager.init();
+    
+    let session = await sessionManager.load();
+    let password: string | undefined;
+    
+    if (!session) {
+      const answer = await inquirer.prompt([
+        { type: 'password', name: 'password', message: 'Enter password:', mask: '*' }
+      ]);
+      password = answer.password;
+      session = await sessionManager.create(password);
+    }
+    
+    password = sessionManager.getPassword() || password;
+
     const storage = new StorageManager(
       path.join(projectPath, config.storage.path),
       config.storage.encrypted
     );
-
-    if (config.storage.encrypted) {
-      const answer = await inquirer.prompt([
-        { type: 'password', name: 'password', message: 'Enter encryption password:', mask: '*' }
-      ]);
-      storage.setPassword(answer.password);
-    }
+    if (password) storage.setPassword(password);
 
     const variable = await storage.get(name);
     
@@ -172,22 +353,36 @@ program
     const projectPath = process.cwd();
     const config = await loadConfig(projectPath);
     
+    const sessionManager = new SessionManager(
+      path.join(projectPath, config.session?.path || '.envcp/.session'),
+      config.session?.timeout_minutes || 30,
+      config.session?.max_extensions || 5
+    );
+    await sessionManager.init();
+    
+    let session = await sessionManager.load();
+    let password: string | undefined;
+    
+    if (!session) {
+      const answer = await inquirer.prompt([
+        { type: 'password', name: 'password', message: 'Enter password:', mask: '*' }
+      ]);
+      password = answer.password;
+      session = await sessionManager.create(password);
+    }
+    
+    password = sessionManager.getPassword() || password;
+
     const storage = new StorageManager(
       path.join(projectPath, config.storage.path),
       config.storage.encrypted
     );
-
-    if (config.storage.encrypted) {
-      const answer = await inquirer.prompt([
-        { type: 'password', name: 'password', message: 'Enter encryption password:', mask: '*' }
-      ]);
-      storage.setPassword(answer.password);
-    }
+    if (password) storage.setPassword(password);
 
     const deleted = await storage.delete(name);
     
     if (deleted) {
-      console.log(chalk.green(`✓ Variable '${name}' removed`));
+      console.log(chalk.green(`Variable '${name}' removed`));
     } else {
       console.log(chalk.red(`Variable '${name}' not found`));
     }
@@ -205,17 +400,31 @@ program
       return;
     }
 
+    const sessionManager = new SessionManager(
+      path.join(projectPath, config.session?.path || '.envcp/.session'),
+      config.session?.timeout_minutes || 30,
+      config.session?.max_extensions || 5
+    );
+    await sessionManager.init();
+    
+    let session = await sessionManager.load();
+    let password: string | undefined;
+    
+    if (!session) {
+      const answer = await inquirer.prompt([
+        { type: 'password', name: 'password', message: 'Enter password:', mask: '*' }
+      ]);
+      password = answer.password;
+      session = await sessionManager.create(password);
+    }
+    
+    password = sessionManager.getPassword() || password;
+
     const storage = new StorageManager(
       path.join(projectPath, config.storage.path),
       config.storage.encrypted
     );
-
-    if (config.storage.encrypted) {
-      const answer = await inquirer.prompt([
-        { type: 'password', name: 'password', message: 'Enter encryption password:', mask: '*' }
-      ]);
-      storage.setPassword(answer.password);
-    }
+    if (password) storage.setPassword(password);
 
     const variables = await storage.load();
     const lines: string[] = [];
@@ -229,7 +438,7 @@ program
     }
 
     await fs.writeFile(path.join(projectPath, config.sync.target), lines.join('\n'), 'utf8');
-    console.log(chalk.green(`✓ Synced ${lines.length} variables to ${config.sync.target}`));
+    console.log(chalk.green(`Synced ${lines.length} variables to ${config.sync.target}`));
   });
 
 program
@@ -241,14 +450,32 @@ program
     const projectPath = process.cwd();
     const config = await loadConfig(projectPath);
     
+    const sessionManager = new SessionManager(
+      path.join(projectPath, config.session?.path || '.envcp/.session'),
+      config.session?.timeout_minutes || 30,
+      config.session?.max_extensions || 5
+    );
+    await sessionManager.init();
+    
+    let session = await sessionManager.load();
     let password = options.password;
     
-    if (!password && config.storage.encrypted) {
+    if (!session && !password) {
       const answer = await inquirer.prompt([
-        { type: 'password', name: 'password', message: 'Enter encryption password:', mask: '*' }
+        { type: 'password', name: 'password', message: 'Enter password:', mask: '*' }
       ]);
       password = answer.password;
+      
+      const validation = validatePassword(password, config.password || {});
+      if (!validation.valid) {
+        console.log(chalk.red(validation.error));
+        return;
+      }
+      
+      session = await sessionManager.create(password);
     }
+    
+    password = sessionManager.getPassword() || password;
 
     const server = new EnvCPServer(config, projectPath, password);
     await server.start();
@@ -262,17 +489,31 @@ program
     const projectPath = process.cwd();
     const config = await loadConfig(projectPath);
     
+    const sessionManager = new SessionManager(
+      path.join(projectPath, config.session?.path || '.envcp/.session'),
+      config.session?.timeout_minutes || 30,
+      config.session?.max_extensions || 5
+    );
+    await sessionManager.init();
+    
+    let session = await sessionManager.load();
+    let password: string | undefined;
+    
+    if (!session) {
+      const answer = await inquirer.prompt([
+        { type: 'password', name: 'password', message: 'Enter password:', mask: '*' }
+      ]);
+      password = answer.password;
+      session = await sessionManager.create(password);
+    }
+    
+    password = sessionManager.getPassword() || password;
+
     const storage = new StorageManager(
       path.join(projectPath, config.storage.path),
       config.storage.encrypted
     );
-
-    if (config.storage.encrypted) {
-      const answer = await inquirer.prompt([
-        { type: 'password', name: 'password', message: 'Enter encryption password:', mask: '*' }
-      ]);
-      storage.setPassword(answer.password);
-    }
+    if (password) storage.setPassword(password);
 
     const variables = await storage.load();
     

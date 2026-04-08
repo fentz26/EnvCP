@@ -41,12 +41,12 @@ export function decrypt(encryptedData: string, password: string): string {
   return decrypted;
 }
 
-export function hashPassword(password: string): string {
-  return crypto.createHash('sha256').update(password).digest('hex');
-}
-
 export function generateId(): string {
   return crypto.randomBytes(16).toString('hex');
+}
+
+export function generateSessionToken(): string {
+  return crypto.randomBytes(32).toString('hex');
 }
 
 export function maskValue(value: string, showLength: number = 4): string {
@@ -56,15 +56,45 @@ export function maskValue(value: string, showLength: number = 4): string {
   return value.slice(0, showLength) + '*'.repeat(value.length - showLength * 2) + value.slice(-showLength);
 }
 
-export function obfuscate(value: string): string {
-  const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-  let result = '';
-  for (let i = 0; i < value.length; i++) {
-    if (Math.random() > 0.7) {
-      result += chars.charAt(Math.floor(Math.random() * chars.length));
-    } else {
-      result += '*';
+export function validatePassword(password: string, config: {
+  min_length?: number;
+  require_complexity?: boolean;
+  allow_numeric_only?: boolean;
+  allow_single_char?: boolean;
+}): { valid: boolean; error?: string } {
+  const minLength = config.min_length ?? 1;
+  const requireComplexity = config.require_complexity ?? false;
+  const allowNumericOnly = config.allow_numeric_only ?? true;
+  const allowSingleChar = config.allow_single_char ?? true;
+
+  if (password.length < minLength) {
+    return { valid: false, error: `Password must be at least ${minLength} character(s)` };
+  }
+
+  if (!allowSingleChar && password.length === 1) {
+    return { valid: false, error: 'Single character passwords are not allowed' };
+  }
+
+  if (!allowNumericOnly && /^\d+$/.test(password)) {
+    return { valid: false, error: 'Numeric-only passwords are not allowed' };
+  }
+
+  if (requireComplexity) {
+    const hasLower = /[a-z]/.test(password);
+    const hasUpper = /[A-Z]/.test(password);
+    const hasNumber = /[0-9]/.test(password);
+    const hasSpecial = /[!@#$%^&*(),.?":{}|<>]/.test(password);
+    
+    const complexityCount = [hasLower, hasUpper, hasNumber, hasSpecial].filter(Boolean).length;
+    
+    if (complexityCount < 3) {
+      return { valid: false, error: 'Password must contain at least 3 of: lowercase, uppercase, numbers, special characters' };
     }
   }
-  return result;
+
+  return { valid: true };
+}
+
+export function quickHash(input: string): string {
+  return crypto.createHash('sha256').update(input).digest('hex').slice(0, 16);
 }

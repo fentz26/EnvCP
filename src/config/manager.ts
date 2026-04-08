@@ -12,19 +12,34 @@ const DEFAULT_CONFIG: Partial<EnvCPConfig> = {
     compression: false,
   },
   access: {
-    allow_ai_read: true,
+    allow_ai_read: false,
     allow_ai_write: false,
     allow_ai_delete: false,
     allow_ai_export: false,
+    allow_ai_active_check: false,
+    require_user_reference: true,
     require_confirmation: true,
     mask_values: true,
     audit_log: true,
+    blacklist_patterns: ['*_SECRET', '*_PRIVATE', 'ADMIN_*', 'ROOT_*'],
   },
   sync: {
     enabled: false,
     target: '.env',
     exclude: [],
     format: 'dotenv',
+  },
+  session: {
+    enabled: true,
+    timeout_minutes: 30,
+    max_extensions: 5,
+    path: '.envcp/.session',
+  },
+  password: {
+    min_length: 1,
+    require_complexity: false,
+    allow_numeric_only: true,
+    allow_single_char: true,
   },
 };
 
@@ -82,8 +97,8 @@ export function matchesPattern(name: string, pattern: string): boolean {
 }
 
 export function canAccess(name: string, config: EnvCPConfig): boolean {
-  if (config.access.allowed_patterns && config.access.allowed_patterns.length > 0) {
-    if (!config.access.allowed_patterns.some(p => matchesPattern(name, p))) {
+  if (config.access.blacklist_patterns && config.access.blacklist_patterns.length > 0) {
+    if (config.access.blacklist_patterns.some(p => matchesPattern(name, p))) {
       return false;
     }
   }
@@ -94,5 +109,26 @@ export function canAccess(name: string, config: EnvCPConfig): boolean {
     }
   }
   
+  if (config.access.allowed_patterns && config.access.allowed_patterns.length > 0) {
+    if (!config.access.allowed_patterns.some(p => matchesPattern(name, p))) {
+      return false;
+    }
+  }
+  
   return true;
+}
+
+export function isBlacklisted(name: string, config: EnvCPConfig): boolean {
+  if (config.access.blacklist_patterns && config.access.blacklist_patterns.length > 0) {
+    return config.access.blacklist_patterns.some(p => matchesPattern(name, p));
+  }
+  return false;
+}
+
+export function canAIActiveCheck(config: EnvCPConfig): boolean {
+  return config.access.allow_ai_active_check === true;
+}
+
+export function requiresUserReference(config: EnvCPConfig): boolean {
+  return config.access.require_user_reference === true;
 }

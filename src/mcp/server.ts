@@ -9,7 +9,8 @@ import {
 import { StorageManager, LogManager } from '../storage/index.js';
 import { EnvCPConfig, Variable } from '../types.js';
 import { maskValue } from '../utils/crypto.js';
-import { canAccess } from '../config/manager.js';
+import { canAccess, isBlacklisted, canAIActiveCheck, requiresUserReference } from '../config/manager.js';
+import { SessionManager } from '../utils/session.js';
 import * as fs from 'fs-extra';
 import * as path from 'path';
 import * as dotenv from 'dotenv';
@@ -18,6 +19,7 @@ export class EnvCPServer {
   private server: Server;
   private storage: StorageManager;
   private logs: LogManager;
+  private sessionManager: SessionManager;
   private config: EnvCPConfig;
   private projectPath: string;
 
@@ -28,9 +30,17 @@ export class EnvCPServer {
       path.join(projectPath, config.storage.path),
       config.storage.encrypted
     );
+    
+    this.sessionManager = new SessionManager(
+      path.join(projectPath, config.session?.path || '.envcp/.session'),
+      config.session?.timeout_minutes || 30,
+      config.session?.max_extensions || 5
+    );
+    
     if (password) {
       this.storage.setPassword(password);
     }
+    
     this.logs = new LogManager(path.join(projectPath, '.envcp', 'logs'));
     
     this.server = new Server(
@@ -46,7 +56,7 @@ export class EnvCPServer {
       tools: [
         {
           name: 'envcp_list',
-          description: 'List all available environment variable names. Values are never shown to AI, only names.',
+          description: 'List all available environment variable names. Values are never shown to AI. Only available if allow_ai_active_check is enabled.',
           inputSchema: {
             type: 'object',
             properties: {
@@ -162,6 +172,20 @@ export class EnvCPServer {
             required: ['name'],
           },
         },
+        {
+          name: 'envcp_check_access',
+          description: 'Check if a variable exists and can be accessed. Returns yes/no, not the value.',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              name: {
+                type: 'string',
+                description: 'Variable name to check',
+              },
+            },
+            required: ['name'],
+          },
+        },
       ],
     }));
 
@@ -169,6 +193,8 @@ export class EnvCPServer {
       const { name, arguments: args } = request.params;
       
       try {
+        await this.ensurePassword();
+        
         switch (name) {
           case 'envcp_list':
             return await this.handleList(args as any);
@@ -184,6 +210,8 @@ export class EnvCPServer {
             return await this.handleRun(args as any);
           case 'envcp_add_to_env':
             return await this.handleAddToEnv(args as any);
+          case 'envcp_check_access':
+            return await this.handleCheckAccess(args as any);
           default:
             throw new McpError(ErrorCode.MethodNotFound, `Unknown tool: ${name}`);
         }
@@ -193,13 +221,27 @@ export class EnvCPServer {
     });
   }
 
+  private async ensurePassword(): Promise<void> {
+    const pwd = this.sessionManager.getPassword();
+    if (pwd && await this.sessionManager.isValid()) {
+      this.storage.setPassword(pwd);
+      return;
+    }
+    
+    throw new Error('Session locked. Please unlock first using: envcp unlock');
+  }
+
   private async handleList(args: { tags?: string[] }): Promise<any> {
+    if (!canAIActiveCheck(this.config)) {
+      throw new Error('AI active check is disabled. User must explicitly mention variable names.');
+    }
+
     const names = await this.storage.list();
-    let filtered = names;
+    let filtered = names.filter(n => canAccess(n, this.config) && !isBlacklisted(n, this.config));
     
     if (args.tags && args.tags.length > 0) {
       const variables = await this.storage.load();
-      filtered = names.filter(name => {
+      filtered = filtered.filter(name => {
         const v = variables[name];
         return v.tags && args.tags!.some(t => v.tags!.includes(t));
       });
@@ -228,6 +270,10 @@ export class EnvCPServer {
     
     if (!variable) {
       throw new Error(`Variable '${args.name}' not found`);
+    }
+
+    if (isBlacklisted(args.name, this.config)) {
+      throw new Error(`Variable '${args.name}' is blacklisted and cannot be accessed`);
     }
 
     if (!canAccess(args.name, this.config)) {
@@ -269,6 +315,10 @@ export class EnvCPServer {
   private async handleSet(args: { name: string; value: string; tags?: string[]; description?: string }): Promise<any> {
     if (!this.config.access.allow_ai_write) {
       throw new Error('AI write access is disabled');
+    }
+
+    if (isBlacklisted(args.name, this.config)) {
+      throw new Error(`Variable '${args.name}' is blacklisted`);
     }
 
     const existing = await this.storage.get(args.name);
@@ -345,6 +395,10 @@ export class EnvCPServer {
     }
 
     for (const [name, variable] of Object.entries(variables)) {
+      if (isBlacklisted(name, this.config)) {
+        continue;
+      }
+
       const excluded = this.config.sync.exclude?.some(pattern => {
         const regex = new RegExp('^' + pattern.replace(/\*/g, '.*') + '$');
         return regex.test(name);
@@ -383,6 +437,9 @@ export class EnvCPServer {
     const env: Record<string, string> = { ...process.env };
 
     for (const name of args.variables) {
+      if (isBlacklisted(name, this.config)) {
+        continue;
+      }
       const variable = await this.storage.get(name);
       if (variable) {
         env[name] = variable.value;
@@ -424,6 +481,10 @@ export class EnvCPServer {
     
     if (!variable) {
       throw new Error(`Variable '${args.name}' not found`);
+    }
+
+    if (isBlacklisted(args.name, this.config)) {
+      throw new Error(`Variable '${args.name}' is blacklisted`);
     }
 
     const envPath = path.join(this.projectPath, args.env_file || '.env');
@@ -469,8 +530,40 @@ export class EnvCPServer {
     };
   }
 
+  private async handleCheckAccess(args: { name: string }): Promise<any> {
+    const variable = await this.storage.get(args.name);
+    const exists = !!variable;
+    const blacklisted = isBlacklisted(args.name, this.config);
+    const accessible = exists && !blacklisted && canAccess(args.name, this.config);
+
+    await this.logs.log({
+      timestamp: new Date().toISOString(),
+      operation: 'check_access',
+      variable: args.name,
+      source: 'mcp',
+      success: true,
+      message: `Access check: ${accessible ? 'granted' : 'denied'}`,
+    });
+
+    return {
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify({
+            name: args.name,
+            exists,
+            accessible,
+            blacklisted,
+            message: accessible ? 'Variable exists and can be accessed' : 'Variable cannot be accessed or does not exist',
+          }, null, 2),
+        },
+      ],
+    };
+  }
+
   async start(): Promise<void> {
     await this.logs.init();
+    await this.sessionManager.init();
     const transport = new StdioServerTransport();
     await this.server.connect(transport);
   }
