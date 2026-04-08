@@ -13,18 +13,26 @@ const message = `
 
    ─────────────────────────────────────────────
 
-   Setup options:
+   Vault location:
+
+     ~/  or  /        ->  Global vault  (shared across all projects)
+     any folder       ->  Project vault (named after the folder)
+                          You can rename it anytime with: envcp vault rename [name]
+
+   ─────────────────────────────────────────────
+
+   Get started:
 
      Simple (one-time setup):
-       $ envcp init           # Interactive guided setup
+       $ envcp init                        # Interactive guided setup
 
      Advanced (manual config):
-       $ envcp init --advanced   # Full config options
-       $ envcp add KEY           # Add a secret manually
-       $ envcp config set KEY VALUE  # Set config values
+       $ envcp init --advanced             # Full config options
+       $ envcp add [NAME] [VALUE]          # Add a secret manually
+       $ envcp config set [KEY] [VALUE]    # Set config values
 
      Explore:
-       $ envcp --help         # See all commands
+       $ envcp --help                      # See all commands
 
    Docs: https://github.com/fentz26/EnvCP
 `;
