@@ -3,7 +3,7 @@ import { EnvCPConfig, Variable, ToolDefinition } from '../types.js';
 import { maskValue } from '../utils/crypto.js';
 import { canAccess, isBlacklisted, canAIActiveCheck, validateVariableName, matchesPattern } from '../config/manager.js';
 import { SessionManager } from '../utils/session.js';
-import * as fs from 'fs-extra';
+import fs from 'fs-extra';
 import * as path from 'path';
 import * as dotenv from 'dotenv';
 

@@ -1,4 +1,4 @@
-import * as fs from 'fs-extra';
+import fs from 'fs-extra';
 import * as path from 'path';
 import { Variable, OperationLog } from '../types.js';
 import { encrypt, decrypt } from '../utils/crypto.js';
