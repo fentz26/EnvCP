@@ -509,10 +509,25 @@ export abstract class BaseAdapter {
       if (process.env[key]) env[key] = process.env[key]!;
     }
 
+    const excludedVariables: string[] = [];
+
     for (const name of args.variables) {
-      if (isBlacklisted(name, this.config)) {
+      const blacklisted = isBlacklisted(name, this.config);
+      const accessible = canAccess(name, this.config);
+
+      if (blacklisted || !accessible) {
+        excludedVariables.push(name);
+        await this.logs.log({
+          timestamp: new Date().toISOString(),
+          operation: 'check_access',
+          variable: name,
+          source: 'api',
+          success: false,
+          message: `Excluded from envcp_run due to policy (${blacklisted ? 'blacklist' : 'access'})`,
+        });
         continue;
       }
+
       const variable = await this.storage.get(name);
       if (variable) {
         env[name] = variable.value;
@@ -544,6 +559,9 @@ export abstract class BaseAdapter {
         clearTimeout(timer);
         if (killed) {
           stderr += '\n[Process killed: exceeded 30s timeout]';
+        }
+        if (excludedVariables.length > 0) {
+          stderr += `\n[envcp] Excluded variables by policy (not injected): ${excludedVariables.join(', ')}`;
         }
         resolve({ exitCode: code, stdout, stderr });
       });
