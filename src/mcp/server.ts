@@ -544,7 +544,11 @@ export class EnvCPServer {
       throw new Error(`Variable '${args.name}' is blacklisted`);
     }
 
-    const envPath = path.join(this.projectPath, args.env_file || '.env');
+    const envPath = path.resolve(this.projectPath, args.env_file || '.env');
+    if (!envPath.startsWith(path.resolve(this.projectPath))) {
+      throw new Error('env_file must be within the project directory');
+    }
+
     let content = '';
 
     if (await fs.pathExists(envPath)) {
@@ -552,7 +556,7 @@ export class EnvCPServer {
     }
 
     const envVars = dotenv.parse(content);
-    
+
     if (envVars[args.name]) {
       const lines = content.split('\n');
       const newLines = lines.map(line => {
