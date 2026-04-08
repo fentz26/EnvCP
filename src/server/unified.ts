@@ -235,7 +235,7 @@ export class UnifiedServer {
       return;
     }
 
-    const body = await parseBody(req);
+    const body = (req.method === 'POST' || req.method === 'PUT' || req.method === 'PATCH') ? await parseBody(req) : {};
 
     try {
       if (segments[0] === 'api') {
@@ -320,7 +320,7 @@ export class UnifiedServer {
 
     const parsedUrl = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
     const pathname = parsedUrl.pathname || '/';
-    const body = await parseBody(req);
+    const body = req.method === 'POST' ? await parseBody(req) : {};
 
     try {
       if (pathname === '/v1/models' && req.method === 'GET') {
@@ -392,7 +392,7 @@ export class UnifiedServer {
 
     const parsedUrl = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
     const pathname = parsedUrl.pathname || '/';
-    const body = await parseBody(req);
+    const body = req.method === 'POST' ? await parseBody(req) : {};
 
     try {
       if (pathname === '/v1/tools' && req.method === 'GET') {
