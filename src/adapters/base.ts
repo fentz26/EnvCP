@@ -1,7 +1,7 @@
 import { StorageManager, LogManager } from '../storage/index.js';
 import { EnvCPConfig, Variable, ToolDefinition } from '../types.js';
 import { maskValue } from '../utils/crypto.js';
-import { canAccess, isBlacklisted, canAIActiveCheck } from '../config/manager.js';
+import { canAccess, isBlacklisted, canAIActiveCheck, requiresUserReference } from '../config/manager.js';
 import { SessionManager } from '../utils/session.js';
 import * as fs from 'fs-extra';
 import * as path from 'path';
@@ -69,6 +69,10 @@ export abstract class BaseAdapter {
 
   // Shared tool implementations
   protected async listVariables(args: { tags?: string[] }): Promise<{ variables: string[]; count: number }> {
+    if (!this.config.access.allow_ai_read) {
+      throw new Error('AI read access is disabled');
+    }
+
     if (!canAIActiveCheck(this.config)) {
       throw new Error('AI active check is disabled. User must explicitly mention variable names.');
     }
@@ -102,6 +106,10 @@ export abstract class BaseAdapter {
     description?: string;
     encrypted: boolean;
   }> {
+    if (!this.config.access.allow_ai_read) {
+      throw new Error('AI read access is disabled');
+    }
+
     const variable = await this.storage.get(args.name);
 
     if (!variable) {
@@ -119,9 +127,8 @@ export abstract class BaseAdapter {
     variable.accessed = new Date().toISOString();
     await this.storage.set(args.name, variable);
 
-    const value = args.show_value && !this.config.access.mask_values
-      ? variable.value
-      : maskValue(variable.value);
+    const canReveal = args.show_value && !this.config.access.mask_values && !this.config.access.require_confirmation;
+    const value = canReveal ? variable.value : maskValue(variable.value);
 
     await this.logs.log({
       timestamp: new Date().toISOString(),
@@ -129,7 +136,7 @@ export abstract class BaseAdapter {
       variable: args.name,
       source: 'api',
       success: true,
-      message: args.show_value ? 'Value revealed' : 'Value masked',
+      message: canReveal ? 'Value revealed' : 'Value masked',
     });
 
     return {
@@ -206,6 +213,10 @@ export abstract class BaseAdapter {
   }
 
   protected async syncToEnv(): Promise<{ success: boolean; message: string }> {
+    if (!this.config.access.allow_ai_export) {
+      throw new Error('AI export access is disabled');
+    }
+
     if (!this.config.sync.enabled) {
       throw new Error('Sync is disabled in configuration');
     }

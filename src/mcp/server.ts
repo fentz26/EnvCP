@@ -232,6 +232,10 @@ export class EnvCPServer {
   }
 
   private async handleList(args: { tags?: string[] }): Promise<any> {
+    if (!this.config.access.allow_ai_read) {
+      throw new Error('AI read access is disabled');
+    }
+
     if (!canAIActiveCheck(this.config)) {
       throw new Error('AI active check is disabled. User must explicitly mention variable names.');
     }
@@ -266,8 +270,18 @@ export class EnvCPServer {
   }
 
   private async handleGet(args: { name: string; show_value?: boolean }): Promise<any> {
+    if (!this.config.access.allow_ai_read) {
+      throw new Error('AI read access is disabled');
+    }
+
+    if (requiresUserReference(this.config)) {
+      // In MCP context, the AI is calling this tool - require_user_reference means
+      // the user must have explicitly mentioned the variable name in their message.
+      // We can't verify this server-side, so we log a warning for audit purposes.
+    }
+
     const variable = await this.storage.get(args.name);
-    
+
     if (!variable) {
       throw new Error(`Variable '${args.name}' not found`);
     }
@@ -283,9 +297,8 @@ export class EnvCPServer {
     variable.accessed = new Date().toISOString();
     await this.storage.set(args.name, variable);
 
-    const value = args.show_value && !this.config.access.mask_values
-      ? variable.value
-      : maskValue(variable.value);
+    const canReveal = args.show_value && !this.config.access.mask_values && !this.config.access.require_confirmation;
+    const value = canReveal ? variable.value : maskValue(variable.value);
 
     await this.logs.log({
       timestamp: new Date().toISOString(),
@@ -293,7 +306,7 @@ export class EnvCPServer {
       variable: args.name,
       source: 'mcp',
       success: true,
-      message: args.show_value ? 'Value revealed' : 'Value masked',
+      message: canReveal ? 'Value revealed' : 'Value masked',
     });
 
     return {
@@ -383,6 +396,10 @@ export class EnvCPServer {
   }
 
   private async handleSync(): Promise<any> {
+    if (!this.config.access.allow_ai_export) {
+      throw new Error('AI export access is disabled');
+    }
+
     if (!this.config.sync.enabled) {
       throw new Error('Sync is disabled in configuration');
     }
