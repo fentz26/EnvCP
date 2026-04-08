@@ -7,6 +7,8 @@ export class StorageManager {
   private storePath: string;
   private encrypted: boolean;
   private password?: string;
+  private cache: Record<string, Variable> | null = null;
+  private dirty: boolean = false;
 
   constructor(storePath: string, encrypted: boolean = true) {
     this.storePath = storePath;
@@ -14,31 +16,42 @@ export class StorageManager {
   }
 
   setPassword(password: string): void {
-    this.password = password;
+    if (this.password !== password) {
+      this.password = password;
+      this.cache = null;
+    }
   }
 
   async load(): Promise<Record<string, Variable>> {
+    if (this.cache !== null) {
+      return this.cache;
+    }
+
     if (!await fs.pathExists(this.storePath)) {
-      return {};
+      this.cache = {};
+      return this.cache;
     }
 
     const data = await fs.readFile(this.storePath, 'utf8');
-    
+
     if (this.encrypted && this.password) {
       try {
         const decrypted = decrypt(data, this.password);
-        return JSON.parse(decrypted);
+        this.cache = JSON.parse(decrypted);
+        return this.cache!;
       } catch (error) {
         throw new Error('Failed to decrypt storage. Invalid password or corrupted data.');
       }
     }
 
-    return JSON.parse(data);
+    this.cache = JSON.parse(data);
+    return this.cache!;
   }
 
   async save(variables: Record<string, Variable>): Promise<void> {
+    this.cache = variables;
     const data = JSON.stringify(variables, null, 2);
-    
+
     await fs.ensureDir(path.dirname(this.storePath));
 
     if (this.encrypted && this.password) {
@@ -77,6 +90,10 @@ export class StorageManager {
 
   async exists(): Promise<boolean> {
     return fs.pathExists(this.storePath);
+  }
+
+  invalidateCache(): void {
+    this.cache = null;
   }
 }
 
