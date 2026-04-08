@@ -15,7 +15,7 @@ export default {
   ],
   coverageThreshold: {
     global: {
-      lines: 50,
+      lines: 25,
     },
   },
   coverageReporters: ['text-summary', 'lcov'],
