@@ -8,4 +8,15 @@ export default {
   transform: {
     '^.+\\.ts$': ['ts-jest', { useESM: true }],
   },
+  collectCoverageFrom: [
+    'src/**/*.ts',
+    '!src/cli/index.ts',
+    '!src/index.ts',
+  ],
+  coverageThreshold: {
+    global: {
+      lines: 50,
+    },
+  },
+  coverageReporters: ['text-summary', 'lcov'],
 };

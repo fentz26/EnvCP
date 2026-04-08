@@ -30,3 +30,7 @@ jobs:
 
       - name: Run tests
         run: npm test
+
+      - name: Coverage report
+        if: matrix.node-version == 20
+        run: npm test -- --coverage
