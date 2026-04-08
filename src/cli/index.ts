@@ -734,30 +734,126 @@ program
   .command('export')
   .description('Export variables')
   .option('-f, --format <format>', 'Output format: env, json, yaml', 'env')
+  .option('--encrypted', 'Create an encrypted portable export file')
+  .option('-o, --output <path>', 'Output file (required for --encrypted)')
   .action(async (options) => {
-    await withSession(async (storage) => {
-    const variables = await storage.load();
-    
-    let output: string;
-    
-    switch (options.format) {
-      case 'json':
-        output = JSON.stringify(variables, null, 2);
-        break;
-      case 'yaml':
-        const yaml = await import('js-yaml');
-        output = yaml.dump(variables);
-        break;
-      default:
-        const lines = Object.entries(variables).map(([k, v]) => {
-          const needsQuoting = /[\s#"'\\]/.test(v.value);
-          const val = needsQuoting ? `"${v.value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"` : v.value;
-          return `${k}=${val}`;
-        });
-        output = lines.join('\n');
-    }
+    await withSession(async (storage, _password, config) => {
+      const variables = await storage.load();
 
-    console.log(output);
+      if (options.encrypted) {
+        const outputPath = options.output;
+        if (!outputPath) {
+          console.log(chalk.red('--output <path> is required with --encrypted'));
+          return;
+        }
+
+        const { exportPassword } = await inquirer.prompt([
+          { type: 'password', name: 'exportPassword', message: 'Set export password:', mask: '*' }
+        ]);
+        const { confirmExport } = await inquirer.prompt([
+          { type: 'password', name: 'confirmExport', message: 'Confirm export password:', mask: '*' }
+        ]);
+
+        if (exportPassword !== confirmExport) {
+          console.log(chalk.red('Passwords do not match'));
+          return;
+        }
+
+        const exportData = JSON.stringify({
+          meta: { project: config.project, timestamp: new Date().toISOString(), count: Object.keys(variables).length, version: '1.0' },
+          variables,
+        }, null, 2);
+
+        const encrypted = encrypt(exportData, exportPassword);
+        await fs.writeFile(outputPath, encrypted, 'utf8');
+        console.log(chalk.green(`Encrypted export saved to: ${outputPath}`));
+        console.log(chalk.gray(`  Variables: ${Object.keys(variables).length}`));
+        return;
+      }
+
+      let output: string;
+
+      switch (options.format) {
+        case 'json':
+          output = JSON.stringify(variables, null, 2);
+          break;
+        case 'yaml': {
+          const yaml = await import('js-yaml');
+          output = yaml.dump(variables);
+          break;
+        }
+        default: {
+          const lines = Object.entries(variables).map(([k, v]) => {
+            const needsQuoting = /[\s#"'\\]/.test(v.value);
+            const val = needsQuoting ? `"${v.value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"` : v.value;
+            return `${k}=${val}`;
+          });
+          output = lines.join('\n');
+        }
+      }
+
+      console.log(output);
+    });
+  });
+
+program
+  .command('import <file>')
+  .description('Import variables from an encrypted export file')
+  .option('--merge', 'Merge with existing variables (default: replace)')
+  .action(async (file, options) => {
+    await withSession(async (storage) => {
+      if (!await fs.pathExists(file)) {
+        console.log(chalk.red(`File not found: ${file}`));
+        return;
+      }
+
+      const { importPassword } = await inquirer.prompt([
+        { type: 'password', name: 'importPassword', message: 'Enter export file password:', mask: '*' }
+      ]);
+
+      const fileContent = await fs.readFile(file, 'utf8');
+      let importData: Record<string, unknown>;
+
+      try {
+        const decrypted = decrypt(fileContent, importPassword);
+        importData = JSON.parse(decrypted);
+      } catch {
+        console.log(chalk.red('Failed to decrypt. Wrong password or invalid file.'));
+        return;
+      }
+
+      const meta = importData.meta as { project?: string; timestamp?: string; count?: number } | undefined;
+      const variables = importData.variables as Record<string, Variable>;
+
+      if (!variables || typeof variables !== 'object') {
+        console.log(chalk.red('Invalid export format'));
+        return;
+      }
+
+      if (meta) {
+        console.log(chalk.blue('Import info:'));
+        if (meta.project) console.log(chalk.gray(`  From project: ${meta.project}`));
+        if (meta.timestamp) console.log(chalk.gray(`  Exported: ${meta.timestamp}`));
+        console.log(chalk.gray(`  Variables: ${meta.count || Object.keys(variables).length}`));
+      }
+
+      const { confirm } = await inquirer.prompt([
+        { type: 'confirm', name: 'confirm', message: options.merge ? 'Merge into current store?' : 'Replace current store?', default: false }
+      ]);
+
+      if (!confirm) {
+        console.log(chalk.yellow('Import cancelled'));
+        return;
+      }
+
+      if (options.merge) {
+        const current = await storage.load();
+        await storage.save({ ...current, ...variables });
+        console.log(chalk.green(`Merged ${Object.keys(variables).length} variables`));
+      } else {
+        await storage.save(variables);
+        console.log(chalk.green(`Imported ${Object.keys(variables).length} variables`));
+      }
     });
   });
 
