@@ -3,8 +3,14 @@ import * as http from 'http';
 
 const MAX_BODY_SIZE = 1024 * 1024; // 1MB
 
-export function setCorsHeaders(res: http.ServerResponse, allowedOrigin: string = '127.0.0.1'): void {
-  res.setHeader('Access-Control-Allow-Origin', allowedOrigin);
+export function setCorsHeaders(res: http.ServerResponse, allowedOrigin?: string, requestOrigin?: string): void {
+  const localOrigins = ['http://127.0.0.1', 'http://localhost', 'http://[::1]'];
+  let origin = allowedOrigin || '*';
+  if (!allowedOrigin && requestOrigin) {
+    const matches = localOrigins.some(lo => requestOrigin.startsWith(lo));
+    origin = matches ? requestOrigin : '';
+  }
+  res.setHeader('Access-Control-Allow-Origin', origin);
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-API-Key, X-Goog-Api-Key, OpenAI-Organization');
 }

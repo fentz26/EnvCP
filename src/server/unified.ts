@@ -111,7 +111,7 @@ export class UnifiedServer {
 
     // Auto or All mode - unified server that routes based on detection
     this.httpServer = http.createServer(async (req, res) => {
-      setCorsHeaders(res);
+      setCorsHeaders(res, undefined, req.headers.origin);
 
       if (req.method === 'OPTIONS') {
         res.writeHead(204);

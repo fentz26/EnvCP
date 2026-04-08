@@ -150,7 +150,7 @@ export class OpenAIAdapter extends BaseAdapter {
     await this.init();
 
     this.server = http.createServer(async (req, res) => {
-      setCorsHeaders(res);
+      setCorsHeaders(res, undefined, req.headers.origin);
 
       if (req.method === 'OPTIONS') {
         res.writeHead(204);
