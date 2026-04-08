@@ -63,3 +63,16 @@ describe('canAccess / isBlacklisted', () => {
     expect(canAccess('DB_KEY', config)).toBe(false);
   });
 });
+
+describe('sync.target validation', () => {
+  it('accepts a relative sync target path', () => {
+    const config = EnvCPConfigSchema.parse({ sync: { target: '.env' } });
+    expect(config.sync.target).toBe('.env');
+  });
+
+  it('rejects an absolute sync target path', () => {
+    expect(() => EnvCPConfigSchema.parse({ sync: { target: '/tmp/.env' } })).toThrow(
+      'sync.target must be a relative path within the project directory'
+    );
+  });
+});
