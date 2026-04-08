@@ -92,7 +92,8 @@ export function validateVariableName(name: string): boolean {
 }
 
 export function matchesPattern(name: string, pattern: string): boolean {
-  const regex = new RegExp('^' + pattern.replace(/\*/g, '.*') + '$');
+  const escaped = pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&');
+  const regex = new RegExp('^' + escaped.replace(/\*/g, '.*') + '$');
   return regex.test(name);
 }
 
