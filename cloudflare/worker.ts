@@ -11,17 +11,19 @@ app.use('*', cors({
   allowHeaders: ['Content-Type', 'Authorization', 'X-API-Key'],
 }));
 
-// Route: /docs/* - Proxy to Mintlify
+const DOCS_URL = 'fentz.mintlify.app';
+
+// Route: /docs/* OR /mintlify-assets/* OR /_mintlify/* - Proxy to Mintlify
 app.all('/docs/*', async (c) => {
-  const DOCS_URL = 'fentz.mintlify.dev';
   const url = new URL(c.req.url);
   url.hostname = DOCS_URL;
-  url.pathname = url.pathname.replace(/^\/docs/, '') || '/';
+  url.protocol = 'https:';
+  url.pathname = c.req.path.replace(/^\/docs/, '') || '/';
   
   const proxyRequest = new Request(url, {
     method: c.req.method,
     headers: c.req.raw.headers,
-    body: c.req.raw.body
+    body: c.req.method !== 'GET' && c.req.method !== 'HEAD' ? c.req.raw.body : null
   });
   
   proxyRequest.headers.set('Host', DOCS_URL);
@@ -32,6 +34,50 @@ app.all('/docs/*', async (c) => {
     return await fetch(proxyRequest);
   } catch (err) {
     return c.json({ error: 'Docs unavailable', message: err.message }, 502);
+  }
+});
+
+app.all('/mintlify-assets/*', async (c) => {
+  const url = new URL(c.req.url);
+  url.hostname = DOCS_URL;
+  url.protocol = 'https:';
+  
+  const proxyRequest = new Request(url, {
+    method: c.req.method,
+    headers: c.req.raw.headers,
+    body: c.req.method !== 'GET' && c.req.method !== 'HEAD' ? c.req.raw.body : null
+  });
+  
+  proxyRequest.headers.set('Host', DOCS_URL);
+  proxyRequest.headers.set('X-Forwarded-Host', 'envcp.fentz.dev');
+  proxyRequest.headers.set('X-Forwarded-Proto', 'https');
+  
+  try {
+    return await fetch(proxyRequest);
+  } catch (err) {
+    return c.json({ error: 'Assets unavailable', message: err.message }, 502);
+  }
+});
+
+app.all('/_mintlify/*', async (c) => {
+  const url = new URL(c.req.url);
+  url.hostname = DOCS_URL;
+  url.protocol = 'https:';
+  
+  const proxyRequest = new Request(url, {
+    method: c.req.method,
+    headers: c.req.raw.headers,
+    body: c.req.method !== 'GET' && c.req.method !== 'HEAD' ? c.req.raw.body : null
+  });
+  
+  proxyRequest.headers.set('Host', DOCS_URL);
+  proxyRequest.headers.set('X-Forwarded-Host', 'envcp.fentz.dev');
+  proxyRequest.headers.set('X-Forwarded-Proto', 'https');
+  
+  try {
+    return await fetch(proxyRequest);
+  } catch (err) {
+    return c.json({ error: 'Mintlify assets unavailable', message: err.message }, 502);
   }
 });
 
