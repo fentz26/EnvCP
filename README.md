@@ -3,7 +3,11 @@
 <p align="center">
   <img src="./assets/logo-ascii.png" alt="EnvCP" width="100%">
 </p>
+<p align="center">
+  <strong>Secure Environment Variable Management for AI-Assisted Coding</strong>
+</p>
 
+##
 <p align="center">
   <a href="https://www.npmjs.com/package/@fentz26/envcp"><img src="https://img.shields.io/npm/v/%40fentz26%2Fenvcp?style=flat-square&color=000000&labelColor=000000&label=version" alt="npm version"></a>
   <a href="https://www.npmjs.com/package/@fentz26/envcp"><img src="https://img.shields.io/npm/unpacked-size/%40fentz26%2Fenvcp?style=flat-square&color=000000&labelColor=000000&label=size" alt="npm size"></a>
@@ -14,10 +18,6 @@
 
 <p align="center">
   <a href="cursor://anysphere.cursor-deeplink/mcp/install?name=envcp&config=eyJjb21tYW5kIjoiZW52Y3AiLCJhcmdzIjpbInNlcnZlIiwiLS1tb2RlIiwibWNwIl19"><img src="https://cursor.com/deeplink/mcp-install-dark.svg" alt="Add to Cursor"></a>
-</p>
-
-<p align="center">
-  <strong>Secure Environment Variable Management for AI-Assisted Coding</strong>
 </p>
 
 <p align="center">
