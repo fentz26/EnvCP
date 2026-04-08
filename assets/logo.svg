@@ -1,14 +1,44 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 120">
-  <style>
-    .logo { font-family: 'Courier New', monospace; font-size: 14px; fill: #58a6ff; }
-    @media (prefers-color-scheme: light) {
-      .logo { fill: #0969da; }
-    }
-  </style>
-  <text class="logo" x="50%" y="20" text-anchor="middle">███████╗███╗   ██╗██╗   ██╗ ██████╗██████╗ </text>
-  <text class="logo" x="50%" y="36" text-anchor="middle">██╔════╝████╗  ██║██║   ██║██╔════╝██╔══██╗</text>
-  <text class="logo" x="50%" y="52" text-anchor="middle">█████╗  ██╔██╗ ██║██║   ██║██║     ██████╔╝</text>
-  <text class="logo" x="50%" y="68" text-anchor="middle">██╔══╝  ██║╚██╗██║╚██╗ ██╔╝██║     ██╔═══╝ </text>
-  <text class="logo" x="50%" y="84" text-anchor="middle">███████╗██║ ╚████║ ╚████╔╝ ╚██████╗██║     </text>
-  <text class="logo" x="50%" y="100" text-anchor="middle">╚══════╝╚═╝  ╚═══╝  ╚═══╝   ╚═════╝╚═╝     </text>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 340 70" width="340" height="70">
+  <defs>
+    <style>
+      .block { fill: #6b7280; }
+    </style>
+  </defs>
+  
+  <!-- E -->
+  <rect class="block" x="10" y="5" width="40" height="8"/>
+  <rect class="block" x="10" y="5" width="8" height="60"/>
+  <rect class="block" x="10" y="31" width="30" height="8"/>
+  <rect class="block" x="10" y="57" width="40" height="8"/>
+  
+  <!-- N -->
+  <rect class="block" x="60" y="5" width="8" height="60"/>
+  <rect class="block" x="68" y="5" width="8" height="8"/>
+  <rect class="block" x="76" y="13" width="8" height="8"/>
+  <rect class="block" x="84" y="21" width="8" height="8"/>
+  <rect class="block" x="92" y="29" width="8" height="8"/>
+  <rect class="block" x="100" y="37" width="8" height="8"/>
+  <rect class="block" x="108" y="45" width="8" height="8"/>
+  <rect class="block" x="116" y="5" width="8" height="60"/>
+  
+  <!-- V -->
+  <rect class="block" x="134" y="5" width="8" height="40"/>
+  <rect class="block" x="142" y="45" width="8" height="8"/>
+  <rect class="block" x="150" y="53" width="8" height="12"/>
+  <rect class="block" x="158" y="53" width="8" height="12"/>
+  <rect class="block" x="166" y="45" width="8" height="8"/>
+  <rect class="block" x="174" y="5" width="8" height="40"/>
+  
+  <!-- C -->
+  <rect class="block" x="202" y="5" width="40" height="8"/>
+  <rect class="block" x="194" y="13" width="8" height="8"/>
+  <rect class="block" x="194" y="21" width="8" height="28"/>
+  <rect class="block" x="194" y="49" width="8" height="8"/>
+  <rect class="block" x="202" y="57" width="40" height="8"/>
+  
+  <!-- P -->
+  <rect class="block" x="252" y="5" width="8" height="60"/>
+  <rect class="block" x="260" y="5" width="30" height="8"/>
+  <rect class="block" x="290" y="13" width="8" height="18"/>
+  <rect class="block" x="260" y="31" width="30" height="8"/>
 </svg>

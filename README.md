@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="./assets/logo.svg" alt="EnvCP" width="500">
+  <img src="./assets/logo.svg" alt="EnvCP" width="400">
 </p>
 
 <p align="center">
