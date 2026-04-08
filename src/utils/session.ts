@@ -1,7 +1,8 @@
 import * as fs from 'fs-extra';
 import * as path from 'path';
 import { Session, SessionSchema } from '../types.js';
-import { generateId, encrypt, decrypt } from './crypto.js';
+import { generateId, generateSessionToken, encrypt, decrypt } from './crypto.js';
+import * as crypto from 'crypto';
 
 export class SessionManager {
   private sessionPath: string;
@@ -23,7 +24,7 @@ export class SessionManager {
   async create(password: string): Promise<Session> {
     const now = new Date();
     const expires = new Date(now.getTime() + this.timeoutMinutes * 60 * 1000);
-    
+
     this.session = {
       id: generateId(),
       created: now.toISOString(),
@@ -31,17 +32,19 @@ export class SessionManager {
       extensions: 0,
       last_access: now.toISOString(),
     };
-    
+
     this.password = password;
-    
+
+    // Store a verification hash instead of the raw password
+    const passwordHash = crypto.createHash('sha256').update(password).digest('hex');
     const sessionData = JSON.stringify({
       session: this.session,
-      password: password,
+      passwordHash,
     });
-    
+
     const encrypted = encrypt(sessionData, password);
     await fs.writeFile(this.sessionPath, encrypted, 'utf8');
-    
+
     return this.session;
   }
 
@@ -61,7 +64,8 @@ export class SessionManager {
       const decrypted = decrypt(encrypted, pwd);
       const data = JSON.parse(decrypted);
       this.session = SessionSchema.parse(data.session);
-      this.password = data.password;
+      // Password is verified by successful decryption — no longer stored in file
+      this.password = pwd;
       
       if (new Date() > new Date(this.session.expires)) {
         await this.destroy();
@@ -102,9 +106,10 @@ export class SessionManager {
     this.session.extensions += 1;
     this.session.last_access = now.toISOString();
 
+    const passwordHash = crypto.createHash('sha256').update(this.password).digest('hex');
     const sessionData = JSON.stringify({
       session: this.session,
-      password: this.password,
+      passwordHash,
     });
 
     const encrypted = encrypt(sessionData, this.password);
