@@ -11,38 +11,85 @@ app.use('*', cors({
   allowHeaders: ['Content-Type', 'Authorization', 'X-API-Key'],
 }));
 
+// Route: /docs/* - Proxy to Mintlify
+app.all('/docs/*', async (c) => {
+  const DOCS_URL = 'fentz.mintlify.dev';
+  const url = new URL(c.req.url);
+  url.hostname = DOCS_URL;
+  url.pathname = url.pathname.replace(/^\/docs/, '') || '/';
+  
+  const proxyRequest = new Request(url, {
+    method: c.req.method,
+    headers: c.req.raw.headers,
+    body: c.req.raw.body
+  });
+  
+  proxyRequest.headers.set('Host', DOCS_URL);
+  proxyRequest.headers.set('X-Forwarded-Host', 'envcp.fentz.dev');
+  proxyRequest.headers.set('X-Forwarded-Proto', 'https');
+  
+  try {
+    return await fetch(proxyRequest);
+  } catch (err) {
+    return c.json({ error: 'Docs unavailable', message: err.message }, 502);
+  }
+});
+
+// Route: /install.sh - Proxy to GitHub
+app.get('/install.sh', async (c) => {
+  const githubUrl = 'https://raw.githubusercontent.com/fentz26/EnvCP/main/scripts/install.sh';
+  try {
+    const response = await fetch(githubUrl);
+    const script = await response.text();
+    return c.text(script, 200, {
+      'Content-Type': 'text/x-shellscript',
+      'Cache-Control': 'public, max-age=300'
+    });
+  } catch (err) {
+    return c.json({ error: 'Failed to fetch install script' }, 502);
+  }
+});
+
+// Route: /
 app.get('/', (c) => {
   return c.json({
     name: 'EnvCP Cloud',
     version: '1.0.0',
-    description: 'Secure Environment Variable Management for AI-Assisted Coding',
+    description: 'Secure Environment Variable Management',
     endpoints: {
       health: '/api/health',
-      docs: '/api/docs',
+      docs: '/docs/',
+      install: '/install.sh'
     },
     github: 'https://github.com/fentz26/EnvCP',
+    install: 'curl -fsSL https://envcp.fentz.dev/install.sh | bash'
   });
 });
 
+// Route: /api/health
 app.get('/api/health', (c) => {
-  return c.json({ status: 'ok', timestamp: new Date().toISOString() });
+  return c.json({
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+    version: '1.0.0'
+  });
 });
 
+// Route: /api/docs
 app.get('/api/docs', (c) => {
   return c.json({
     name: 'EnvCP Cloud API',
     version: '1.0.0',
-    description: 'Cloud-hosted EnvCP service for secure environment variable management',
-    authentication: {
-      type: 'API Key',
-      header: 'X-API-Key or Authorization: Bearer <token>',
-    },
+    description: 'Cloud-hosted EnvCP service',
+    authentication: { type: 'API Key', header: 'X-API-Key' },
     endpoints: {
       'GET /': 'API info',
       'GET /api/health': 'Health check',
       'GET /api/docs': 'API documentation',
+      'GET /install.sh': 'Installation script',
+      'GET /docs/*': 'Documentation (proxied from Mintlify)'
     },
-    note: 'Full EnvCP functionality requires local installation. This cloud instance provides API documentation and service status.',
+    install: 'curl -fsSL https://envcp.fentz.dev/install.sh | bash'
   });
 });
 
