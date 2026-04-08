@@ -29,7 +29,6 @@ export class UnifiedServer {
   // Detect client type from request headers
   detectClientType(req: http.IncomingMessage): ClientType {
     const userAgent = req.headers['user-agent']?.toLowerCase() || '';
-    const contentType = req.headers['content-type'] || '';
     const pathname = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`).pathname;
 
     // Check for OpenAI-style requests

@@ -1,7 +1,7 @@
 import * as fs from 'fs-extra';
 import * as path from 'path';
 import { Session, SessionSchema } from '../types.js';
-import { generateId, generateSessionToken, encrypt, decrypt } from './crypto.js';
+import { generateId, encrypt, decrypt } from './crypto.js';
 import * as crypto from 'crypto';
 
 export class SessionManager {

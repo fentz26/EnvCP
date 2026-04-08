@@ -8,7 +8,6 @@ export class StorageManager {
   private encrypted: boolean;
   private password?: string;
   private cache: Record<string, Variable> | null = null;
-  private dirty: boolean = false;
 
   constructor(storePath: string, encrypted: boolean = true) {
     this.storePath = storePath;
