@@ -45,6 +45,11 @@
     "ts-jest": "^29.4.9",
     "typescript": "^5.3.0"
   },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
   "engines": {
     "node": ">=18.0.0"
   }
