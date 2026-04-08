@@ -156,7 +156,7 @@ export class EnvCPServer {
         },
         {
           name: 'envcp_add_to_env',
-          description: 'Add variable reference to .env file without showing the actual value.',
+          description: 'Write a stored variable to a .env file. The value is written to disk but not returned in the response.',
           inputSchema: {
             type: 'object',
             properties: {
