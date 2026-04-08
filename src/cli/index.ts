@@ -13,6 +13,16 @@ async function withSession(fn: (storage: StorageManager, password: string, confi
   const projectPath = process.cwd();
   const config = await loadConfig(projectPath);
 
+  // Passwordless mode: no session, no password
+  if (config.encryption?.enabled === false) {
+    const storage = new StorageManager(
+      path.join(projectPath, config.storage.path),
+      false
+    );
+    await fn(storage, '', config, projectPath);
+    return;
+  }
+
   const sessionManager = new SessionManager(
     path.join(projectPath, config.session?.path || '.envcp/.session'),
     config.session?.timeout_minutes || 30,
@@ -60,7 +70,7 @@ program
   .command('init')
   .description('Initialize EnvCP in the current project')
   .option('-p, --project <name>', 'Project name')
-  .option('-e, --encrypted', 'Enable encryption', true)
+  .option('--no-encrypt', 'Skip encryption (passwordless mode)')
   .option('--skip-env', 'Skip .env auto-import')
   .option('--skip-mcp', 'Skip MCP auto-registration')
   .action(async (options) => {
@@ -68,122 +78,153 @@ program
     const projectName = options.project || path.basename(projectPath);
 
     console.log(chalk.blue('Initializing EnvCP...'));
+    console.log('');
 
     const config = await initConfig(projectPath, projectName);
 
-    // Security mode selection
-    const { securityMode } = await inquirer.prompt([
-      {
-        type: 'list',
-        name: 'securityMode',
-        message: 'Security mode:',
-        choices: [
-          { name: 'Recoverable - Generate a recovery key (recommended)', value: 'recoverable' },
-          { name: 'Hard-lock - Lose password = lose everything (maximum security)', value: 'hard-lock' },
-        ],
-        default: 'recoverable',
-      }
-    ]);
+    // Single security question (or skip if --no-encrypt)
+    let securityChoice: 'none' | 'recoverable' | 'hard-lock';
 
-    config.security = { mode: securityMode, recovery_file: '.envcp/.recovery' };
+    if (options.encrypt === false) {
+      securityChoice = 'none';
+    } else {
+      const { mode } = await inquirer.prompt([
+        {
+          type: 'list',
+          name: 'mode',
+          message: 'How would you like to secure your variables?',
+          choices: [
+            { name: 'No encryption (fastest setup, for local dev)', value: 'none' },
+            { name: 'Encrypted with recovery key (recommended)', value: 'recoverable' },
+            { name: 'Encrypted hard-lock (max security, no recovery)', value: 'hard-lock' },
+          ],
+          default: 'recoverable',
+        }
+      ]);
+      securityChoice = mode;
+    }
+
+    // Apply security choice to config
+    if (securityChoice === 'none') {
+      config.encryption = { enabled: false };
+      config.storage.encrypted = false;
+      config.security = { mode: 'recoverable', recovery_file: '.envcp/.recovery' };
+    } else {
+      config.encryption = { enabled: true };
+      config.storage.encrypted = true;
+      config.security = { mode: securityChoice, recovery_file: '.envcp/.recovery' };
+    }
+
+    // For encrypted modes: get password now
+    let pwd = '';
+    if (securityChoice !== 'none') {
+      const { password } = await inquirer.prompt([
+        { type: 'password', name: 'password', message: 'Set encryption password:', mask: '*' }
+      ]);
+      const { confirm } = await inquirer.prompt([
+        { type: 'password', name: 'confirm', message: 'Confirm password:', mask: '*' }
+      ]);
+
+      if (password !== confirm) {
+        console.log(chalk.red('Passwords do not match. Aborting.'));
+        return;
+      }
+      pwd = password;
+    }
+
     await saveConfig(config, projectPath);
 
-    console.log(chalk.green('EnvCP initialized successfully!'));
+    const modeLabel = securityChoice === 'none' ? 'no encryption' : securityChoice;
+    console.log(chalk.green('EnvCP initialized!'));
     console.log(chalk.gray(`  Project: ${config.project}`));
-    console.log(chalk.gray(`  Storage: ${config.storage.path}`));
-    console.log(chalk.gray(`  Encrypted: ${config.storage.encrypted}`));
-    console.log(chalk.gray(`  Security: ${securityMode}`));
-    console.log(chalk.gray(`  Session timeout: ${config.session?.timeout_minutes || 30} minutes`));
-    console.log(chalk.gray(`  AI active check: ${config.access?.allow_ai_active_check ? 'enabled' : 'disabled'}`));
+    console.log(chalk.gray(`  Security: ${modeLabel}`));
+    if (securityChoice !== 'none') {
+      console.log(chalk.gray(`  Session timeout: ${config.session?.timeout_minutes || 30} minutes`));
+    }
 
-    // Auto-import .env file
+    // Auto-import .env
     if (!options.skipEnv) {
       const envPath = path.join(projectPath, '.env');
       if (await fs.pathExists(envPath)) {
-        const { importEnv } = await inquirer.prompt([
-          { type: 'confirm', name: 'importEnv', message: 'Found .env file. Import variables into EnvCP?', default: true }
-        ]);
+        const envContent = await fs.readFile(envPath, 'utf8');
+        const vars = parseEnvFile(envContent);
+        const count = Object.keys(vars).length;
 
-        if (importEnv) {
-          const { password: pwd } = await inquirer.prompt([
-            { type: 'password', name: 'password', message: 'Set encryption password:', mask: '*' }
-          ]);
-          const { confirm } = await inquirer.prompt([
-            { type: 'password', name: 'confirm', message: 'Confirm password:', mask: '*' }
-          ]);
+        if (count > 0) {
+          const storage = new StorageManager(
+            path.join(projectPath, config.storage.path),
+            config.storage.encrypted
+          );
+          if (pwd) storage.setPassword(pwd);
 
-          if (pwd !== confirm) {
-            console.log(chalk.red('Passwords do not match. Skipping .env import.'));
-          } else {
-            const envContent = await fs.readFile(envPath, 'utf8');
-            const vars = parseEnvFile(envContent);
-            const count = Object.keys(vars).length;
-
-            if (count > 0) {
-              const storage = new StorageManager(
-                path.join(projectPath, config.storage.path),
-                config.storage.encrypted
-              );
-              storage.setPassword(pwd);
-
-              const now = new Date().toISOString();
-              for (const [name, value] of Object.entries(vars)) {
-                await storage.set(name, {
-                  name,
-                  value,
-                  encrypted: config.storage.encrypted,
-                  created: now,
-                  updated: now,
-                  sync_to_env: true,
-                });
-              }
-
-              // Create session so user doesn't have to unlock immediately
-              const sessionManager = new SessionManager(
-                path.join(projectPath, config.session?.path || '.envcp/.session'),
-                config.session?.timeout_minutes || 30,
-                config.session?.max_extensions || 5
-              );
-              await sessionManager.init();
-              await sessionManager.create(pwd);
-
-              // Generate recovery key if recoverable mode
-              if (securityMode === 'recoverable') {
-                const recoveryKey = generateRecoveryKey();
-                const recoveryData = createRecoveryData(pwd, recoveryKey);
-                const recoveryPath = path.join(projectPath, config.security?.recovery_file || '.envcp/.recovery');
-                await fs.writeFile(recoveryPath, recoveryData, 'utf8');
-
-                console.log('');
-                console.log(chalk.yellow.bold('  RECOVERY KEY (save this somewhere safe!):'));
-                console.log(chalk.yellow.bold(`  ${recoveryKey}`));
-                console.log(chalk.gray('  This key is shown ONCE. If you lose it, you cannot recover your password.'));
-                console.log('');
-              }
-
-              console.log(chalk.green(`  Imported ${count} variables from .env`));
-              console.log(chalk.gray(`  Variables: ${Object.keys(vars).join(', ')}`));
-            } else {
-              console.log(chalk.yellow('  .env file is empty, nothing to import'));
-            }
+          const now = new Date().toISOString();
+          for (const [name, value] of Object.entries(vars)) {
+            await storage.set(name, {
+              name, value,
+              encrypted: config.storage.encrypted,
+              created: now, updated: now,
+              sync_to_env: true,
+            });
           }
+
+          // Create session for encrypted mode
+          if (pwd) {
+            const sessionManager = new SessionManager(
+              path.join(projectPath, config.session?.path || '.envcp/.session'),
+              config.session?.timeout_minutes || 30,
+              config.session?.max_extensions || 5
+            );
+            await sessionManager.init();
+            await sessionManager.create(pwd);
+          }
+
+          console.log(chalk.green(`  Imported ${count} variables from .env`));
+          console.log(chalk.gray(`  Variables: ${Object.keys(vars).join(', ')}`));
         }
       }
     }
 
-    // Auto-register MCP config
+    // Generate recovery key for encrypted recoverable mode
+    if (securityChoice === 'recoverable' && pwd) {
+      const recoveryKey = generateRecoveryKey();
+      const recoveryData = createRecoveryData(pwd, recoveryKey);
+      const recoveryPath = path.join(projectPath, config.security.recovery_file);
+      await fs.writeFile(recoveryPath, recoveryData, 'utf8');
+
+      console.log('');
+      console.log(chalk.yellow.bold('  RECOVERY KEY (save this somewhere safe!):'));
+      console.log(chalk.yellow.bold(`  ${recoveryKey}`));
+      console.log(chalk.gray('  This key is shown ONCE. If you lose it, you cannot recover your password.'));
+    }
+
+    // Auto-register MCP in all detected tools
     if (!options.skipMcp) {
-      const registered = await registerMcpConfig(projectPath);
-      if (registered.length > 0) {
-        console.log(chalk.green('  MCP auto-registered:'));
-        for (const name of registered) {
-          console.log(chalk.gray(`    - ${name}`));
+      const result = await registerMcpConfig(projectPath);
+      console.log('');
+      if (result.registered.length > 0) {
+        console.log(chalk.green('  MCP registered:'));
+        for (const name of result.registered) {
+          console.log(chalk.gray(`    + ${name}`));
         }
-      } else {
-        console.log(chalk.gray('  No AI tool configs detected for MCP auto-registration'));
-        console.log(chalk.gray('  You can manually add EnvCP to your AI tool config later'));
+      }
+      if (result.alreadyConfigured.length > 0) {
+        for (const name of result.alreadyConfigured) {
+          console.log(chalk.gray(`    = ${name} (already configured)`));
+        }
+      }
+      if (result.manual.length > 0) {
+        console.log(chalk.gray('  Manual setup needed:'));
+        for (const name of result.manual) {
+          console.log(chalk.gray(`    ? ${name}`));
+        }
+      }
+      if (result.registered.length === 0 && result.alreadyConfigured.length === 0) {
+        console.log(chalk.gray('  No AI tools detected for auto-registration'));
       }
     }
+
+    console.log('');
+    console.log(chalk.green('Done! Your AI tools can now use EnvCP.'));
   });
 
 program
@@ -630,45 +671,62 @@ program
   .action(async (options) => {
     const projectPath = process.cwd();
     const config = await loadConfig(projectPath);
-    
-    const sessionManager = new SessionManager(
-      path.join(projectPath, config.session?.path || '.envcp/.session'),
-      config.session?.timeout_minutes || 30,
-      config.session?.max_extensions || 5
-    );
-    await sessionManager.init();
-    
-    let session = await sessionManager.load();
-    let password = options.password;
-    
-    if (!session && !password) {
-      const answer = await inquirer.prompt([
-        { type: 'password', name: 'password', message: 'Enter password:', mask: '*' }
-      ]);
-      password = answer.password;
-      
-      const validation = validatePassword(password, config.password || {});
-      if (!validation.valid) {
-        console.log(chalk.red(validation.error));
-        return;
-      }
-      
-      session = await sessionManager.create(password);
-    }
-    
-    password = sessionManager.getPassword() || password;
-
     const mode = options.mode as string;
     const port = parseInt(options.port, 10);
     const host = options.host;
     const apiKey = options.apiKey;
 
-    // MCP mode uses stdio
-    if (mode === 'mcp') {
-      const { EnvCPServer } = await import('../mcp/server.js');
-      const server = new EnvCPServer(config, projectPath, password);
-      await server.start();
-      return;
+    let password = options.password || '';
+
+    // Passwordless mode: skip all session/password logic
+    if (config.encryption?.enabled === false) {
+      if (mode === 'mcp') {
+        const { EnvCPServer } = await import('../mcp/server.js');
+        const server = new EnvCPServer(config, projectPath);
+        await server.start();
+        return;
+      }
+    } else {
+      // Encrypted mode: need password
+      const sessionManager = new SessionManager(
+        path.join(projectPath, config.session?.path || '.envcp/.session'),
+        config.session?.timeout_minutes || 30,
+        config.session?.max_extensions || 5
+      );
+      await sessionManager.init();
+
+      let session = await sessionManager.load();
+
+      if (!session && !password) {
+        // MCP mode uses stdio — can't prompt interactively
+        if (mode === 'mcp') {
+          process.stderr.write('Error: No active session. Run `envcp unlock` first, or use --password flag.\n');
+          process.exit(1);
+        }
+
+        const answer = await inquirer.prompt([
+          { type: 'password', name: 'password', message: 'Enter password:', mask: '*' }
+        ]);
+        password = answer.password;
+
+        const validation = validatePassword(password, config.password || {});
+        if (!validation.valid) {
+          console.log(chalk.red(validation.error));
+          return;
+        }
+
+        session = await sessionManager.create(password);
+      }
+
+      password = sessionManager.getPassword() || password;
+
+      // MCP mode uses stdio
+      if (mode === 'mcp') {
+        const { EnvCPServer } = await import('../mcp/server.js');
+        const server = new EnvCPServer(config, projectPath, password);
+        await server.start();
+        return;
+      }
     }
 
     // HTTP-based modes

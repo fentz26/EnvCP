@@ -18,9 +18,11 @@ export abstract class BaseAdapter {
   constructor(config: EnvCPConfig, projectPath: string, password?: string) {
     this.config = config;
     this.projectPath = projectPath;
+
+    const encrypted = config.encryption?.enabled !== false && config.storage.encrypted;
     this.storage = new StorageManager(
       path.join(projectPath, config.storage.path),
-      config.storage.encrypted
+      encrypted
     );
 
     this.sessionManager = new SessionManager(
@@ -148,6 +150,9 @@ export abstract class BaseAdapter {
   }
 
   protected async ensurePassword(): Promise<void> {
+    // Passwordless mode: no session or password needed
+    if (this.config.encryption?.enabled === false) return;
+
     const pwd = this.sessionManager.getPassword();
     if (pwd && await this.sessionManager.isValid()) {
       this.storage.setPassword(pwd);
