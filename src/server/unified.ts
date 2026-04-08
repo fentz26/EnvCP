@@ -252,27 +252,27 @@ export class UnifiedServer {
         // Variables
         if (resource === 'variables') {
           if (!segments[2] && req.method === 'GET') {
-            const result = await this.restAdapter.callTool('list', {});
+            const result = await this.restAdapter.callTool('envcp_list', {});
             sendJson(res, 200, { success: true, data: result, timestamp: new Date().toISOString() });
             return;
           }
           if (!segments[2] && req.method === 'POST') {
-            const result = await this.restAdapter.callTool('set', body);
+            const result = await this.restAdapter.callTool('envcp_set', body);
             sendJson(res, 201, { success: true, data: result, timestamp: new Date().toISOString() });
             return;
           }
           if (segments[2] && req.method === 'GET') {
-            const result = await this.restAdapter.callTool('get', { name: segments[2], show_value: parsedUrl.query.show_value === 'true' });
+            const result = await this.restAdapter.callTool('envcp_get', { name: segments[2], show_value: parsedUrl.query.show_value === 'true' });
             sendJson(res, 200, { success: true, data: result, timestamp: new Date().toISOString() });
             return;
           }
           if (segments[2] && req.method === 'PUT') {
-            const result = await this.restAdapter.callTool('set', { ...body, name: segments[2] });
+            const result = await this.restAdapter.callTool('envcp_set', { ...body, name: segments[2] });
             sendJson(res, 200, { success: true, data: result, timestamp: new Date().toISOString() });
             return;
           }
           if (segments[2] && req.method === 'DELETE') {
-            const result = await this.restAdapter.callTool('delete', { name: segments[2] });
+            const result = await this.restAdapter.callTool('envcp_delete', { name: segments[2] });
             sendJson(res, 200, { success: true, data: result, timestamp: new Date().toISOString() });
             return;
           }
@@ -280,14 +280,14 @@ export class UnifiedServer {
 
         // Sync
         if (resource === 'sync' && req.method === 'POST') {
-          const result = await this.restAdapter.callTool('sync', {});
+          const result = await this.restAdapter.callTool('envcp_sync', {});
           sendJson(res, 200, { success: true, data: result, timestamp: new Date().toISOString() });
           return;
         }
 
         // Run
         if (resource === 'run' && req.method === 'POST') {
-          const result = await this.restAdapter.callTool('run', body);
+          const result = await this.restAdapter.callTool('envcp_run', body);
           sendJson(res, 200, { success: true, data: result, timestamp: new Date().toISOString() });
           return;
         }
