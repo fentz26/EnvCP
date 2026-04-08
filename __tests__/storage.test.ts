@@ -1,4 +1,5 @@
 import * as fs from 'fs-extra';
+import * as fsNative from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import { StorageManager } from '../src/storage/index';
@@ -8,7 +9,7 @@ describe('StorageManager', () => {
   let storePath: string;
 
   beforeEach(async () => {
-    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-test-'));
+    tmpDir = await fsNative.promises.mkdtemp(path.join(os.tmpdir(), 'envcp-test-'));
     storePath = path.join(tmpDir, 'store.enc');
   });
 

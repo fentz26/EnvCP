@@ -1,75 +1,91 @@
 import { z } from 'zod';
 
+// Storage schema with defaults
+const StorageSchema = z.object({
+  path: z.string().default('.envcp/store.enc'),
+  encrypted: z.boolean().default(true),
+  algorithm: z.enum(['aes-256-gcm', 'aes-256-cbc']).default('aes-256-gcm'),
+  compression: z.boolean().default(false),
+});
+
+// Access schema with defaults
+const AccessSchema = z.object({
+  allow_ai_read: z.boolean().default(false),
+  allow_ai_write: z.boolean().default(false),
+  allow_ai_delete: z.boolean().default(false),
+  allow_ai_export: z.boolean().default(false),
+  allow_ai_execute: z.boolean().default(false),
+  allow_ai_active_check: z.boolean().default(false),
+  require_user_reference: z.boolean().default(true),
+  allowed_commands: z.array(z.string()).optional(),
+  require_confirmation: z.boolean().default(true),
+  mask_values: z.boolean().default(true),
+  audit_log: z.boolean().default(true),
+  allowed_patterns: z.array(z.string()).optional(),
+  denied_patterns: z.array(z.string()).optional(),
+  blacklist_patterns: z.array(z.string()).default([]),
+});
+
+// Sync schema with defaults
+const SyncSchema = z.object({
+  enabled: z.boolean().default(false),
+  target: z.string().default('.env'),
+  exclude: z.array(z.string()).default([]),
+  include: z.array(z.string()).optional(),
+  format: z.enum(['dotenv', 'json', 'yaml']).default('dotenv'),
+  header: z.string().optional(),
+});
+
+// Session schema with defaults
+const SessionConfigSchema = z.object({
+  enabled: z.boolean().default(true),
+  timeout_minutes: z.number().default(30),
+  max_extensions: z.number().default(5),
+  path: z.string().default('.envcp/.session'),
+});
+
+// Encryption schema with defaults
+const EncryptionSchema = z.object({
+  enabled: z.boolean().default(true),
+});
+
+// Security schema with defaults
+const SecuritySchema = z.object({
+  mode: z.enum(['hard-lock', 'recoverable']).default('recoverable'),
+  recovery_file: z.string().default('.envcp/.recovery'),
+});
+
+// Password schema with defaults
+const PasswordSchema = z.object({
+  min_length: z.number().default(1),
+  require_complexity: z.boolean().default(false),
+  allow_numeric_only: z.boolean().default(true),
+  allow_single_char: z.boolean().default(true),
+});
+
+// Variable value schema
+const VariableValueSchema = z.object({
+  value: z.string(),
+  encrypted: z.boolean().default(false),
+  tags: z.array(z.string()).optional(),
+  description: z.string().optional(),
+  created: z.string().optional(),
+  updated: z.string().optional(),
+  accessed: z.string().optional(),
+  sync_to_env: z.boolean().default(true),
+});
+
 export const EnvCPConfigSchema = z.object({
   version: z.string().default('1.0'),
   project: z.string().optional(),
-  
-  storage: z.object({
-    path: z.string().default('.envcp/store.enc'),
-    encrypted: z.boolean().default(true),
-    algorithm: z.enum(['aes-256-gcm', 'aes-256-cbc']).default('aes-256-gcm'),
-    compression: z.boolean().default(false),
-  }).default({}),
-  
-  access: z.object({
-    allow_ai_read: z.boolean().default(false),
-    allow_ai_write: z.boolean().default(false),
-    allow_ai_delete: z.boolean().default(false),
-    allow_ai_export: z.boolean().default(false),
-    allow_ai_execute: z.boolean().default(false),
-    allow_ai_active_check: z.boolean().default(false),
-    require_user_reference: z.boolean().default(true),
-    allowed_commands: z.array(z.string()).optional(),
-    require_confirmation: z.boolean().default(true),
-    mask_values: z.boolean().default(true),
-    audit_log: z.boolean().default(true),
-    allowed_patterns: z.array(z.string()).optional(),
-    denied_patterns: z.array(z.string()).optional(),
-    blacklist_patterns: z.array(z.string()).default([]),
-  }).default({}),
-  
-  sync: z.object({
-    enabled: z.boolean().default(false),
-    target: z.string().default('.env'),
-    exclude: z.array(z.string()).default([]),
-    include: z.array(z.string()).optional(),
-    format: z.enum(['dotenv', 'json', 'yaml']).default('dotenv'),
-    header: z.string().optional(),
-  }).default({}),
-  
-  session: z.object({
-    enabled: z.boolean().default(true),
-    timeout_minutes: z.number().default(30),
-    max_extensions: z.number().default(5),
-    path: z.string().default('.envcp/.session'),
-  }).default({}),
-  
-  encryption: z.object({
-    enabled: z.boolean().default(true),
-  }).default({}),
-
-  security: z.object({
-    mode: z.enum(['hard-lock', 'recoverable']).default('recoverable'),
-    recovery_file: z.string().default('.envcp/.recovery'),
-  }).default({}),
-
-  password: z.object({
-    min_length: z.number().default(1),
-    require_complexity: z.boolean().default(false),
-    allow_numeric_only: z.boolean().default(true),
-    allow_single_char: z.boolean().default(true),
-  }).default({}),
-
-  variables: z.record(z.object({
-    value: z.string(),
-    encrypted: z.boolean().default(false),
-    tags: z.array(z.string()).optional(),
-    description: z.string().optional(),
-    created: z.string().optional(),
-    updated: z.string().optional(),
-    accessed: z.string().optional(),
-    sync_to_env: z.boolean().default(true),
-  })).optional(),
+  storage: StorageSchema.default(() => StorageSchema.parse({})),
+  access: AccessSchema.default(() => AccessSchema.parse({})),
+  sync: SyncSchema.default(() => SyncSchema.parse({})),
+  session: SessionConfigSchema.default(() => SessionConfigSchema.parse({})),
+  encryption: EncryptionSchema.default(() => EncryptionSchema.parse({})),
+  security: SecuritySchema.default(() => SecuritySchema.parse({})),
+  password: PasswordSchema.default(() => PasswordSchema.parse({})),
+  variables: z.record(z.string(), VariableValueSchema).optional(),
 });
 
 export type EnvCPConfig = z.infer<typeof EnvCPConfigSchema>;
