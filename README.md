@@ -15,11 +15,19 @@
 
 ## Installation
 
+### npm
+
 ```bash
 npm install -g @fentz26/envcp
 ```
 
-Or use without installing:
+### One-line install (curl)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/fentz26/EnvCP/main/scripts/install.sh | bash
+```
+
+### Use without installing
 
 ```bash
 npx @fentz26/envcp init
