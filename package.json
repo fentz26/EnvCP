@@ -1,6 +1,6 @@
 {
   "name": "@fentz26/envcp",
-  "version": "1.0.72",
+  "version": "1.0.8",
   "description": "MCP server for secure environment variable management - Keep your secrets safe from AI agents",
   "type": "module",
   "main": "dist/index.js",
