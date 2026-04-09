@@ -8,8 +8,6 @@ const DEFAULT_CONFIG: Partial<EnvCPConfig> = {
   storage: {
     path: '.envcp/store.enc',
     encrypted: true,
-    algorithm: 'aes-256-gcm',
-    compression: false,
   },
   access: {
     allow_ai_read: false,

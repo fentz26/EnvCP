@@ -9,8 +9,6 @@ const makeConfig = (patterns?: { allowed?: string[]; denied?: string[]; blacklis
   storage: {
     path: '.envcp/store.json',
     encrypted: false,
-    algorithm: 'aes-256-gcm',
-    compression: false,
   },
   access: {
     allow_ai_read: true,

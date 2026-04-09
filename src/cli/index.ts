@@ -1142,7 +1142,7 @@ program
 
       // 2. Encryption mode
       const encrypted = config.encryption?.enabled !== false;
-      checks.push({ name: 'Encryption', status: 'pass', detail: encrypted ? `Enabled (${config.storage.algorithm})` : 'Disabled (passwordless)' });
+      checks.push({ name: 'Encryption', status: 'pass', detail: encrypted ? 'Enabled (AES-256-GCM)' : 'Disabled (passwordless)' });
 
       // 3. Security mode
       checks.push({ name: 'Security mode', status: 'pass', detail: config.security?.mode || 'recoverable' });

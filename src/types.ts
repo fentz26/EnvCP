@@ -8,8 +8,6 @@ export const EnvCPConfigSchema = z.object({
   storage: z.object({
     path: z.string().default('.envcp/store.enc'),
     encrypted: z.boolean().default(true),
-    algorithm: z.enum(['aes-256-gcm', 'aes-256-cbc']).default('aes-256-gcm'),
-    compression: z.boolean().default(false),
   }).default({}),
   
   access: z.object({
