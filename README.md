@@ -34,6 +34,14 @@
 npm install -g @fentz26/envcp
 ```
 
+### pip (Python)
+
+```bash
+pip install envcp
+```
+
+> Requires Node.js 18+ to be installed.
+
 ### curl
 
 ```bash
