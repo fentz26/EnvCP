@@ -14,6 +14,7 @@
   <a href="https://github.com/fentz26/EnvCP/actions"><img src="https://img.shields.io/github/actions/workflow/status/fentz26/EnvCP/ci.yml?style=flat-square&color=000000&labelColor=000000&label=ci" alt="CI"></a>
   <a href="https://github.com/fentz26/EnvCP/blob/main/LICENSE"><img src="https://img.shields.io/github/license/fentz26/EnvCP?style=flat-square&color=000000&labelColor=000000" alt="license"></a>
   <a href="https://nodejs.org"><img src="https://img.shields.io/node/v/%40fentz26%2Fenvcp?style=flat-square&color=000000&labelColor=000000&label=node" alt="node version"></a>
+[![SafeSkill 20/100](https://img.shields.io/badge/SafeSkill-20%2F100_Blocked-red)](https://safeskill.dev/scan/fentz26-envcp)
 </p>
 
 <p align="center">
