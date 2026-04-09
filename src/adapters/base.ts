@@ -478,6 +478,7 @@ export abstract class BaseAdapter {
     }
     if (current.length > 0) tokens.push(current);
 
+    if (inSingle || inDouble) throw new Error('Mismatched quotes in command');
     if (tokens.length === 0) throw new Error('Empty command');
     return { program: tokens[0], args: tokens.slice(1) };
   }
