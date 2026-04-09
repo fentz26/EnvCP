@@ -1,7 +1,7 @@
 
 
 <p align="center">
-  <a href="https://envcp.fentz.dev"><img src="./assets/logo-ascii.png" alt="EnvCP" width="100%"></a>
+  <a href="https://envcp.fentz.dev/docs"><img src="./assets/logo-ascii.png" alt="EnvCP" width="100%"></a>
 </p>
 <p align="center">
   <strong>Secure Environment Variable Management for AI agent</strong>
