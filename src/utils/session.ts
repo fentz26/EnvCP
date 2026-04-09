@@ -40,6 +40,7 @@ export class SessionManager {
   });
 
     const encrypted = encrypt(sessionData, password);
+    await fs.ensureFile(this.sessionPath);
     const releaseCreate = await lockfile.lock(this.sessionPath, { retries: { retries: 3, minTimeout: 50 } });
     try {
       await fs.writeFile(this.sessionPath, encrypted, 'utf8');
