@@ -1,5 +1,6 @@
 import fs from 'fs-extra';
 import * as path from 'path';
+import lockfile from 'proper-lockfile';
 import { Variable, OperationLog } from '../types.js';
 import { encrypt, decrypt } from '../utils/crypto.js';
 
@@ -33,6 +34,11 @@ export class StorageManager {
       return this.cache;
     }
 
+    const stat = await fs.lstat(this.storePath);
+    if (!stat.isFile()) {
+      throw new Error(`Storage path is not a regular file: ${this.storePath}`);
+    }
+
     const data = await fs.readFile(this.storePath, 'utf8');
 
     if (this.encrypted && this.password) {
@@ -47,7 +53,7 @@ export class StorageManager {
           this.cache = restored;
           return this.cache;
         }
-        throw new Error('Failed to decrypt storage. Invalid password or corrupted data.');
+        throw new Error('Failed to decrypt storage. Invalid password or corrupted data.', { cause: error });
       }
     }
 
@@ -61,17 +67,27 @@ export class StorageManager {
 
     await fs.ensureDir(path.dirname(this.storePath));
 
-    // Rotate backups before writing
-    await this.rotateBackups();
+    // Ensure the store file exists so lockfile can lock it
+    if (!await fs.pathExists(this.storePath)) {
+      await fs.writeFile(this.storePath, '', 'utf8');
+    }
 
-    const content = this.encrypted && this.password
-      ? encrypt(data, this.password)
-      : data;
+    const release = await lockfile.lock(this.storePath, { retries: { retries: 5, minTimeout: 50 } });
+    try {
+      // Rotate backups before writing
+      await this.rotateBackups();
 
-    // Atomic write: write to temp file, then rename
-    const tmpPath = this.storePath + '.tmp';
-    await fs.writeFile(tmpPath, content, 'utf8');
-    await fs.rename(tmpPath, this.storePath);
+      const content = this.encrypted && this.password
+        ? encrypt(data, this.password)
+        : data;
+
+      // Atomic write: write to temp file, then rename
+      const tmpPath = this.storePath + '.tmp';
+      await fs.writeFile(tmpPath, content, 'utf8');
+      await fs.rename(tmpPath, this.storePath);
+    } finally {
+      await release();
+    }
   }
 
   private async rotateBackups(): Promise<void> {
