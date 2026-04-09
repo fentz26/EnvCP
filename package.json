@@ -3,9 +3,13 @@
   "version": "1.0.83",
   "mcpName": "dev.fentz.envcp/envcp",
   "description": "MCP server for secure environment variable management - Keep your secrets safe from AI agents",
+  "homepage": "https://envcp.fentz.dev",
   "repository": {
     "type": "git",
     "url": "https://github.com/fentz26/EnvCP.git"
+  },
+  "bugs": {
+    "url": "https://github.com/fentz26/EnvCP/issues"
   },
   "type": "module",
   "main": "dist/index.js",
