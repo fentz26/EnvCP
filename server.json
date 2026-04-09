@@ -1,17 +1,17 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
-  "name": "io.github.fentz26/envcp",
+  "name": "dev.fentz.envcp/envcp",
   "description": "Encrypted environment variable vault with AI access policies, keeping secrets safe from AI agents.",
   "repository": {
     "url": "https://github.com/fentz26/EnvCP",
     "source": "github"
   },
-  "version": "1.0.82",
+  "version": "1.0.83",
   "packages": [
     {
       "registryType": "npm",
       "identifier": "@fentz26/envcp",
-      "version": "1.0.82",
+      "version": "1.0.83",
       "transport": {
         "type": "stdio"
       }
