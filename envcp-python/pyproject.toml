@@ -1,0 +1,43 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "envcp"
+version = "1.0.83"
+description = "Encrypted environment variable vault with AI access policies, keeping secrets safe from AI agents"
+readme = "README.md"
+license = {text = "SAL-1.0"}
+authors = [
+    {name = "fentz26", email = "work@fentz.dev"}
+]
+keywords = ["mcp", "environment-variables", "secrets", "security", "ai", "claude", "model-context-protocol"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: Other/Proprietary License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Security",
+    "Topic :: System :: Systems Administration",
+]
+requires-python = ">=3.8"
+dependencies = []
+
+[project.urls]
+Homepage = "https://envcp.fentz.dev"
+Documentation = "https://envcp.fentz.dev/docs"
+Repository = "https://github.com/fentz26/EnvCP"
+Issues = "https://github.com/fentz26/EnvCP/issues"
+
+[project.scripts]
+envcp = "envcp.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
