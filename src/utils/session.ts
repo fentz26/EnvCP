@@ -1,5 +1,6 @@
 import fs from 'fs-extra';
 import * as path from 'path';
+import lockfile from 'proper-lockfile';
 import { Session, SessionSchema } from '../types.js';
 import { generateId, encrypt, decrypt } from './crypto.js';
 
@@ -39,7 +40,12 @@ export class SessionManager {
   });
 
     const encrypted = encrypt(sessionData, password);
-    await fs.writeFile(this.sessionPath, encrypted, 'utf8');
+    const releaseCreate = await lockfile.lock(this.sessionPath, { retries: { retries: 3, minTimeout: 50 } });
+    try {
+      await fs.writeFile(this.sessionPath, encrypted, 'utf8');
+    } finally {
+      await releaseCreate();
+    }
 
     return this.session;
   }
@@ -50,6 +56,11 @@ export class SessionManager {
     }
 
     try {
+      const stat = await fs.lstat(this.sessionPath);
+      if (!stat.isFile()) {
+        return null;
+      }
+
       const encrypted = await fs.readFile(this.sessionPath, 'utf8');
       
       const pwd = password || this.password;
@@ -107,7 +118,12 @@ export class SessionManager {
   });
 
     const encrypted = encrypt(sessionData, this.password);
-    await fs.writeFile(this.sessionPath, encrypted, 'utf8');
+    const releaseExtend = await lockfile.lock(this.sessionPath, { retries: { retries: 3, minTimeout: 50 } });
+    try {
+      await fs.writeFile(this.sessionPath, encrypted, 'utf8');
+    } finally {
+      await releaseExtend();
+    }
 
     return this.session;
   }
