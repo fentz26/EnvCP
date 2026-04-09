@@ -1,7 +1,7 @@
 import fs from 'fs-extra';
 import * as os from 'os';
 import * as path from 'path';
-import { loadConfig, saveConfig, initConfig, canAIActiveCheck, requiresUserReference } from '../src/config/manager';
+import { loadConfig, saveConfig, initConfig, canAIActiveCheck, requiresUserReference, registerMcpConfig } from '../src/config/manager';
 import { EnvCPConfigSchema } from '../src/types';
 
 describe('loadConfig', () => {
@@ -123,6 +123,175 @@ describe('initConfig', () => {
   it('uses directory basename when no project name given', async () => {
     const config = await initConfig(tmpDir);
     expect(config.project).toBe(path.basename(tmpDir));
+  });
+});
+
+describe('registerMcpConfig', () => {
+  let tmpDir: string;
+
+  beforeEach(async () => {
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-mcp-reg-'));
+  });
+
+  afterEach(async () => {
+    await fs.remove(tmpDir);
+  });
+
+  it('registers to project-local .vscode/mcp.json when .vscode exists', async () => {
+    await fs.ensureDir(path.join(tmpDir, '.vscode'));
+    const result = await registerMcpConfig(tmpDir);
+    expect(result.registered).toContain('VS Code');
+    const content = await fs.readFile(path.join(tmpDir, '.vscode', 'mcp.json'), 'utf8');
+    const config = JSON.parse(content);
+    expect(config.servers.envcp).toBeDefined();
+  });
+
+  it('registers to project-local .cursor/mcp.json when .cursor exists', async () => {
+    await fs.ensureDir(path.join(tmpDir, '.cursor'));
+    const result = await registerMcpConfig(tmpDir);
+    expect(result.registered).toContain('Cursor (project)');
+    const content = await fs.readFile(path.join(tmpDir, '.cursor', 'mcp.json'), 'utf8');
+    const config = JSON.parse(content);
+    expect(config.mcpServers.envcp).toBeDefined();
+  });
+
+  it('registers to project-local .jb-mcp.json when .idea exists', async () => {
+    await fs.ensureDir(path.join(tmpDir, '.idea'));
+    const result = await registerMcpConfig(tmpDir);
+    expect(result.registered).toContain('JetBrains');
+    const content = await fs.readFile(path.join(tmpDir, '.jb-mcp.json'), 'utf8');
+    const config = JSON.parse(content);
+    expect(config.mcpServers.envcp).toBeDefined();
+  });
+
+  it('skips project-local configs when directories do not exist', async () => {
+    const result = await registerMcpConfig(tmpDir);
+    expect(result.registered).not.toContain('VS Code');
+    expect(result.registered).not.toContain('Cursor (project)');
+    expect(result.registered).not.toContain('JetBrains');
+  });
+
+  it('reports already configured when envcp entry exists', async () => {
+    await fs.ensureDir(path.join(tmpDir, '.vscode'));
+    await fs.writeFile(path.join(tmpDir, '.vscode', 'mcp.json'), JSON.stringify({ servers: { envcp: {} } }));
+    const result = await registerMcpConfig(tmpDir);
+    expect(result.alreadyConfigured).toContain('VS Code');
+  });
+
+  it('includes manual targets in result', async () => {
+    const result = await registerMcpConfig(tmpDir);
+    expect(result.manual.length).toBeGreaterThan(0);
+    expect(result.manual.some(m => m.includes('Trae'))).toBe(true);
+  });
+
+  it('registers to Zed settings when file exists', async () => {
+    const zedPath = path.join(process.env.HOME || '', '.config', 'zed', 'settings.json');
+    const hadZed = await fs.pathExists(zedPath);
+    let originalContent: string | undefined;
+
+    if (hadZed) {
+      originalContent = await fs.readFile(zedPath, 'utf8');
+    }
+
+    try {
+      await fs.ensureDir(path.dirname(zedPath));
+      const existingConfig = hadZed ? JSON.parse(originalContent!) : {};
+      // Remove envcp if present
+      if (existingConfig.context_servers?.envcp) {
+        delete existingConfig.context_servers.envcp;
+      }
+      await fs.writeFile(zedPath, JSON.stringify(existingConfig));
+
+      const result = await registerMcpConfig(tmpDir);
+      // Zed should be registered or already configured
+      const zedRegistered = result.registered.includes('Zed') || result.alreadyConfigured.includes('Zed');
+      expect(zedRegistered).toBe(true);
+    } finally {
+      if (hadZed && originalContent) {
+        await fs.writeFile(zedPath, originalContent);
+      } else if (!hadZed) {
+        await fs.remove(zedPath);
+      }
+    }
+  });
+
+  it('registers to OpenCode config when file exists', async () => {
+    const opencodePath = path.join(process.env.HOME || '', '.config', 'opencode', 'opencode.json');
+    const hadOpenCode = await fs.pathExists(opencodePath);
+    let originalContent: string | undefined;
+
+    if (hadOpenCode) {
+      originalContent = await fs.readFile(opencodePath, 'utf8');
+    }
+
+    try {
+      await fs.ensureDir(path.dirname(opencodePath));
+      const existingConfig = hadOpenCode ? JSON.parse(originalContent!) : {};
+      // Remove envcp if present
+      if (existingConfig.mcp?.envcp) {
+        delete existingConfig.mcp.envcp;
+      }
+      await fs.writeFile(opencodePath, JSON.stringify(existingConfig));
+
+      const result = await registerMcpConfig(tmpDir);
+      const registered = result.registered.includes('OpenCode') || result.alreadyConfigured.includes('OpenCode');
+      expect(registered).toBe(true);
+    } finally {
+      if (hadOpenCode && originalContent) {
+        await fs.writeFile(opencodePath, originalContent);
+      } else if (!hadOpenCode) {
+        await fs.remove(opencodePath);
+      }
+    }
+  });
+
+  it('registers to GitHub Copilot CLI config when file exists', async () => {
+    const copilotPath = path.join(process.env.HOME || '', '.copilot', 'mcp-config.json');
+    const hadCopilot = await fs.pathExists(copilotPath);
+    let originalContent: string | undefined;
+
+    if (hadCopilot) {
+      originalContent = await fs.readFile(copilotPath, 'utf8');
+    }
+
+    try {
+      await fs.ensureDir(path.dirname(copilotPath));
+      const existingConfig = hadCopilot ? JSON.parse(originalContent!) : {};
+      // Remove envcp if present
+      if (existingConfig.mcp_servers) {
+        existingConfig.mcp_servers = (existingConfig.mcp_servers as any[]).filter((s: any) => s.name !== 'envcp');
+      }
+      await fs.writeFile(copilotPath, JSON.stringify(existingConfig));
+
+      const result = await registerMcpConfig(tmpDir);
+      const registered = result.registered.includes('GitHub Copilot CLI') || result.alreadyConfigured.includes('GitHub Copilot CLI');
+      expect(registered).toBe(true);
+    } finally {
+      if (hadCopilot && originalContent) {
+        await fs.writeFile(copilotPath, originalContent);
+      } else if (!hadCopilot) {
+        await fs.remove(copilotPath);
+      }
+    }
+  });
+
+  it('handles invalid JSON in existing config gracefully', async () => {
+    await fs.ensureDir(path.join(tmpDir, '.vscode'));
+    await fs.writeFile(path.join(tmpDir, '.vscode', 'mcp.json'), 'not-json');
+    // Should not throw
+    const result = await registerMcpConfig(tmpDir);
+    expect(result.registered).not.toContain('VS Code');
+  });
+
+  it('updates existing Google AntiGravity config if file exists', async () => {
+    await fs.writeFile(path.join(tmpDir, 'mcp_config.json'), JSON.stringify({ mcpServers: {} }));
+    const result = await registerMcpConfig(tmpDir);
+    expect(result.registered).toContain('Google AntiGravity');
+  });
+
+  it('skips Google AntiGravity when no existing file', async () => {
+    const result = await registerMcpConfig(tmpDir);
+    expect(result.registered).not.toContain('Google AntiGravity');
   });
 });
 

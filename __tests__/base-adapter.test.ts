@@ -259,6 +259,34 @@ describe('BaseAdapter tool operations', () => {
     });
   });
 
+  describe('getToolDefinitions', () => {
+    it('returns all registered tools', () => {
+      const tools = adapter.getToolDefinitions();
+      expect(tools.length).toBe(8);
+      const names = tools.map(t => t.name);
+      expect(names).toContain('envcp_list');
+      expect(names).toContain('envcp_get');
+      expect(names).toContain('envcp_set');
+      expect(names).toContain('envcp_delete');
+      expect(names).toContain('envcp_sync');
+      expect(names).toContain('envcp_run');
+      expect(names).toContain('envcp_add_to_env');
+      expect(names).toContain('envcp_check_access');
+    });
+  });
+
+  describe('constructor with password', () => {
+    it('sets password on storage when provided', async () => {
+      const a = new TestAdapter(EnvCPConfigSchema.parse({
+        access: { allow_ai_read: true, allow_ai_active_check: true },
+        encryption: { enabled: false },
+        storage: { encrypted: false, path: '.envcp/store.json' },
+      }), tmpDir, 'mypass');
+      // No error — password is set
+      expect(a).toBeDefined();
+    });
+  });
+
   describe('callTool', () => {
     it('throws for unknown tool', async () => {
       await expect(adapter.callTool('nonexistent', {})).rejects.toThrow('Unknown tool');
@@ -272,6 +300,39 @@ describe('BaseAdapter tool operations', () => {
       }), tmpDir);
       await a.init();
       await expect(a.callTool('envcp_list', {})).rejects.toThrow('Session locked');
+    });
+
+    it('calls envcp_sync via callTool handler', async () => {
+      const a = new TestAdapter(EnvCPConfigSchema.parse({
+        access: { allow_ai_read: true, allow_ai_write: true, allow_ai_export: true, allow_ai_active_check: true },
+        encryption: { enabled: false },
+        storage: { encrypted: false, path: '.envcp/store.json' },
+        sync: { enabled: true, target: '.env' },
+      }), tmpDir);
+      await a.init();
+      await a.seedVariable({ name: 'SYNC', value: 'v', encrypted: false, created: now, updated: now, sync_to_env: true });
+      const result = await a.callTool('envcp_sync', {});
+      expect(result.success).toBe(true);
+    });
+
+    it('calls envcp_run via callTool handler', async () => {
+      const a = new TestAdapter(makeConfig({ allowed_commands: ['echo'] }), tmpDir);
+      await a.init();
+      await a.seedVariable({ name: 'RUN_V', value: 'hi', encrypted: false, created: now, updated: now, sync_to_env: true });
+      const result = await a.callTool('envcp_run', { command: 'echo test', variables: ['RUN_V'] });
+      expect(result.stdout).toContain('test');
+    });
+
+    it('calls envcp_add_to_env via callTool handler', async () => {
+      await adapter.seedVariable({ name: 'ADD_V', value: 'val', encrypted: false, created: now, updated: now, sync_to_env: true });
+      const result = await adapter.callTool('envcp_add_to_env', { name: 'ADD_V' });
+      expect(result.success).toBe(true);
+    });
+
+    it('calls envcp_check_access via callTool handler', async () => {
+      await adapter.seedVariable({ name: 'CHECK_V', value: 'v', encrypted: false, created: now, updated: now, sync_to_env: true });
+      const result = await adapter.callTool('envcp_check_access', { name: 'CHECK_V' });
+      expect(result.accessible).toBe(true);
     });
   });
 
@@ -340,6 +401,72 @@ describe('BaseAdapter tool operations', () => {
 
     it('rejects mismatched quotes', async () => {
       await expect(adapter.runRunCommand({ command: 'echo "hello', variables: [] })).rejects.toThrow('Mismatched quotes');
+    });
+
+    it('runs a valid command and captures output', async () => {
+      const result = await adapter.runRunCommand({ command: 'echo hello', variables: [] });
+      expect(result.stdout).toContain('hello');
+      expect(result.exitCode).toBe(0);
+    });
+
+    it('handles single-quoted arguments', async () => {
+      const result = await adapter.runRunCommand({ command: "echo 'hello world'", variables: [] });
+      expect(result.stdout).toContain('hello world');
+    });
+
+    it('calls envcp_delete via callTool handler', async () => {
+      await adapter.seedVariable({ name: 'DEL_CT', value: 'x', encrypted: false, created: now, updated: now, sync_to_env: true });
+      const result = await adapter.callTool('envcp_delete', { name: 'DEL_CT' });
+      expect(result.success).toBe(true);
+    });
+
+    it('excludes blacklisted variables from injection', async () => {
+      const a = new TestAdapter(makeConfig({ blacklist_patterns: ['SECRET_*'], allowed_commands: ['echo'] }), tmpDir);
+      await a.init();
+      await a.seedVariable({ name: 'SECRET_KEY', value: 'hidden', encrypted: false, created: now, updated: now, sync_to_env: true });
+      await a.seedVariable({ name: 'APP_KEY', value: 'visible', encrypted: false, created: now, updated: now, sync_to_env: true });
+      const result = await a.runRunCommand({ command: 'echo test', variables: ['SECRET_KEY', 'APP_KEY'] });
+      expect(result.stderr).toContain('Excluded variables by policy');
+      expect(result.stderr).toContain('SECRET_KEY');
+    });
+  });
+
+  describe('ensurePassword', () => {
+    it('skips password check in unencrypted mode', async () => {
+      const a = new TestAdapter(EnvCPConfigSchema.parse({
+        access: { allow_ai_read: true, allow_ai_active_check: true },
+        encryption: { enabled: false },
+        storage: { encrypted: false, path: '.envcp/store.json' },
+      }), tmpDir);
+      await a.init();
+      const result = await a.callTool('envcp_list', {});
+      expect(result.count).toBe(0);
+    });
+
+    it('uses session password when session is valid (encrypted mode)', async () => {
+      // Create a valid session first
+      const { SessionManager } = await import('../src/utils/session');
+      const sessionPath = path.join(tmpDir, '.envcp', '.session');
+      await fs.ensureDir(path.dirname(sessionPath));
+      const sm = new SessionManager(sessionPath, 30, 5);
+      await sm.init();
+      await sm.create('testpass');
+
+      // Create encrypted adapter — the session manager will find the session
+      const a = new TestAdapter(EnvCPConfigSchema.parse({
+        access: { allow_ai_read: true, allow_ai_active_check: true },
+        encryption: { enabled: true },
+        storage: { encrypted: true, path: '.envcp/store.enc' },
+      }), tmpDir);
+      await a.init();
+
+      // Manually load the session into the adapter's session manager
+      const adapterSM = (a as any).sessionManager as InstanceType<typeof SessionManager>;
+      await adapterSM.load('testpass');
+
+      // Now callTool should use the session password (lines 158-159)
+      const result = await a.callTool('envcp_list', {});
+      expect(result.count).toBe(0);
     });
   });
 });

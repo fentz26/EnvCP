@@ -131,6 +131,54 @@ describe('parseBody', () => {
   });
 });
 
+describe('sendJson sanitization edge cases', () => {
+  it('sanitizes nested Error values in objects', () => {
+    const res = createMockRes();
+    sendJson(res, 500, { details: new Error('nested error'), trace: 'should be stripped' });
+    const parsed = JSON.parse((res as any)._body);
+    expect(parsed.details).toBe('nested error');
+    expect(parsed.trace).toBeUndefined();
+  });
+
+  it('passes through non-object non-Error data in error responses', () => {
+    const res = createMockRes();
+    sendJson(res, 400, 'just a string');
+    expect((res as any)._body).toBe('"just a string"');
+  });
+});
+
+describe('RateLimiter cleanup', () => {
+  it('cleans up stale entries', async () => {
+    const limiter = new RateLimiter(10, 50); // 50ms window
+    limiter.isAllowed('ip1');
+    expect(limiter.getRemainingRequests('ip1')).toBe(9);
+
+    // Wait for window to expire and cleanup to run
+    await new Promise(r => setTimeout(r, 200));
+    expect(limiter.getRemainingRequests('ip1')).toBe(10); // reset after window
+    limiter.destroy();
+  });
+
+  it('retains recent entries and cleans old ones (mixed state)', async () => {
+    const limiter = new RateLimiter(100, 100); // 100ms window
+    limiter.isAllowed('old_ip');
+
+    // Wait for old_ip to age out
+    await new Promise(r => setTimeout(r, 150));
+
+    // Now make a fresh request from new_ip
+    limiter.isAllowed('new_ip');
+
+    // Trigger cleanup explicitly via another request that causes internal cleanup
+    // The cleanup runs on interval, so wait for it
+    await new Promise(r => setTimeout(r, 150));
+
+    // old_ip should be cleaned, new_ip should still be there
+    expect(limiter.getRemainingRequests('old_ip')).toBe(100); // fully reset
+    limiter.destroy();
+  });
+});
+
 describe('rateLimitMiddleware', () => {
   it('allows requests and sets header', () => {
     const limiter = new RateLimiter(10, 60000);

@@ -119,6 +119,55 @@ describe('RESTAdapter HTTP server', () => {
   it('getApiDocs returns documentation string', () => {
     expect(adapter.getApiDocs()).toContain('EnvCP REST API');
   });
+
+  it('POST /api/run executes a command', async () => {
+    // First set up a config that allows execution
+    (adapter as any).config.access.allow_ai_execute = true;
+    (adapter as any).config.access.allowed_commands = ['echo'];
+    await fetch(port, 'POST', '/api/variables', { name: 'RUN_VAR', value: 'runval' });
+    const { status, data } = await fetch(port, 'POST', '/api/run', { command: 'echo hello', variables: ['RUN_VAR'] });
+    expect(status).toBe(200);
+  });
+
+  it('GET /api/access/:name checks access', async () => {
+    await fetch(port, 'POST', '/api/variables', { name: 'ACCESS_VAR', value: 'v' });
+    const { status, data } = await fetch(port, 'GET', '/api/access/ACCESS_VAR');
+    expect(status).toBe(200);
+    expect((data as any).data.accessible).toBe(true);
+  });
+});
+
+describe('RESTAdapter with API key', () => {
+  let tmpDir: string;
+  let adapter: RESTAdapter;
+  let port: number;
+
+  beforeAll(async () => {
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-rest-auth-'));
+    adapter = new RESTAdapter(makeConfig(), tmpDir);
+    port = 30000 + Math.floor(Math.random() * 10000);
+    await adapter.startServer(port, '127.0.0.1', 'test-api-key');
+  });
+
+  afterAll(async () => {
+    adapter.stopServer();
+    await fs.remove(tmpDir);
+  });
+
+  it('rejects requests without API key', async () => {
+    const { status } = await fetch(port, 'GET', '/api/health');
+    expect(status).toBe(401);
+  });
+
+  it('accepts requests with valid API key', async () => {
+    const { status } = await fetch(port, 'GET', '/api/health', undefined, { 'X-API-Key': 'test-api-key' });
+    expect(status).toBe(200);
+  });
+
+  it('handles OPTIONS preflight', async () => {
+    const { status } = await fetch(port, 'OPTIONS', '/api/health');
+    expect(status).toBe(204);
+  });
 });
 
 describe('OpenAIAdapter', () => {
@@ -232,6 +281,131 @@ describe('OpenAIAdapter', () => {
     const { status } = await fetch(port, 'GET', '/v1/unknown');
     expect(status).toBe(404);
   });
+
+  it('handles OPTIONS preflight', async () => {
+    const { status } = await fetch(port, 'OPTIONS', '/v1/models');
+    expect(status).toBe(204);
+  });
+
+  it('POST /v1/chat/completions with tool_calls processes them', async () => {
+    const { status, data } = await fetch(port, 'POST', '/v1/chat/completions', {
+      messages: [{
+        role: 'assistant',
+        content: null,
+        tool_calls: [{
+          id: 'tc_chat',
+          type: 'function',
+          function: { name: 'envcp_list', arguments: '{}' },
+        }],
+      }],
+    });
+    expect(status).toBe(200);
+    expect((data as any).tool_results).toBeDefined();
+  });
+});
+
+describe('RESTAdapter sync and error routes', () => {
+  let tmpDir: string;
+  let adapter: RESTAdapter;
+  let port: number;
+
+  beforeAll(async () => {
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-rest-sync-'));
+    const config = EnvCPConfigSchema.parse({
+      access: {
+        allow_ai_read: true,
+        allow_ai_write: true,
+        allow_ai_delete: true,
+        allow_ai_export: true,
+        allow_ai_execute: true,
+        allow_ai_active_check: true,
+        require_user_reference: false,
+        require_confirmation: false,
+        mask_values: false,
+        blacklist_patterns: [],
+        allowed_commands: ['echo'],
+      },
+      encryption: { enabled: false },
+      storage: { encrypted: false, path: '.envcp/store.json' },
+      sync: { enabled: true, target: '.env' },
+    });
+    adapter = new RESTAdapter(config, tmpDir);
+    port = 30000 + Math.floor(Math.random() * 10000);
+    await adapter.startServer(port, '127.0.0.1');
+  });
+
+  afterAll(async () => {
+    adapter.stopServer();
+    await fs.remove(tmpDir);
+  });
+
+  it('POST /api/sync syncs to .env file', async () => {
+    await fetch(port, 'POST', '/api/variables', { name: 'SYNC_V', value: 'synced' });
+    const { status, data } = await fetch(port, 'POST', '/api/sync');
+    expect(status).toBe(200);
+    expect((data as any).success).toBe(true);
+  });
+
+  it('POST /api/run executes command', async () => {
+    await fetch(port, 'POST', '/api/variables', { name: 'CMD_VAR', value: 'val' });
+    const { status, data } = await fetch(port, 'POST', '/api/run', { command: 'echo test', variables: ['CMD_VAR'] });
+    expect(status).toBe(200);
+  });
+
+  it('maps "not found" errors to 404 status', async () => {
+    const { status } = await fetch(port, 'GET', '/api/variables/TOTALLY_MISSING_VAR');
+    expect(status).toBe(404);
+  });
+
+  it('maps "disabled" errors to 403 status', async () => {
+    // Disable AI read dynamically
+    (adapter as any).config.access.allow_ai_read = false;
+    const { status } = await fetch(port, 'GET', '/api/variables');
+    expect(status).toBe(403);
+    (adapter as any).config.access.allow_ai_read = true;
+  });
+
+  it('POST /api/tools/envcp_add_to_env calls add_to_env handler', async () => {
+    await fetch(port, 'POST', '/api/variables', { name: 'ADD_REST', value: 'val' });
+    const { status, data } = await fetch(port, 'POST', '/api/tools/envcp_add_to_env', { name: 'ADD_REST' });
+    expect(status).toBe(200);
+    expect((data as any).data.success).toBe(true);
+  });
+
+  it('POST /api/tools/envcp_check_access calls check_access handler', async () => {
+    await fetch(port, 'POST', '/api/variables', { name: 'CHK_REST', value: 'val' });
+    const { status, data } = await fetch(port, 'POST', '/api/tools/envcp_check_access', { name: 'CHK_REST' });
+    expect(status).toBe(200);
+    expect((data as any).data.accessible).toBe(true);
+  });
+});
+
+describe('OpenAIAdapter with API key', () => {
+  let tmpDir: string;
+  let adapter: OpenAIAdapter;
+  let port: number;
+
+  beforeAll(async () => {
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-oai-auth-'));
+    adapter = new OpenAIAdapter(makeConfig(), tmpDir);
+    port = 30000 + Math.floor(Math.random() * 10000);
+    await adapter.startServer(port, '127.0.0.1', 'oai-secret');
+  });
+
+  afterAll(async () => {
+    adapter.stopServer();
+    await fs.remove(tmpDir);
+  });
+
+  it('rejects without API key', async () => {
+    const { status } = await fetch(port, 'GET', '/v1/models');
+    expect(status).toBe(401);
+  });
+
+  it('accepts with valid Bearer token', async () => {
+    const { status } = await fetch(port, 'GET', '/v1/models', undefined, { 'Authorization': 'Bearer oai-secret' });
+    expect(status).toBe(200);
+  });
 });
 
 describe('GeminiAdapter', () => {
@@ -336,5 +510,140 @@ describe('GeminiAdapter', () => {
   it('returns 404 for unknown path', async () => {
     const { status } = await fetch(port, 'GET', '/v1/unknown');
     expect(status).toBe(404);
+  });
+
+  it('handles OPTIONS preflight', async () => {
+    const { status } = await fetch(port, 'OPTIONS', '/v1/tools');
+    expect(status).toBe(204);
+  });
+});
+
+describe('GeminiAdapter error handling', () => {
+  let tmpDir: string;
+  let adapter: GeminiAdapter;
+  let port: number;
+
+  beforeAll(async () => {
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-gemini-err-'));
+    adapter = new GeminiAdapter(makeConfig(), tmpDir);
+    port = 30000 + Math.floor(Math.random() * 10000);
+    await adapter.startServer(port, '127.0.0.1');
+  });
+
+  afterAll(async () => {
+    adapter.stopServer();
+    await fs.remove(tmpDir);
+  });
+
+  it('returns 500 when callTool throws in /v1/functions/call', async () => {
+    const orig = adapter.callTool.bind(adapter);
+    (adapter as any).callTool = async () => { throw new Error('gemini boom'); };
+    const { status, data } = await fetch(port, 'POST', '/v1/functions/call', { name: 'envcp_list', args: {} });
+    expect(status).toBe(500);
+    expect((data as any).error.status).toBe('INTERNAL');
+    (adapter as any).callTool = orig;
+  });
+});
+
+describe('OpenAIAdapter error handling', () => {
+  let tmpDir: string;
+  let adapter: OpenAIAdapter;
+  let port: number;
+
+  beforeAll(async () => {
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-oai-err-'));
+    adapter = new OpenAIAdapter(makeConfig(), tmpDir);
+    port = 30000 + Math.floor(Math.random() * 10000);
+    await adapter.startServer(port, '127.0.0.1');
+  });
+
+  afterAll(async () => {
+    adapter.stopServer();
+    await fs.remove(tmpDir);
+  });
+
+  it('returns 500 when callTool throws in /v1/functions/call', async () => {
+    const orig = adapter.callTool.bind(adapter);
+    (adapter as any).callTool = async () => { throw new Error('openai boom'); };
+    const { status, data } = await fetch(port, 'POST', '/v1/functions/call', { name: 'envcp_list', arguments: {} });
+    expect(status).toBe(500);
+    expect((data as any).error.type).toBe('internal_error');
+    (adapter as any).callTool = orig;
+  });
+});
+
+describe('Adapter rate limiting', () => {
+  it('REST adapter rate limits after many requests', async () => {
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-rest-rl-'));
+    const adapter = new RESTAdapter(makeConfig(), tmpDir);
+    const port = 30000 + Math.floor(Math.random() * 10000);
+    await adapter.startServer(port, '127.0.0.1');
+
+    // Send 120 rapid requests to trigger rate limit (default is 100/min)
+    const results = await Promise.all(
+      Array.from({ length: 120 }, () => fetch(port, 'GET', '/api/health'))
+    );
+    const statuses = results.map(r => r.status);
+    expect(statuses.some(s => s === 429)).toBe(true);
+    adapter.stopServer();
+    await fs.remove(tmpDir);
+  });
+
+  it('OpenAI adapter rate limits after many requests', async () => {
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-oai-rl-'));
+    const adapter = new OpenAIAdapter(makeConfig(), tmpDir);
+    const port = 30000 + Math.floor(Math.random() * 10000);
+    await adapter.startServer(port, '127.0.0.1');
+
+    const results = await Promise.all(
+      Array.from({ length: 120 }, () => fetch(port, 'GET', '/v1/models'))
+    );
+    const statuses = results.map(r => r.status);
+    expect(statuses.some(s => s === 429)).toBe(true);
+    adapter.stopServer();
+    await fs.remove(tmpDir);
+  });
+
+  it('Gemini adapter rate limits after many requests', async () => {
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-gem-rl-'));
+    const adapter = new GeminiAdapter(makeConfig(), tmpDir);
+    const port = 30000 + Math.floor(Math.random() * 10000);
+    await adapter.startServer(port, '127.0.0.1');
+
+    const results = await Promise.all(
+      Array.from({ length: 120 }, () => fetch(port, 'GET', '/v1/models'))
+    );
+    const statuses = results.map(r => r.status);
+    expect(statuses.some(s => s === 429)).toBe(true);
+    adapter.stopServer();
+    await fs.remove(tmpDir);
+  });
+});
+
+describe('GeminiAdapter with API key', () => {
+  let tmpDir: string;
+  let adapter: GeminiAdapter;
+  let port: number;
+
+  beforeAll(async () => {
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-gem-auth-'));
+    adapter = new GeminiAdapter(makeConfig(), tmpDir);
+    port = 30000 + Math.floor(Math.random() * 10000);
+    await adapter.startServer(port, '127.0.0.1', 'gem-secret');
+  });
+
+  afterAll(async () => {
+    adapter.stopServer();
+    await fs.remove(tmpDir);
+  });
+
+  it('rejects without API key', async () => {
+    const { status } = await fetch(port, 'GET', '/v1/models');
+    expect(status).toBe(401);
+  });
+
+  it('accepts with x-goog-api-key header', async () => {
+    const { status } = await fetch(port, 'GET', '/v1/models', undefined, { 'x-goog-api-key': 'gem-secret' });
+    expect(status).toBe(200);
   });
 });

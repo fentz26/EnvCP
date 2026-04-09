@@ -114,4 +114,52 @@ describe('SessionManager', () => {
     const loaded = await manager.load('password123');
     expect(loaded).toBeNull();
   });
+
+  it('load returns null when no password available', async () => {
+    await manager.create('password123');
+    const m2 = new SessionManager(sessionPath, 30, 5);
+    await m2.init();
+    // Load without password and without cached password
+    const loaded = await m2.load();
+    expect(loaded).toBeNull();
+  });
+
+  it('load returns null for expired session', async () => {
+    // Create session with 0 minute timeout (immediately expired)
+    const m = new SessionManager(sessionPath, 0, 5);
+    await m.init();
+    await m.create('password123');
+    // Load with new manager to force re-read
+    const m2 = new SessionManager(sessionPath, 0, 5);
+    await m2.init();
+    const loaded = await m2.load('password123');
+    expect(loaded).toBeNull();
+  });
+
+  it('extend returns null when no session loaded', async () => {
+    const result = await manager.extend();
+    expect(result).toBeNull();
+  });
+
+  it('destroy is idempotent (no error on missing file)', async () => {
+    await manager.destroy();
+    // No error thrown
+    expect(manager.getSession()).toBeNull();
+  });
+
+  it('load returns null for non-regular file (directory)', async () => {
+    // Create a directory at the session path to trigger non-ENOENT but also non-file
+    await fs.ensureDir(sessionPath);
+    const loaded = await manager.load('password123');
+    expect(loaded).toBeNull();
+  });
+
+  it('extend returns null when session is expired', async () => {
+    const m = new SessionManager(sessionPath, 0, 5); // 0 minute timeout
+    await m.init();
+    await m.create('password123');
+    // Session is immediately expired, extend should return null
+    const result = await m.extend();
+    expect(result).toBeNull();
+  });
 });
