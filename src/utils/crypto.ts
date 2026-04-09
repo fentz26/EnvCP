@@ -7,10 +7,22 @@ const SALT_LENGTH = 64;
 const ITERATIONS = 100000;
 const VERSION_PREFIX = 'v1:';
 
+/**
+ * Derives a 256-bit key from a password and salt using PBKDF2-SHA512.
+ * @param password - User password
+ * @param salt - Random salt (64 bytes recommended)
+ */
 export function deriveKey(password: string, salt: Buffer): Buffer {
   return crypto.pbkdf2Sync(password, salt, ITERATIONS, 32, 'sha512');
 }
 
+/**
+ * Encrypts plaintext using AES-256-GCM with a derived key.
+ * Output format: `v1:<salt_hex><iv_hex><authTag_hex><ciphertext_hex>`
+ * @param text - Plaintext to encrypt
+ * @param password - Password used to derive the encryption key
+ * @returns Version-prefixed hex-encoded encrypted string
+ */
 export function encrypt(text: string, password: string): string {
   const salt = crypto.randomBytes(SALT_LENGTH);
   const key = deriveKey(password, salt);
@@ -25,6 +37,13 @@ export function encrypt(text: string, password: string): string {
   return VERSION_PREFIX + salt.toString('hex') + iv.toString('hex') + authTag.toString('hex') + encrypted;
 }
 
+/**
+ * Decrypts a value produced by {@link encrypt}.
+ * Backwards-compatible: accepts both prefixed (`v1:...`) and unprefixed legacy data.
+ * @param encryptedData - Hex-encoded encrypted string (with or without version prefix)
+ * @param password - Password used during encryption
+ * @throws If the password is wrong or the data is corrupted (GCM auth tag mismatch)
+ */
 export function decrypt(encryptedData: string, password: string): string {
   // Strip version prefix if present (backwards-compatible: no prefix = v1)
   const data = encryptedData.startsWith(VERSION_PREFIX)
@@ -54,6 +73,12 @@ export function generateSessionToken(): string {
   return crypto.randomBytes(32).toString('hex');
 }
 
+/**
+ * Masks a secret value for display, revealing only the first and last `showLength` characters.
+ * Short values are fully masked.
+ * @param value - The secret to mask
+ * @param showLength - Characters to reveal at each end (default 4)
+ */
 export function maskValue(value: string, showLength: number = 4): string {
   if (value.length <= showLength * 2) {
     return '*'.repeat(value.length);

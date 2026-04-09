@@ -40,6 +40,9 @@ export class SessionManager {
   });
 
     const encrypted = encrypt(sessionData, password);
+    if (!await fs.pathExists(this.sessionPath)) {
+      await fs.writeFile(this.sessionPath, '', 'utf8');
+    }
     const releaseCreate = await lockfile.lock(this.sessionPath, { retries: { retries: 3, minTimeout: 50 } });
     try {
       await fs.writeFile(this.sessionPath, encrypted, 'utf8');
@@ -118,6 +121,9 @@ export class SessionManager {
   });
 
     const encrypted = encrypt(sessionData, this.password);
+    if (!await fs.pathExists(this.sessionPath)) {
+      await fs.writeFile(this.sessionPath, '', 'utf8');
+    }
     const releaseExtend = await lockfile.lock(this.sessionPath, { retries: { retries: 3, minTimeout: 50 } });
     try {
       await fs.writeFile(this.sessionPath, encrypted, 'utf8');

@@ -4,6 +4,13 @@ import lockfile from 'proper-lockfile';
 import { Variable, OperationLog } from '../types.js';
 import { encrypt, decrypt } from '../utils/crypto.js';
 
+/**
+ * Manages encrypted or plaintext storage of named secret variables.
+ * Uses atomic writes (tmp → rename) and file locking to prevent corruption
+ * under concurrent access. Automatically rotates backups on every write.
+ *
+ * @security All file paths are verified with `lstat` to reject symlink attacks.
+ */
 export class StorageManager {
   private storePath: string;
   private encrypted: boolean;

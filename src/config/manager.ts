@@ -315,6 +315,12 @@ export async function registerMcpConfig(projectPath: string): Promise<{ register
   return { registered, alreadyConfigured, manual };
 }
 
+/**
+ * Parses a `.env` file into a key/value map.
+ * Handles double-quoted values with backslash escape sequences (`\"`, `\\`).
+ * Single-quoted values are taken literally. Lines starting with `#` are ignored.
+ * @param content - Raw text content of a `.env` file
+ */
 export function parseEnvFile(content: string): Record<string, string> {
   const vars: Record<string, string> = {};
 
@@ -353,6 +359,11 @@ export function matchesPattern(name: string, pattern: string): boolean {
   return regex.test(name);
 }
 
+/**
+ * Returns true if the variable `name` is permitted by the access policy.
+ * Evaluated in order: blacklist → denied_patterns → allowed_patterns.
+ * @security This is the primary access-control gate for AI-facing operations.
+ */
 export function canAccess(name: string, config: EnvCPConfig): boolean {
   if (config.access.blacklist_patterns && config.access.blacklist_patterns.length > 0) {
     if (config.access.blacklist_patterns.some((p: string) => matchesPattern(name, p))) {
@@ -375,6 +386,10 @@ export function canAccess(name: string, config: EnvCPConfig): boolean {
   return true;
 }
 
+/**
+ * Returns true if the variable `name` matches any `blacklist_patterns` entry.
+ * Blacklisted variables are always denied regardless of other access rules.
+ */
 export function isBlacklisted(name: string, config: EnvCPConfig): boolean {
   if (config.access.blacklist_patterns && config.access.blacklist_patterns.length > 0) {
     return config.access.blacklist_patterns.some((p: string) => matchesPattern(name, p));

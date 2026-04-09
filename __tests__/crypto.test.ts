@@ -74,3 +74,21 @@ describe('helpers', () => {
     expect(quickHash('test')).toBe(quickHash('test'));
   });
 });
+
+describe('encryption versioning', () => {
+  it('encrypt output starts with v1: prefix', () => {
+    expect(encrypt('data', 'pass')).toMatch(/^v1:/);
+  });
+
+  it('decrypt handles legacy data without version prefix', () => {
+    // Simulate legacy: strip v1: prefix before storing
+    const modern = encrypt('legacy-secret', 'pass');
+    const legacy = modern.slice('v1:'.length);
+    expect(decrypt(legacy, 'pass')).toBe('legacy-secret');
+  });
+
+  it('decrypt handles modern v1: prefixed data', () => {
+    const encrypted = encrypt('modern-secret', 'pass');
+    expect(decrypt(encrypted, 'pass')).toBe('modern-secret');
+  });
+});

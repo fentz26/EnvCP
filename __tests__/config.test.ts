@@ -1,4 +1,4 @@
-import { matchesPattern, canAccess, isBlacklisted, validateVariableName } from '../src/config/manager';
+import { matchesPattern, canAccess, isBlacklisted, validateVariableName, parseEnvFile } from '../src/config/manager';
 import { EnvCPConfigSchema } from '../src/types';
 
 describe('matchesPattern', () => {
@@ -61,6 +61,33 @@ describe('canAccess / isBlacklisted', () => {
     const config = makeConfig({ allowed_patterns: ['APP_*'] });
     expect(canAccess('APP_KEY', config)).toBe(true);
     expect(canAccess('DB_KEY', config)).toBe(false);
+  });
+});
+
+describe('parseEnvFile', () => {
+  it('parses simple key=value pairs', () => {
+    expect(parseEnvFile('KEY=value\nOTHER=123')).toEqual({ KEY: 'value', OTHER: '123' });
+  });
+
+  it('strips double quotes and unescapes backslash sequences', () => {
+    expect(parseEnvFile('KEY="hello \\"world\\""')).toEqual({ KEY: 'hello "world"' });
+    expect(parseEnvFile('KEY="path\\\\to\\\\file"')).toEqual({ KEY: 'path\\to\\file' });
+  });
+
+  it('strips single quotes literally', () => {
+    expect(parseEnvFile("KEY='hello world'")).toEqual({ KEY: 'hello world' });
+  });
+
+  it('ignores comment lines', () => {
+    expect(parseEnvFile('# comment\nKEY=value')).toEqual({ KEY: 'value' });
+  });
+
+  it('ignores lines without =', () => {
+    expect(parseEnvFile('INVALID\nKEY=value')).toEqual({ KEY: 'value' });
+  });
+
+  it('ignores invalid variable names', () => {
+    expect(parseEnvFile('123INVALID=value\nVALID=ok')).toEqual({ VALID: 'ok' });
   });
 });
 

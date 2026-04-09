@@ -12,7 +12,7 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "dev": "ts-node src/index.ts",
-    "test": "jest"
+    "test": "NODE_OPTIONS='--experimental-vm-modules' jest"
   },
   "keywords": [
     "mcp",
