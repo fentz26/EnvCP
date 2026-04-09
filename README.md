@@ -356,4 +356,4 @@ MIT License — See LICENSE file for details.
 ## Support
 - Email: contact@fentz.dev
 - GitHub Issues: https://github.com/fentz26/EnvCP/issues
-- Documentation: https://envcp.fentz/dev/docs
+- Documentation: https://envcp.fentz.dev/docs
