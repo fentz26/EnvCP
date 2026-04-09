@@ -5,6 +5,7 @@ const IV_LENGTH = 16;
 const AUTH_TAG_LENGTH = 16;
 const SALT_LENGTH = 64;
 const ITERATIONS = 100000;
+const VERSION_PREFIX = 'v1:';
 
 export function deriveKey(password: string, salt: Buffer): Buffer {
   return crypto.pbkdf2Sync(password, salt, ITERATIONS, 32, 'sha512');
@@ -21,14 +22,18 @@ export function encrypt(text: string, password: string): string {
   
   const authTag = cipher.getAuthTag();
   
-  return salt.toString('hex') + iv.toString('hex') + authTag.toString('hex') + encrypted;
+  return VERSION_PREFIX + salt.toString('hex') + iv.toString('hex') + authTag.toString('hex') + encrypted;
 }
 
 export function decrypt(encryptedData: string, password: string): string {
-  const salt = Buffer.from(encryptedData.slice(0, SALT_LENGTH * 2), 'hex');
-  const iv = Buffer.from(encryptedData.slice(SALT_LENGTH * 2, SALT_LENGTH * 2 + IV_LENGTH * 2), 'hex');
-  const authTag = Buffer.from(encryptedData.slice(SALT_LENGTH * 2 + IV_LENGTH * 2, SALT_LENGTH * 2 + IV_LENGTH * 2 + AUTH_TAG_LENGTH * 2), 'hex');
-  const encrypted = encryptedData.slice(SALT_LENGTH * 2 + IV_LENGTH * 2 + AUTH_TAG_LENGTH * 2);
+  // Strip version prefix if present (backwards-compatible: no prefix = v1)
+  const data = encryptedData.startsWith(VERSION_PREFIX)
+    ? encryptedData.slice(VERSION_PREFIX.length)
+    : encryptedData;
+  const salt = Buffer.from(data.slice(0, SALT_LENGTH * 2), 'hex');
+  const iv = Buffer.from(data.slice(SALT_LENGTH * 2, SALT_LENGTH * 2 + IV_LENGTH * 2), 'hex');
+  const authTag = Buffer.from(data.slice(SALT_LENGTH * 2 + IV_LENGTH * 2, SALT_LENGTH * 2 + IV_LENGTH * 2 + AUTH_TAG_LENGTH * 2), 'hex');
+  const encrypted = data.slice(SALT_LENGTH * 2 + IV_LENGTH * 2 + AUTH_TAG_LENGTH * 2);
   
   const key = deriveKey(password, salt);
   
