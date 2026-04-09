@@ -10,7 +10,7 @@
 ##
 <p align="center">
 <a href="https://www.npmjs.com/package/@fentz26/envcp"><img src="https://img.shields.io/npm/v/%40fentz26%2Fenvcp?style=flat-square&color=000000&labelColor=000000&label=version" alt="npm version"></a>
-<a href="https://www.npmjs.com/package/@fentz26/envcp"><img src="https://img.shields.io/npm/dw/%40fentz26%2Fenvcp?style=flat-square&color=000000&labelColor=000000&label=downloads" alt="npm downloads"></a>
+<a href="https://www.npmjs.com/package/@fentz26/envcp"><img src="https://img.shields.io/npm/dw/%40fentz26%2Fenvcp?style=flat-square&color=000000&labelColor=000000&label=downloads&periodSuffix=false" alt="npm downloads"></a>
 <a href="https://www.npmjs.com/package/@fentz26/envcp"><img src="https://img.shields.io/npm/unpacked-size/%40fentz26%2Fenvcp?style=flat-square&color=000000&labelColor=000000&label=size" alt="npm size"></a>
   <a href="https://github.com/fentz26/EnvCP/actions"><img src="https://img.shields.io/github/actions/workflow/status/fentz26/EnvCP/ci.yml?style=flat-square&color=000000&labelColor=000000&label=ci" alt="CI"></a>
   <a href="https://github.com/fentz26/EnvCP/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-SAL%20v1.0-000000?style=flat-square&labelColor=000000" alt="license"></a>
@@ -82,7 +82,7 @@ envcp export [--format env|json|yaml]
 ## Why EnvCP?
 
 - **Local-only storage** — Your secrets never leave your machine
-- **Encrypted at rest** — AES-256-GCM with PBKDF2 key derivation (100,000 iterations)
+- **Encrypted at rest** — AES-256-GCM with Argon2id key derivation (64 MB memory, 3 passes)
 - **Reference-based access** — AI references variables by name, never sees the actual values
 - **Automatic .env injection** — Values can be automatically injected into your .env files
 - **AI Access Control** — Block AI from proactively listing or checking your secrets
@@ -319,11 +319,16 @@ access:
 
 ### Encryption Details
 
-- **Cipher**: AES-256-GCM
-- **Key Derivation**: PBKDF2-SHA512 (100,000 iterations)
-- **Salt**: 64 bytes per encryption
-- **IV**: 16 bytes per encryption
-- **Auth Tag**: 16 bytes for integrity
+- **Cipher**: AES-256-GCM (authenticated encryption)
+- **Key Derivation**: Argon2id (64 MB memory, 3 passes, parallelism 1)
+- **Salt**: 16 bytes per encryption (random)
+- **IV**: 16 bytes per encryption (random)
+- **Auth Tag**: 16 bytes for integrity verification
+- **Legacy**: existing v1 stores (PBKDF2) are automatically read and re-encrypted on next write
+
+### MCP (stdio) Authentication
+
+The MCP server runs over stdio — it is only accessible to processes on your local machine that spawn it. No network port is opened in MCP mode; security is enforced by OS process isolation.
 
 ### API Authentication
 
@@ -352,7 +357,7 @@ Authorization: Bearer your-secret-key
 
 ## License
 
-MIT License — See LICENSE file for details.
+SAL v1.0 — See LICENSE file for details.
 
 ## Support
 - Email: contact@fentz.dev
