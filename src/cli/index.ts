@@ -826,7 +826,7 @@ program
     console.log(chalk.gray(`  Mode: ${mode}`));
     console.log(chalk.gray(`  Host: ${host}`));
     console.log(chalk.gray(`  Port: ${port}`));
-    if (apiKey) console.log(chalk.gray(`  API Key: ${apiKey.substring(0, 4)}...`));
+    if (apiKey) console.log(chalk.gray(`  API Key: ${'*'.repeat(apiKey.length)}`));
     console.log('');
     
     await server.start();

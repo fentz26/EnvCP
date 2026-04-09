@@ -37,17 +37,20 @@ export class StorageManager {
       return this.cache;
     }
 
-    if (!await fs.pathExists(this.storePath)) {
-      this.cache = {};
-      return this.cache;
+    let data: string;
+    try {
+      const stat = await fs.lstat(this.storePath);
+      if (!stat.isFile()) {
+        throw new Error(`Storage path is not a regular file: ${this.storePath}`);
+      }
+      data = await fs.readFile(this.storePath, 'utf8');
+    } catch (err: unknown) {
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+        this.cache = {};
+        return this.cache;
+      }
+      throw err;
     }
-
-    const stat = await fs.lstat(this.storePath);
-    if (!stat.isFile()) {
-      throw new Error(`Storage path is not a regular file: ${this.storePath}`);
-    }
-
-    const data = await fs.readFile(this.storePath, 'utf8');
 
     if (this.encrypted && this.password) {
       try {
@@ -78,9 +81,7 @@ export class StorageManager {
     await nodefs.chmod(storeDir, 0o700);
 
     // Ensure the store file exists so lockfile can lock it
-    if (!await fs.pathExists(this.storePath)) {
-      await fs.writeFile(this.storePath, '', 'utf8');
-    }
+    await fs.writeFile(this.storePath, '', { encoding: 'utf8', flag: 'a' });
 
     const release = await lockfile.lock(this.storePath, { retries: { retries: 5, minTimeout: 50 } });
     try {
@@ -109,8 +110,10 @@ export class StorageManager {
     for (let i = this.maxBackups; i > 1; i--) {
       const from = `${this.storePath}.bak.${i - 1}`;
       const to = `${this.storePath}.bak.${i}`;
-      if (await fs.pathExists(from)) {
+      try {
         await fs.rename(from, to);
+      } catch (err: unknown) {
+        if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
       }
     }
 
@@ -124,10 +127,16 @@ export class StorageManager {
 
     for (let i = 1; i <= this.maxBackups; i++) {
       const bakPath = `${this.storePath}.bak.${i}`;
-      if (!await fs.pathExists(bakPath)) continue;
+
+      let data: string;
+      try {
+        data = await fs.readFile(bakPath, 'utf8');
+      } catch (err: unknown) {
+        if ((err as NodeJS.ErrnoException).code === 'ENOENT') continue;
+        continue;
+      }
 
       try {
-        const data = await fs.readFile(bakPath, 'utf8');
         const decrypted = await decrypt(data, this.password);
         const variables = JSON.parse(decrypted);
 
@@ -206,8 +215,11 @@ export class StorageManager {
       // Count valid backups
       let backups = 0;
       for (let i = 1; i <= this.maxBackups; i++) {
-        if (await fs.pathExists(`${this.storePath}.bak.${i}`)) {
+        try {
+          await fs.access(`${this.storePath}.bak.${i}`);
           backups++;
+        } catch {
+          // backup doesn't exist
         }
       }
 

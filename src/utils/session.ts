@@ -40,9 +40,8 @@ export class SessionManager {
   });
 
     const encrypted = await encrypt(sessionData, password);
-    if (!await fs.pathExists(this.sessionPath)) {
-      await fs.writeFile(this.sessionPath, '', { encoding: 'utf8', mode: 0o600 });
-    }
+    // Ensure the file exists for lockfile (append-mode is a no-op if it exists)
+    await fs.writeFile(this.sessionPath, '', { encoding: 'utf8', mode: 0o600, flag: 'a' });
     const releaseCreate = await lockfile.lock(this.sessionPath, { retries: { retries: 3, minTimeout: 50 } });
     try {
       await fs.writeFile(this.sessionPath, encrypted, { encoding: 'utf8', mode: 0o600 });
@@ -54,17 +53,19 @@ export class SessionManager {
   }
 
   async load(password?: string): Promise<Session | null> {
-    if (!await fs.pathExists(this.sessionPath)) {
-      return null;
-    }
-
+    let encrypted: string;
     try {
       const stat = await fs.lstat(this.sessionPath);
       if (!stat.isFile()) {
         return null;
       }
+      encrypted = await fs.readFile(this.sessionPath, 'utf8');
+    } catch (err: unknown) {
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') return null;
+      return null;
+    }
 
-      const encrypted = await fs.readFile(this.sessionPath, 'utf8');
+    try {
       
       const pwd = password || this.password;
       if (!pwd) {
@@ -121,9 +122,7 @@ export class SessionManager {
   });
 
     const encrypted = await encrypt(sessionData, this.password);
-    if (!await fs.pathExists(this.sessionPath)) {
-      await fs.writeFile(this.sessionPath, '', { encoding: 'utf8', mode: 0o600 });
-    }
+    await fs.writeFile(this.sessionPath, '', { encoding: 'utf8', mode: 0o600, flag: 'a' });
     const releaseExtend = await lockfile.lock(this.sessionPath, { retries: { retries: 3, minTimeout: 50 } });
     try {
       await fs.writeFile(this.sessionPath, encrypted, { encoding: 'utf8', mode: 0o600 });
@@ -137,9 +136,11 @@ export class SessionManager {
   async destroy(): Promise<void> {
     this.session = null;
     this.password = null;
-    
-    if (await fs.pathExists(this.sessionPath)) {
+
+    try {
       await fs.unlink(this.sessionPath);
+    } catch (err: unknown) {
+      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
     }
   }
 
