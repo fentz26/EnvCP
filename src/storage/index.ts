@@ -1,4 +1,5 @@
 import fs from 'fs-extra';
+import * as nodefs from 'fs/promises';
 import * as path from 'path';
 import lockfile from 'proper-lockfile';
 import { Variable, OperationLog } from '../types.js';
@@ -50,7 +51,7 @@ export class StorageManager {
 
     if (this.encrypted && this.password) {
       try {
-        const decrypted = decrypt(data, this.password);
+        const decrypted = await decrypt(data, this.password);
         this.cache = JSON.parse(decrypted);
         return this.cache!;
       } catch (error) {
@@ -72,7 +73,9 @@ export class StorageManager {
     this.cache = variables;
     const data = JSON.stringify(variables, null, 2);
 
-    await fs.ensureDir(path.dirname(this.storePath));
+    const storeDir = path.dirname(this.storePath);
+    await fs.ensureDir(storeDir);
+    await nodefs.chmod(storeDir, 0o700);
 
     // Ensure the store file exists so lockfile can lock it
     if (!await fs.pathExists(this.storePath)) {
@@ -85,13 +88,14 @@ export class StorageManager {
       await this.rotateBackups();
 
       const content = this.encrypted && this.password
-        ? encrypt(data, this.password)
+        ? await encrypt(data, this.password)
         : data;
 
       // Atomic write: write to temp file, then rename
       const tmpPath = this.storePath + '.tmp';
-      await fs.writeFile(tmpPath, content, 'utf8');
+      await fs.writeFile(tmpPath, content, { encoding: 'utf8', mode: 0o600 });
       await fs.rename(tmpPath, this.storePath);
+      await nodefs.chmod(this.storePath, 0o600);
     } finally {
       await release();
     }
@@ -112,6 +116,7 @@ export class StorageManager {
 
     // Copy current store to .bak.1
     await fs.copy(this.storePath, `${this.storePath}.bak.1`);
+    await nodefs.chmod(`${this.storePath}.bak.1`, 0o600);
   }
 
   private async tryRestoreFromBackup(): Promise<Record<string, Variable> | null> {
@@ -123,11 +128,12 @@ export class StorageManager {
 
       try {
         const data = await fs.readFile(bakPath, 'utf8');
-        const decrypted = decrypt(data, this.password);
+        const decrypted = await decrypt(data, this.password);
         const variables = JSON.parse(decrypted);
 
         // Restore: copy backup to primary store
         await fs.copy(bakPath, this.storePath);
+        await nodefs.chmod(this.storePath, 0o600);
         return variables;
       } catch {
         // This backup is also bad, try next
@@ -186,7 +192,7 @@ export class StorageManager {
     try {
       let variables: Record<string, Variable>;
       if (this.encrypted && this.password) {
-        const decrypted = decrypt(data, this.password);
+        const decrypted = await decrypt(data, this.password);
         variables = JSON.parse(decrypted);
       } else {
         variables = JSON.parse(data);

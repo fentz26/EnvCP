@@ -188,7 +188,7 @@ program
     // Generate recovery key for encrypted recoverable mode
     if (securityChoice === 'recoverable' && pwd) {
       const recoveryKey = generateRecoveryKey();
-      const recoveryData = createRecoveryData(pwd, recoveryKey);
+      const recoveryData = await createRecoveryData(pwd, recoveryKey);
       const recoveryPath = path.join(projectPath, config.security.recovery_file);
       await fs.writeFile(recoveryPath, recoveryData, 'utf8');
 
@@ -286,7 +286,7 @@ program
         const recoveryPath = path.join(projectPath, config.security.recovery_file || '.envcp/.recovery');
         if (!await fs.pathExists(recoveryPath)) {
           const recoveryKey = generateRecoveryKey();
-          const recoveryData = createRecoveryData(password, recoveryKey);
+          const recoveryData = await createRecoveryData(password, recoveryKey);
           await fs.ensureDir(path.dirname(recoveryPath));
           await fs.writeFile(recoveryPath, recoveryData, 'utf8');
 
@@ -435,7 +435,7 @@ program
 
     let oldPassword: string;
     try {
-      oldPassword = recoverPassword(recoveryData, recoveryKey);
+      oldPassword = await recoverPassword(recoveryData, recoveryKey);
     } catch {
       console.log(chalk.red('Invalid recovery key.'));
       return;
@@ -478,7 +478,7 @@ program
 
     // Update recovery file with new password
     const newRecoveryKey = generateRecoveryKey();
-    const newRecoveryData = createRecoveryData(newPassword, newRecoveryKey);
+    const newRecoveryData = await createRecoveryData(newPassword, newRecoveryKey);
     await fs.writeFile(recoveryPath, newRecoveryData, 'utf8');
 
     console.log(chalk.green('Password reset successfully!'));
@@ -901,7 +901,7 @@ program
           variables,
         }, null, 2);
 
-        const encrypted = encrypt(exportData, exportPassword);
+        const encrypted = await encrypt(exportData, exportPassword);
         await fs.writeFile(outputPath, encrypted, 'utf8');
         console.log(chalk.green(`Encrypted export saved to: ${outputPath}`));
         console.log(chalk.gray(`  Variables: ${Object.keys(variables).length}`));
@@ -953,7 +953,7 @@ program
       let importData: Record<string, unknown>;
 
       try {
-        const decrypted = decrypt(fileContent, importPassword);
+        const decrypted = await decrypt(fileContent, importPassword);
         importData = JSON.parse(decrypted);
       } catch {
         console.log(chalk.red('Failed to decrypt. Wrong password or invalid file.'));
@@ -1060,7 +1060,7 @@ program
         variables,
       }, null, 2);
 
-      const encrypted = encrypt(backupData, password);
+      const encrypted = await encrypt(backupData, password);
       await fs.ensureDir(path.dirname(outputPath));
       await fs.writeFile(outputPath, encrypted, 'utf8');
 
@@ -1085,7 +1085,7 @@ program
       let backupData: Record<string, unknown>;
 
       try {
-        const decrypted = decrypt(encrypted, password);
+        const decrypted = await decrypt(encrypted, password);
         backupData = JSON.parse(decrypted);
       } catch {
         console.log(chalk.red('Failed to decrypt backup. Wrong password or corrupted file.'));

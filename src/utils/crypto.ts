@@ -1,67 +1,95 @@
 import * as crypto from 'crypto';
+import argon2 from 'argon2';
 
 const ALGORITHM = 'aes-256-gcm';
 const IV_LENGTH = 16;
 const AUTH_TAG_LENGTH = 16;
+
+// v1 constants (PBKDF2 — kept for backward-compat decryption only)
 const SALT_LENGTH = 64;
 const ITERATIONS = 100000;
-const VERSION_PREFIX = 'v1:';
+const VERSION_PREFIX_V1 = 'v1:';
+
+// v2 constants (Argon2id)
+const V2_SALT_LENGTH = 16;
+const VERSION_PREFIX_V2 = 'v2:';
+
+const ARGON2_OPTS = {
+  type: argon2.argon2id,
+  hashLength: 32,
+  memoryCost: 65536, // 64 MB
+  timeCost: 3,
+  parallelism: 1,
+  raw: true,
+} as const;
 
 /**
  * Derives a 256-bit key from a password and salt using PBKDF2-SHA512.
- * @param password - User password
- * @param salt - Random salt (64 bytes recommended)
+ * Used only for decrypting legacy v1: data.
  */
 export function deriveKey(password: string, salt: Buffer): Buffer {
   return crypto.pbkdf2Sync(password, salt, ITERATIONS, 32, 'sha512');
 }
 
 /**
- * Encrypts plaintext using AES-256-GCM with a derived key.
- * Output format: `v1:<salt_hex><iv_hex><authTag_hex><ciphertext_hex>`
- * @param text - Plaintext to encrypt
- * @param password - Password used to derive the encryption key
- * @returns Version-prefixed hex-encoded encrypted string
+ * Encrypts plaintext using AES-256-GCM with an Argon2id-derived key.
+ * Output format: `v2:<salt_hex><iv_hex><authTag_hex><ciphertext_hex>`
  */
-export function encrypt(text: string, password: string): string {
-  const salt = crypto.randomBytes(SALT_LENGTH);
-  const key = deriveKey(password, salt);
+export async function encrypt(text: string, password: string): Promise<string> {
+  const salt = crypto.randomBytes(V2_SALT_LENGTH);
+  const key = await argon2.hash(password, { ...ARGON2_OPTS, salt }) as Buffer;
   const iv = crypto.randomBytes(IV_LENGTH);
-  
+
   const cipher = crypto.createCipheriv(ALGORITHM, key, iv);
   let encrypted = cipher.update(text, 'utf8', 'hex');
   encrypted += cipher.final('hex');
-  
   const authTag = cipher.getAuthTag();
-  
-  return VERSION_PREFIX + salt.toString('hex') + iv.toString('hex') + authTag.toString('hex') + encrypted;
+
+  return VERSION_PREFIX_V2 + salt.toString('hex') + iv.toString('hex') + authTag.toString('hex') + encrypted;
 }
 
 /**
- * Decrypts a value produced by {@link encrypt}.
- * Backwards-compatible: accepts both prefixed (`v1:...`) and unprefixed legacy data.
- * @param encryptedData - Hex-encoded encrypted string (with or without version prefix)
- * @param password - Password used during encryption
- * @throws If the password is wrong or the data is corrupted (GCM auth tag mismatch)
+ * Decrypts data produced by `encrypt`.
+ * Handles v2: (Argon2id), v1: (PBKDF2), and legacy unprefixed (PBKDF2) data.
  */
-export function decrypt(encryptedData: string, password: string): string {
-  // Strip version prefix if present (backwards-compatible: no prefix = v1)
-  const data = encryptedData.startsWith(VERSION_PREFIX)
-    ? encryptedData.slice(VERSION_PREFIX.length)
+export async function decrypt(encryptedData: string, password: string): Promise<string> {
+  if (encryptedData.startsWith(VERSION_PREFIX_V2)) {
+    return decryptV2(encryptedData.slice(VERSION_PREFIX_V2.length), password);
+  }
+  // v1: prefix or legacy unprefixed — both use PBKDF2
+  const data = encryptedData.startsWith(VERSION_PREFIX_V1)
+    ? encryptedData.slice(VERSION_PREFIX_V1.length)
     : encryptedData;
+  return decryptV1(data, password);
+}
+
+function decryptV1(data: string, password: string): string {
   const salt = Buffer.from(data.slice(0, SALT_LENGTH * 2), 'hex');
   const iv = Buffer.from(data.slice(SALT_LENGTH * 2, SALT_LENGTH * 2 + IV_LENGTH * 2), 'hex');
   const authTag = Buffer.from(data.slice(SALT_LENGTH * 2 + IV_LENGTH * 2, SALT_LENGTH * 2 + IV_LENGTH * 2 + AUTH_TAG_LENGTH * 2), 'hex');
   const encrypted = data.slice(SALT_LENGTH * 2 + IV_LENGTH * 2 + AUTH_TAG_LENGTH * 2);
-  
+
   const key = deriveKey(password, salt);
-  
   const decipher = crypto.createDecipheriv(ALGORITHM, key, iv);
   decipher.setAuthTag(authTag);
-  
+
   let decrypted = decipher.update(encrypted, 'hex', 'utf8');
   decrypted += decipher.final('utf8');
-  
+  return decrypted;
+}
+
+async function decryptV2(data: string, password: string): Promise<string> {
+  const salt = Buffer.from(data.slice(0, V2_SALT_LENGTH * 2), 'hex');
+  const iv = Buffer.from(data.slice(V2_SALT_LENGTH * 2, V2_SALT_LENGTH * 2 + IV_LENGTH * 2), 'hex');
+  const authTag = Buffer.from(data.slice(V2_SALT_LENGTH * 2 + IV_LENGTH * 2, V2_SALT_LENGTH * 2 + IV_LENGTH * 2 + AUTH_TAG_LENGTH * 2), 'hex');
+  const encryptedHex = data.slice(V2_SALT_LENGTH * 2 + IV_LENGTH * 2 + AUTH_TAG_LENGTH * 2);
+
+  const key = await argon2.hash(password, { ...ARGON2_OPTS, salt }) as Buffer;
+  const decipher = crypto.createDecipheriv(ALGORITHM, key, iv);
+  decipher.setAuthTag(authTag);
+
+  let decrypted = decipher.update(encryptedHex, 'hex', 'utf8');
+  decrypted += decipher.final('utf8');
   return decrypted;
 }
 
@@ -76,8 +104,6 @@ export function generateSessionToken(): string {
 /**
  * Masks a secret value for display, revealing only the first and last `showLength` characters.
  * Short values are fully masked.
- * @param value - The secret to mask
- * @param showLength - Characters to reveal at each end (default 4)
  */
 export function maskValue(value: string, showLength: number = 4): string {
   if (value.length <= showLength * 2) {
@@ -114,9 +140,9 @@ export function validatePassword(password: string, config: {
     const hasUpper = /[A-Z]/.test(password);
     const hasNumber = /[0-9]/.test(password);
     const hasSpecial = /[!@#$%^&*(),.?":{}|<>]/.test(password);
-    
+
     const complexityCount = [hasLower, hasUpper, hasNumber, hasSpecial].filter(Boolean).length;
-    
+
     if (complexityCount < 3) {
       return { valid: false, error: 'Password must contain at least 3 of: lowercase, uppercase, numbers, special characters' };
     }
@@ -135,11 +161,11 @@ export function generateRecoveryKey(): string {
 }
 
 // Wrap the user's password with the recovery key so it can be recovered later
-export function createRecoveryData(password: string, recoveryKey: string): string {
+export async function createRecoveryData(password: string, recoveryKey: string): Promise<string> {
   return encrypt(password, recoveryKey);
 }
 
 // Unwrap the password using the recovery key
-export function recoverPassword(recoveryData: string, recoveryKey: string): string {
+export async function recoverPassword(recoveryData: string, recoveryKey: string): Promise<string> {
   return decrypt(recoveryData, recoveryKey);
 }

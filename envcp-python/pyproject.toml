@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "envcp"
-version = "1.0.83a"
+version = "1.0.83b"
 description = "Encrypted environment variable vault with AI access policies, keeping secrets safe from AI agents"
 readme = "README.md"
 license = {text = "SAL-1.0"}

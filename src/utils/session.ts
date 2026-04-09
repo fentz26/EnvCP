@@ -39,13 +39,13 @@ export class SessionManager {
     session: this.session,
   });
 
-    const encrypted = encrypt(sessionData, password);
+    const encrypted = await encrypt(sessionData, password);
     if (!await fs.pathExists(this.sessionPath)) {
-      await fs.writeFile(this.sessionPath, '', 'utf8');
+      await fs.writeFile(this.sessionPath, '', { encoding: 'utf8', mode: 0o600 });
     }
     const releaseCreate = await lockfile.lock(this.sessionPath, { retries: { retries: 3, minTimeout: 50 } });
     try {
-      await fs.writeFile(this.sessionPath, encrypted, 'utf8');
+      await fs.writeFile(this.sessionPath, encrypted, { encoding: 'utf8', mode: 0o600 });
     } finally {
       await releaseCreate();
     }
@@ -71,7 +71,7 @@ export class SessionManager {
         return null;
       }
 
-      const decrypted = decrypt(encrypted, pwd);
+      const decrypted = await decrypt(encrypted, pwd);
       const data = JSON.parse(decrypted);
       this.session = SessionSchema.parse(data.session);
       // Password is verified by successful decryption — no longer stored in file
@@ -120,13 +120,13 @@ export class SessionManager {
     session: this.session,
   });
 
-    const encrypted = encrypt(sessionData, this.password);
+    const encrypted = await encrypt(sessionData, this.password);
     if (!await fs.pathExists(this.sessionPath)) {
-      await fs.writeFile(this.sessionPath, '', 'utf8');
+      await fs.writeFile(this.sessionPath, '', { encoding: 'utf8', mode: 0o600 });
     }
     const releaseExtend = await lockfile.lock(this.sessionPath, { retries: { retries: 3, minTimeout: 50 } });
     try {
-      await fs.writeFile(this.sessionPath, encrypted, 'utf8');
+      await fs.writeFile(this.sessionPath, encrypted, { encoding: 'utf8', mode: 0o600 });
     } finally {
       await releaseExtend();
     }

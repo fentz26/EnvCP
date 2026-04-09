@@ -1,24 +1,24 @@
 import { encrypt, decrypt, maskValue, validatePassword, quickHash, generateId, generateSessionToken } from '../src/utils/crypto';
 
 describe('encrypt/decrypt', () => {
-  it('round-trips correctly', () => {
+  it('round-trips correctly', async () => {
     const text = 'hello world secret';
     const password = 'test-password-123';
-    const encrypted = encrypt(text, password);
+    const encrypted = await encrypt(text, password);
     expect(encrypted).not.toBe(text);
-    expect(decrypt(encrypted, password)).toBe(text);
+    expect(await decrypt(encrypted, password)).toBe(text);
   });
 
-  it('fails with wrong password', () => {
-    const encrypted = encrypt('secret', 'correct');
-    expect(() => decrypt(encrypted, 'wrong')).toThrow();
+  it('fails with wrong password', async () => {
+    const encrypted = await encrypt('secret', 'correct');
+    await expect(decrypt(encrypted, 'wrong')).rejects.toThrow();
   });
 
-  it('produces different ciphertext each time (random salt/iv)', () => {
+  it('produces different ciphertext each time (random salt/iv)', async () => {
     const text = 'same text';
     const password = 'same password';
-    const a = encrypt(text, password);
-    const b = encrypt(text, password);
+    const a = await encrypt(text, password);
+    const b = await encrypt(text, password);
     expect(a).not.toBe(b);
   });
 });
@@ -76,19 +76,33 @@ describe('helpers', () => {
 });
 
 describe('encryption versioning', () => {
-  it('encrypt output starts with v1: prefix', () => {
-    expect(encrypt('data', 'pass')).toMatch(/^v1:/);
+  it('encrypt output starts with v2: prefix (Argon2id)', async () => {
+    expect(await encrypt('data', 'pass')).toMatch(/^v2:/);
   });
 
-  it('decrypt handles legacy data without version prefix', () => {
-    // Simulate legacy: strip v1: prefix before storing
-    const modern = encrypt('legacy-secret', 'pass');
-    const legacy = modern.slice('v1:'.length);
-    expect(decrypt(legacy, 'pass')).toBe('legacy-secret');
+  it('decrypt handles legacy v1: (PBKDF2) data', async () => {
+    // Simulate existing v1: data by using the raw PBKDF2 path directly
+    // We construct a valid v1: ciphertext using the same format as the old code
+    const crypto = await import('crypto');
+    const SALT_LENGTH = 64;
+    const IV_LENGTH = 16;
+    const password = 'legacy-pass';
+    const plaintext = 'legacy-secret';
+
+    const salt = crypto.randomBytes(SALT_LENGTH);
+    const key = crypto.pbkdf2Sync(password, salt, 100000, 32, 'sha512');
+    const iv = crypto.randomBytes(IV_LENGTH);
+    const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
+    let enc = cipher.update(plaintext, 'utf8', 'hex');
+    enc += cipher.final('hex');
+    const authTag = cipher.getAuthTag();
+
+    const v1Data = 'v1:' + salt.toString('hex') + iv.toString('hex') + authTag.toString('hex') + enc;
+    expect(await decrypt(v1Data, password)).toBe(plaintext);
   });
 
-  it('decrypt handles modern v1: prefixed data', () => {
-    const encrypted = encrypt('modern-secret', 'pass');
-    expect(decrypt(encrypted, 'pass')).toBe('modern-secret');
+  it('decrypt handles modern v2: prefixed data', async () => {
+    const encrypted = await encrypt('modern-secret', 'pass');
+    expect(await decrypt(encrypted, 'pass')).toBe('modern-secret');
   });
 });
