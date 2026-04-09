@@ -2,13 +2,6 @@ import fs from 'fs-extra';
 import * as path from 'path';
 import { Session, SessionSchema } from '../types.js';
 import { generateId, encrypt, decrypt } from './crypto.js';
-import * as crypto from 'crypto';
-
-const PBKDF2_ITERATIONS = 100000;
-
-function hashPassword(password: string, salt: Buffer): Buffer {
-  return crypto.pbkdf2Sync(password, salt, PBKDF2_ITERATIONS, 32, 'sha512');
-}
 
 export class SessionManager {
   private sessionPath: string;
@@ -41,12 +34,8 @@ export class SessionManager {
 
   this.password = password;
 
-  const salt = crypto.randomBytes(32);
-  const passwordHash = hashPassword(password, salt);
   const sessionData = JSON.stringify({
     session: this.session,
-    passwordHash: passwordHash.toString('hex'),
-    salt: salt.toString('hex'),
   });
 
     const encrypted = encrypt(sessionData, password);
@@ -113,12 +102,8 @@ export class SessionManager {
   this.session.extensions += 1;
   this.session.last_access = now.toISOString();
 
-  const salt = crypto.randomBytes(32);
-  const passwordHash = hashPassword(this.password, salt);
   const sessionData = JSON.stringify({
     session: this.session,
-    passwordHash: passwordHash.toString('hex'),
-    salt: salt.toString('hex'),
   });
 
     const encrypted = encrypt(sessionData, this.password);
