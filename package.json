@@ -24,7 +24,7 @@
     "model-context-protocol"
   ],
   "author": "fentz26",
-  "license": "MIT",
+  "license": "SEE LICENSE IN LICENSE",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",
     "chalk": "^4.1.2",

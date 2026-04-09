@@ -1,21 +1,32 @@
-MIT License
+EnvCP Source Available License v1.0
+Copyright (c) 2026 Fentz (fentz26)
 
-Copyright (c) 2026 Fentz
+Permission is hereby granted to any person obtaining a copy of this software
+and associated documentation files (the "Software"), to use, copy, modify,
+and distribute the Software, subject to the following conditions:
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+1. ATTRIBUTION REQUIRED
+   Any use, distribution, or derivative work must prominently credit the
+   original author: "EnvCP by Fentz (https://github.com/fentz26/EnvCP)".
+   This notice must appear in all copies, documentation, and related materials.
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+2. NO COMMERCIAL USE
+   The Software may not be used, in whole or in part, for commercial purposes
+   without prior written permission from the copyright holder.
+   Commercial purposes include but are not limited to: selling, licensing,
+   offering as a paid service, or integrating into a commercial product.
+   Contact: work@fentz.dev to inquire about a commercial license.
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+3. NO REBRANDING
+   You may not remove, alter, or obscure the "EnvCP" name, logo, or branding.
+   Derivative works must clearly distinguish themselves from the original and
+   must not claim to be the official EnvCP project.
+
+4. SHARE-ALIKE
+   Any modified version distributed publicly must be released under this same
+   license and must link back to the original repository.
+
+5. NO WARRANTY
+   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+   IMPLIED. IN NO EVENT SHALL THE AUTHORS BE LIABLE FOR ANY CLAIM, DAMAGES, OR
+   OTHER LIABILITY ARISING FROM THE USE OF THE SOFTWARE.
