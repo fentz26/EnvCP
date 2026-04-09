@@ -576,8 +576,8 @@ program
   .command('list')
   .description('List all variables (names only, values hidden)')
   .option('-v, --show-values', 'Show actual values')
-  .action(async (options) => {
-    await withSession(async (storage) => {
+   .action(async (options) => {
+    await withSession(async (storage, _password, config) => {
       const variables = await storage.load();
       const names = Object.keys(variables);
 
@@ -590,7 +590,9 @@ program
 
       for (const name of names) {
         const v = variables[name];
-        const value = options.showValues ? v.value : maskValue(v.value);
+        const value = config.access?.mask_values && !options.showValues
+          ? maskValue(v.value)
+          : v.value;
         const tags = v.tags ? chalk.gray(` [${v.tags.join(', ')}]`) : '';
         console.log(`  ${chalk.cyan(name)} = ${value}${tags}`);
       }
@@ -622,9 +624,9 @@ program
         return;
       }
 
-      const value = options.showValue && !config.access?.mask_values
-        ? variable.value
-        : maskValue(variable.value);
+      const value = config.access?.mask_values && !options.showValue
+        ? maskValue(variable.value)
+        : variable.value;
 
       console.log(chalk.cyan(name));
       console.log(`  Value: ${value}`);
