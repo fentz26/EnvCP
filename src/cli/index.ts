@@ -61,8 +61,8 @@ async function withSession(fn: (storage: StorageManager, password: string, confi
         console.log(chalk.red("Invalid password"));
         return;
       }
-      if (passwordWarning) {
-        console.log(chalk.yellow(`⚠ ${passwordWarning}`));
+      if (passwordValid && passwordWarning) {
+        console.log(chalk.yellow('⚠ Weak password detected'));
       }
     }
 
@@ -277,8 +277,8 @@ program
       console.log(chalk.red("Invalid password"));
       return;
     }
-    if (passwordWarning) {
-      console.log(chalk.yellow(`⚠ ${passwordWarning}`));
+    if (passwordValid && passwordWarning) {
+      console.log(chalk.yellow('⚠ Weak password detected'));
     }
 
     const sessionManager = new SessionManager(
@@ -862,8 +862,8 @@ program
           console.log(chalk.red("Invalid password"));
           return;
         }
-        if (passwordWarning) {
-          console.log(chalk.yellow(`⚠ ${passwordWarning}`));
+        if (passwordValid && passwordWarning) {
+          console.log(chalk.yellow('⚠ Weak password detected'));
         }
 
         session = await sessionManager.create(password);
