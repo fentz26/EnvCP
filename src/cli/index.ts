@@ -10,6 +10,7 @@ import { StorageManager } from '../storage/index.js';
 import { SessionManager } from '../utils/session.js';
 import { maskValue, validatePassword, encrypt, decrypt, generateRecoveryKey, createRecoveryData, recoverPassword } from '../utils/crypto.js';
 import { KeychainManager } from '../utils/keychain.js';
+import { checkForUpdate, formatUpdateMessage, logUpdateCheck } from '../utils/update-checker.js';
 import { Variable, EnvCPConfig } from '../types.js';
 
 async function withSession(fn: (storage: StorageManager, password: string, config: EnvCPConfig, projectPath: string) => Promise<void>): Promise<void> {
@@ -1305,6 +1306,37 @@ program
       console.log(chalk.yellow(`All checks passed with ${warns} warning(s).`));
     } else {
       console.log(chalk.green('All checks passed.'));
+    }
+  });
+
+program
+  .command('update')
+  .description('Check for EnvCP updates')
+  .option('--check', 'Check for available updates')
+  .action(async (options) => {
+    const projectPath = process.cwd();
+
+    if (options.check || Object.keys(options).length === 0) {
+      console.log(chalk.blue('Checking for updates...'));
+      try {
+        const info = await checkForUpdate(projectPath);
+        const message = formatUpdateMessage(info);
+
+        await logUpdateCheck(projectPath, info);
+
+        if (info.updateAvailable) {
+          if (info.critical) {
+            console.log(chalk.red.bold(message));
+          } else {
+            console.log(chalk.yellow(message));
+          }
+        } else {
+          console.log(chalk.green(message));
+        }
+      } catch (error) {
+        console.log(chalk.yellow('Could not check for updates (offline or rate-limited)'));
+        console.log(chalk.gray(`  Current version: v${require('../../package.json').version}`));
+      }
     }
   });
 
