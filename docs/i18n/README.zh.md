@@ -37,11 +37,8 @@ pip install envcp
 
 > 需要安装 Node.js 18+。
 
-### curl
 
 ```bash
-curl -fsSL https://envcp.fentz.dev/install.sh | bash
-```
 
 ### 无需安装使用
 
