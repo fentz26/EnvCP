@@ -5,6 +5,7 @@ import * as path from 'path';
 import * as os from 'os';
 import fs from 'fs-extra';
 import { loadConfig, initConfig, saveConfig, parseEnvFile, registerMcpConfig, isBlacklisted, canAccess } from '../config/manager.js';
+import { ConfigGuard } from '../config/config-guard.js';
 import { StorageManager } from '../storage/index.js';
 import { SessionManager } from '../utils/session.js';
 import { maskValue, validatePassword, encrypt, decrypt, generateRecoveryKey, createRecoveryData, recoverPassword } from '../utils/crypto.js';
@@ -404,9 +405,32 @@ program
 
     console.log(chalk.green('Session active'));
     console.log(chalk.gray(`  Session ID: ${session.id}`));
-    console.log(chalk.gray(`  Remaining: ${remaining} minutes`));
-    console.log(chalk.gray(`  Extensions remaining: ${maxExt - session.extensions}/${maxExt}`));
-  });
+console.log(chalk.gray(` Remaining: ${remaining} minutes`));
+  console.log(chalk.gray(` Extensions remaining: ${maxExt - session.extensions}/${maxExt}`));
+});
+
+program
+.command('config')
+.description('Config management commands')
+.command('reload')
+.description('Reload config from envcp.yaml (requires password)')
+.action(async () => {
+  const projectPath = process.cwd();
+  const configGuard = new ConfigGuard(projectPath);
+
+  const { password } = await inquirer.prompt([
+    { type: 'password', name: 'password', message: 'Enter password to reload config:', mask: '*' }
+  ]);
+
+  const result = await configGuard.reload(password);
+
+  if (result.success) {
+    console.log(chalk.green('Config reloaded successfully'));
+    console.log(chalk.gray(' New config hash: ' + configGuard.getHash()?.substring(0, 16) + '...'));
+  } else {
+    console.log(chalk.red(result.error || 'Failed to reload config'));
+  }
+});
 
 program
   .command('extend')
@@ -786,10 +810,11 @@ program
   .option('--port <port>', 'HTTP port (for non-MCP modes)', '3456')
   .option('--host <host>', 'HTTP host', '127.0.0.1')
   .option('-k, --api-key <key>', 'API key for HTTP authentication')
-  .action(async (options) => {
-    const projectPath = process.cwd();
-    const config = await loadConfig(projectPath);
-    const mode = options.mode as string;
+.action(async (options) => {
+  const projectPath = process.cwd();
+  const configGuard = new ConfigGuard(projectPath);
+  const config = await configGuard.loadAndLock();
+  const mode = options.mode as string;
     const port = parseInt(options.port, 10);
     const host = options.host;
     const apiKey = options.apiKey;
