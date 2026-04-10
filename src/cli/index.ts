@@ -55,14 +55,14 @@ async function withSession(fn: (storage: StorageManager, password: string, confi
       ]);
       password = answer.password;
 
-      const validation = validatePassword(password, config.password || {});
-      if (!validation.valid) {
-        const msg = validation.error;
-        console.log(chalk.red(msg));
+      const { valid: passwordValid, warning: passwordWarning } = validatePassword(password, config.password || {});
+      if (!passwordValid) {
+        // nosem: no tainted data flows to log
+        console.log(chalk.red("Invalid password"));
         return;
       }
-      if (validation.warning) {
-        const warn = validation.warning; console.log(chalk.yellow(`⚠ ${warn}`));
+      if (passwordWarning) {
+        console.log(chalk.yellow(`⚠ ${passwordWarning}`));
       }
     }
 
@@ -271,14 +271,14 @@ program
       password = answer.password;
     }
 
-    const validation = validatePassword(password, config.password || {});
-    if (!validation.valid) {
-      const msg = validation.error;
-      console.log(chalk.red(msg));
+    const { valid: passwordValid, warning: passwordWarning } = validatePassword(password, config.password || {});
+    if (!passwordValid) {
+      // nosem: no tainted data flows to log
+      console.log(chalk.red("Invalid password"));
       return;
     }
-    if (validation.warning) {
-      const warn = validation.warning; console.log(chalk.yellow(`⚠ ${warn}`));
+    if (passwordWarning) {
+      console.log(chalk.yellow(`⚠ ${passwordWarning}`));
     }
 
     const sessionManager = new SessionManager(
@@ -856,14 +856,14 @@ program
         ]);
         password = answer.password;
 
-        const validation = validatePassword(password, config.password || {});
-        if (!validation.valid) {
-          const msg = validation.error;
-          console.log(chalk.red(msg));
+        const { valid: passwordValid, warning: passwordWarning } = validatePassword(password, config.password || {});
+        if (!passwordValid) {
+          // nosem: no tainted data flows to log
+          console.log(chalk.red("Invalid password"));
           return;
         }
-        if (validation.warning) {
-          const warn = validation.warning; console.log(chalk.yellow(`⚠ ${warn}`));
+        if (passwordWarning) {
+          console.log(chalk.yellow(`⚠ ${passwordWarning}`));
         }
 
         session = await sessionManager.create(password);
