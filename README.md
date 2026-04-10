@@ -151,6 +151,29 @@ Add to your MCP config file:
 }
 ```
 
+### Augment Code / Auggie CLI
+
+**Via Auggie CLI:**
+
+```bash
+auggie mcp add-json envcp '{"type":"stdio","command":"npx","args":["-y","@fentz26/envcp","serve","--mode","mcp"]}'
+```
+
+**Via Augment Settings (VS Code / JetBrains):**
+
+Import this JSON in the MCP section:
+
+```json
+{
+  "mcpServers": {
+    "envcp": {
+      "command": "npx",
+      "args": ["-y", "@fentz26/envcp", "serve", "--mode", "mcp"]
+    }
+  }
+}
+```
+
 ### ChatGPT / OpenAI API
 
 ```bash
