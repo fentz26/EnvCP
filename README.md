@@ -1,10 +1,23 @@
 
 
 <p align="center">
-  <a href="https://envcp.fentz.dev/docs"><img src="./assets/logo-ascii.png" alt="EnvCP" width="100%"></a>
+<a href="https://envcp.fentz.dev/docs"><img src="./assets/logo-ascii.png" alt="EnvCP" width="100%"></a>
 </p>
+
 <p align="center">
-  <strong>Secure Environment Variable Management for AI agent</strong>
+<strong>Secure Environment Variable Management for AI agent</strong>
+</p>
+
+<p align="center">
+<sup>
+<a href="README.md">English</a> |
+<a href="docs/i18n/README.fr.md">Français</a> |
+<a href="docs/i18n/README.es.md">Español</a> |
+<a href="docs/i18n/README.ko.md">한국어</a> |
+<a href="docs/i18n/README.zh.md">中文</a> |
+<a href="docs/i18n/README.vi.md">Tiếng Việt</a> |
+<a href="docs/i18n/README.ja.md">日本語</a>
+</sup>
 </p>
 
 ##
