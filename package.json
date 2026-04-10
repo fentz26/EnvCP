@@ -33,7 +33,7 @@
     "model-context-protocol"
   ],
   "author": "fentz26",
-  "license": "SEE LICENSE IN LICENSE",
+  "license": "SEE LICENSE IN https://github.com/fentz26/EnvCP/blob/main/LICENSE",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",
     "argon2": "^0.44.0",
