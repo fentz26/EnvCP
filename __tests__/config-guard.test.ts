@@ -6,13 +6,17 @@ import { ConfigGuard } from '../src/config/config-guard';
 
 describe('ConfigGuard', () => {
   let tmpDir: string;
+  let origHome: string | undefined;
 
   beforeEach(async () => {
     tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-guard-'));
     await ensureDir(path.join(tmpDir, '.envcp', 'logs'));
+    origHome = process.env.HOME;
+    process.env.HOME = tmpDir;
   });
 
   afterEach(async () => {
+    process.env.HOME = origHome;
     await fs.rm(tmpDir, { recursive: true, force: true });
   });
 
