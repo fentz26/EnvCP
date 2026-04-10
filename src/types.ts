@@ -121,6 +121,14 @@ export type Session = z.infer<typeof SessionSchema>;
 export const ServerModeSchema = z.enum(['mcp', 'rest', 'openai', 'gemini', 'all', 'auto']);
 export type ServerMode = z.infer<typeof ServerModeSchema>;
 
+export const RateLimitConfigSchema = z.object({
+  enabled: z.boolean().default(true),
+  requests_per_minute: z.number().int().positive().default(60),
+  whitelist: z.array(z.string()).default([]),
+});
+
+export type RateLimitConfig = z.infer<typeof RateLimitConfigSchema>;
+
 export const ServerConfigSchema = z.object({
   mode: ServerModeSchema.default('auto'),
   port: z.number().default(3456),
@@ -128,6 +136,7 @@ export const ServerConfigSchema = z.object({
   cors: z.boolean().default(true),
   api_key: z.string().optional(),
   auto_detect: z.boolean().default(true),
+  rate_limit: RateLimitConfigSchema.optional(),
 });
 
 export type ServerConfig = z.infer<typeof ServerConfigSchema>;

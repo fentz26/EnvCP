@@ -93,18 +93,25 @@ export class UnifiedServer {
     }
 
     // Single mode - start specific adapter server
+    const rl = this.serverConfig.rate_limit;
+    const rateLimitEnabled = rl?.enabled !== false;
+    if (rateLimitEnabled) {
+      this.rateLimiter = new RateLimiter(rl?.requests_per_minute ?? 60, 60000);
+    }
+    const whitelist = rl?.whitelist ?? [];
+
     if (mode === 'rest') {
-      await this.restAdapter!.startServer(port, host, api_key);
+      await this.restAdapter!.startServer(port, host, api_key, rl);
       return;
     }
 
     if (mode === 'openai') {
-      await this.openaiAdapter!.startServer(port, host, api_key);
+      await this.openaiAdapter!.startServer(port, host, api_key, rl);
       return;
     }
 
     if (mode === 'gemini') {
-      await this.geminiAdapter!.startServer(port, host, api_key);
+      await this.geminiAdapter!.startServer(port, host, api_key, rl);
       return;
     }
 
@@ -118,7 +125,7 @@ export class UnifiedServer {
         return;
       }
 
-      if (!rateLimitMiddleware(this.rateLimiter, req, res)) {
+      if (rateLimitEnabled && !rateLimitMiddleware(this.rateLimiter, req, res, whitelist)) {
         return;
       }
 
