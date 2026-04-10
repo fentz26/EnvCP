@@ -11,7 +11,7 @@
     {
       "registryType": "npm",
       "identifier": "@fentz26/envcp",
-      "version": "1.0.92",
+  "version": "1.0.92",
       "transport": {
         "type": "stdio"
       }

@@ -96,14 +96,15 @@ export class RESTAdapter extends BaseAdapter {
   }
 
 
-  async startServer(port: number, host: string, apiKey?: string, rateLimitConfig?: RateLimitConfig): Promise<void> {
-    await this.init();
+async startServer(port: number, host: string, apiKey?: string, rateLimitConfig?: RateLimitConfig): Promise<void> {
+  await this.init();
 
-    const rateLimitEnabled = rateLimitConfig?.enabled !== false;
-    if (rateLimitEnabled) {
-      this.rateLimiter = new RateLimiter(rateLimitConfig?.requests_per_minute ?? 60, 60000);
-    }
-    const whitelist = rateLimitConfig?.whitelist ?? [];
+  const rateLimitEnabled = rateLimitConfig?.enabled !== false;
+  if (rateLimitEnabled) {
+    this.rateLimiter?.destroy();
+    this.rateLimiter = new RateLimiter(rateLimitConfig?.requests_per_minute ?? 60, 60000);
+  }
+  const whitelist = rateLimitConfig?.whitelist ?? [];
 
     this.server = http.createServer(async (req, res) => {
       setCorsHeaders(res, undefined, req.headers.origin);

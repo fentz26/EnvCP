@@ -152,7 +152,10 @@ export function rateLimitMiddleware(
   res: http.ServerResponse,
   whitelist: string[] = []
 ): boolean {
-  const key = req.socket.remoteAddress || 'unknown';
+  let key = req.socket.remoteAddress || 'unknown';
+  if (key.startsWith('::ffff:')) {
+    key = key.slice(7);
+  }
   if (whitelist.length > 0 && whitelist.includes(key)) {
     return true;
   }
