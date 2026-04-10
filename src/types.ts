@@ -57,10 +57,10 @@ export const EnvCPConfigSchema = z.object({
   }).default({}),
 
   password: z.object({
-    min_length: z.number().default(1),
+    min_length: z.number().default(8),
     require_complexity: z.boolean().default(false),
-    allow_numeric_only: z.boolean().default(true),
-    allow_single_char: z.boolean().default(true),
+    allow_numeric_only: z.boolean().default(false),
+    allow_single_char: z.boolean().default(false),
   }).default({}),
 
   variables: z.record(z.object({

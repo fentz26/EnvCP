@@ -43,10 +43,10 @@ const DEFAULT_CONFIG: Partial<EnvCPConfig> = {
     recovery_file: '.envcp/.recovery',
   },
   password: {
-    min_length: 1,
+    min_length: 8,
     require_complexity: false,
-    allow_numeric_only: true,
-    allow_single_char: true,
+    allow_numeric_only: false,
+    allow_single_char: false,
   },
 };
 

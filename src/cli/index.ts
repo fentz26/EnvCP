@@ -45,6 +45,9 @@ async function withSession(fn: (storage: StorageManager, password: string, confi
       console.log(chalk.red(validation.error));
       return;
     }
+    if (validation.warning) {
+      console.log(chalk.yellow(`⚠ ${validation.warning}`));
+    }
 
     session = await sessionManager.create(password);
   }
@@ -254,6 +257,9 @@ program
     if (!validation.valid) {
       console.log(chalk.red(validation.error));
       return;
+    }
+    if (validation.warning) {
+      console.log(chalk.yellow(`⚠ ${validation.warning}`));
     }
 
     const sessionManager = new SessionManager(
@@ -792,6 +798,9 @@ program
         if (!validation.valid) {
           console.log(chalk.red(validation.error));
           return;
+        }
+        if (validation.warning) {
+          console.log(chalk.yellow(`⚠ ${validation.warning}`));
         }
 
         session = await sessionManager.create(password);

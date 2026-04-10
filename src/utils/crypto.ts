@@ -112,16 +112,29 @@ export function maskValue(value: string, showLength: number = 4): string {
   return value.slice(0, showLength) + '*'.repeat(value.length - showLength * 2) + value.slice(-showLength);
 }
 
+// Common weak passwords that should always be rejected regardless of policy.
+// These are the top entries from breached-password databases that would fall
+// within an 8+ char minimum.
+const WEAK_PASSWORDS = new Set([
+  'password', 'password1', 'password123', '12345678', '123456789',
+  '1234567890', 'qwerty123', 'abcdefgh', 'abcd1234', 'iloveyou',
+  'sunshine1', 'princess1', 'football1', 'charlie1', 'access14',
+  'master123', 'dragon123', 'monkey123', 'letmein123', 'trustno1',
+  'baseball1', 'shadow123', 'michael1', 'jennifer1', 'superman1',
+  'qwertyui', 'asdfghjk', 'zxcvbnm1', 'passw0rd', 'p@ssw0rd',
+  'welcome1', 'admin123', 'changeme', 'test1234', 'guest1234',
+]);
+
 export function validatePassword(password: string, config: {
   min_length?: number;
   require_complexity?: boolean;
   allow_numeric_only?: boolean;
   allow_single_char?: boolean;
-}): { valid: boolean; error?: string } {
-  const minLength = config.min_length ?? 1;
+}): { valid: boolean; error?: string; warning?: string } {
+  const minLength = config.min_length ?? 8;
   const requireComplexity = config.require_complexity ?? false;
-  const allowNumericOnly = config.allow_numeric_only ?? true;
-  const allowSingleChar = config.allow_single_char ?? true;
+  const allowNumericOnly = config.allow_numeric_only ?? false;
+  const allowSingleChar = config.allow_single_char ?? false;
 
   if (password.length < minLength) {
     return { valid: false, error: `Password must be at least ${minLength} character(s)` };
@@ -133,6 +146,11 @@ export function validatePassword(password: string, config: {
 
   if (!allowNumericOnly && /^\d+$/.test(password)) {
     return { valid: false, error: 'Numeric-only passwords are not allowed' };
+  }
+
+  // Always reject known weak passwords
+  if (WEAK_PASSWORDS.has(password.toLowerCase())) {
+    return { valid: false, error: 'This password is too common and easily guessed. Please choose a stronger password' };
   }
 
   if (requireComplexity) {
@@ -148,7 +166,15 @@ export function validatePassword(password: string, config: {
     }
   }
 
-  return { valid: true };
+  // Warn about medium-strength passwords (valid but could be stronger)
+  let warning: string | undefined;
+  if (password.length < 12) {
+    warning = 'Consider using 12+ characters for stronger protection';
+  } else if (/^[a-z]+$/.test(password) || /^[A-Z]+$/.test(password)) {
+    warning = 'Consider mixing character types (letters, numbers, symbols) for stronger protection';
+  }
+
+  return { valid: true, warning };
 }
 
 export function quickHash(input: string): string {

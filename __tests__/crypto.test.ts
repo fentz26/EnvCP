@@ -38,25 +38,68 @@ describe('maskValue', () => {
 });
 
 describe('validatePassword', () => {
-  it('accepts valid password with defaults', () => {
-    expect(validatePassword('a', {}).valid).toBe(true);
+  it('accepts valid password with defaults (8+ chars)', () => {
+    expect(validatePassword('mypasswd', {}).valid).toBe(true);
   });
 
-  it('rejects too short password', () => {
+  it('rejects too short password with default min_length=8', () => {
+    expect(validatePassword('short', {}).valid).toBe(false);
+  });
+
+  it('rejects too short password with custom min_length', () => {
     expect(validatePassword('', { min_length: 1 }).valid).toBe(false);
   });
 
-  it('rejects single char when disallowed', () => {
-    expect(validatePassword('a', { allow_single_char: false }).valid).toBe(false);
+  it('accepts short password when min_length is lowered', () => {
+    expect(validatePassword('abc', { min_length: 1, allow_single_char: true }).valid).toBe(true);
   });
 
-  it('rejects numeric-only when disallowed', () => {
-    expect(validatePassword('1234', { allow_numeric_only: false }).valid).toBe(false);
+  it('rejects single char when disallowed (default)', () => {
+    expect(validatePassword('a', { min_length: 1 }).valid).toBe(false);
+  });
+
+  it('rejects numeric-only when disallowed (default)', () => {
+    expect(validatePassword('12345678', {}).valid).toBe(false);
+  });
+
+  it('accepts numeric-only when explicitly allowed (non-common number)', () => {
+    expect(validatePassword('98237461', { allow_numeric_only: true }).valid).toBe(true);
+  });
+
+  it('rejects known weak passwords', () => {
+    expect(validatePassword('password', { min_length: 1 }).valid).toBe(false);
+    expect(validatePassword('password123', {}).valid).toBe(false);
+    expect(validatePassword('12345678', { allow_numeric_only: true }).valid).toBe(false);
+    expect(validatePassword('qwerty123', {}).valid).toBe(false);
+    expect(validatePassword('trustno1', { min_length: 1 }).valid).toBe(false);
+  });
+
+  it('rejects weak passwords case-insensitively', () => {
+    expect(validatePassword('PASSWORD', { min_length: 1 }).valid).toBe(false);
+    expect(validatePassword('Password123', {}).valid).toBe(false);
   });
 
   it('enforces complexity', () => {
-    expect(validatePassword('abc', { require_complexity: true }).valid).toBe(false);
-    expect(validatePassword('Abc123!', { require_complexity: true }).valid).toBe(true);
+    expect(validatePassword('abcdefgh', { require_complexity: true }).valid).toBe(false);
+    expect(validatePassword('Abc123!x', { require_complexity: true }).valid).toBe(true);
+  });
+
+  it('returns warning for short-but-valid passwords', () => {
+    const result = validatePassword('MyP@ss99', {});
+    expect(result.valid).toBe(true);
+    expect(result.warning).toContain('12+');
+  });
+
+  it('returns warning for single-case-only long passwords', () => {
+    const result = validatePassword('abcdefghijklmn', {});
+    expect(result.valid).toBe(true);
+    expect(result.warning).toContain('mixing');
+  });
+
+  it('no warning for strong passwords', () => {
+    const result = validatePassword('MyStr0ng!P@ssphrase', {});
+    expect(result.valid).toBe(true);
+    expect(result.warning).toBeUndefined();
   });
 });
 
