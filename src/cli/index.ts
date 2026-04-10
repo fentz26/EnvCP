@@ -55,13 +55,14 @@ async function withSession(fn: (storage: StorageManager, password: string, confi
       ]);
       password = answer.password;
 
-      const validation = validatePassword(password, config.password || {});
-      if (!validation.valid) {
-        console.log(chalk.red(validation.error));
+      const { valid: passwordValid, warning: passwordWarning } = validatePassword(password, config.password || {});
+      if (!passwordValid) {
+        // nosem: no tainted data flows to log
+        console.log(chalk.red("Invalid password"));
         return;
       }
-      if (validation.warning) {
-        console.log(chalk.yellow(`⚠ ${validation.warning}`));
+      if (passwordValid && passwordWarning) {
+        console.log(chalk.yellow('⚠ Weak password detected'));
       }
     }
 
@@ -270,13 +271,14 @@ program
       password = answer.password;
     }
 
-    const validation = validatePassword(password, config.password || {});
-    if (!validation.valid) {
-      console.log(chalk.red(validation.error));
+    const { valid: passwordValid, warning: passwordWarning } = validatePassword(password, config.password || {});
+    if (!passwordValid) {
+      // nosem: no tainted data flows to log
+      console.log(chalk.red("Invalid password"));
       return;
     }
-    if (validation.warning) {
-      console.log(chalk.yellow(`⚠ ${validation.warning}`));
+    if (passwordValid && passwordWarning) {
+      console.log(chalk.yellow('⚠ Weak password detected'));
     }
 
     const sessionManager = new SessionManager(
@@ -854,13 +856,14 @@ program
         ]);
         password = answer.password;
 
-        const validation = validatePassword(password, config.password || {});
-        if (!validation.valid) {
-          console.log(chalk.red(validation.error));
+        const { valid: passwordValid, warning: passwordWarning } = validatePassword(password, config.password || {});
+        if (!passwordValid) {
+          // nosem: no tainted data flows to log
+          console.log(chalk.red("Invalid password"));
           return;
         }
-        if (validation.warning) {
-          console.log(chalk.yellow(`⚠ ${validation.warning}`));
+        if (passwordValid && passwordWarning) {
+          console.log(chalk.yellow('⚠ Weak password detected'));
         }
 
         session = await sessionManager.create(password);
