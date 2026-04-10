@@ -1,8 +1,74 @@
 # Changelog
 
-All notable changes to EnvCP are documented here.  
-Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).  
+All notable changes to EnvCP are documented here.
+Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versions follow [Semantic Versioning](https://semver.org/).
+
+---
+
+## [1.0.92] - 2026-04-10
+
+### Added
+
+- **Configurable Rate Limiting** ([#113](https://github.com/fentz26/EnvCP/issues/113), [#114](https://github.com/fentz26/EnvCP/pull/114))
+  - New `server.rate_limit` configuration block in `envcp.yaml`:
+    - `enabled`: Enable/disable rate limiting (default: `true`)
+    - `requests_per_minute`: Max requests per IP per minute (default: `60`)
+    - `whitelist`: Array of IPs exempt from rate limiting (default: `[]`)
+  - Rate limiting now applies to all HTTP modes: REST, OpenAI, Gemini, and unified server
+  - IPv6-mapped IPv4 addresses properly normalized (e.g., `::ffff:127.0.0.1` → `127.0.0.1`)
+  - Example configuration:
+    ```yaml
+    server:
+      rate_limit:
+        enabled: true
+        requests_per_minute: 100
+        whitelist: ["127.0.0.1", "::1"]
+    ```
+
+- **Augment Code / Auggie CLI Integration**
+  - Added integration guide for Augment Code AI platform
+  - Two setup methods:
+    - CLI: `auggie mcp add-json envcp '{"type":"stdio","command":"npx","args":["-y","@fentz26/envcp","serve","--mode","mcp"]}'`
+    - Settings: Import JSON config in VS Code/JetBrains MCP section
+
+### Changed
+
+- **Server Configuration Schema**
+  - Added `server` section to `EnvCPConfigSchema` for YAML-based server configuration
+  - `ServerModeSchema` and `RateLimitConfigSchema` moved before `EnvCPConfigSchema` for proper declaration order
+  - CLI `serve` command now reads `server.rate_limit` from `envcp.yaml`
+
+### Fixed
+
+- **Memory Leak in Rate Limiter** ([#114](https://github.com/fentz26/EnvCP/pull/114))
+  - `RateLimiter.destroy()` now called before reassignment in all adapters
+  - Prevents orphaned cleanup intervals on server restart
+
+- **Wasted Rate Limiter Allocation** ([#114](https://github.com/fentz26/EnvCP/pull/114))
+  - Rate limiter initialization moved after single-mode early returns in `unified.ts`
+  - Eliminates unnecessary allocation when using REST/OpenAI/Gemini single modes
+
+- **IPv6 Whitelist Bypass** ([#114](https://github.com/fentz26/EnvCP/pull/114))
+  - Whitelist check now normalizes IPv6-mapped IPv4 addresses
+  - `127.0.0.1` whitelist entry now correctly matches `::ffff:127.0.0.1`
+
+- **server.json Formatting**
+  - Fixed indentation inconsistency in MCP Registry metadata file
+
+### Security
+
+- Rate limiting now configurable per deployment instead of hardcoded
+- Whitelist allows trusted IPs (e.g., localhost) to bypass limits for internal services
+- IPv6 normalization prevents bypass failures on dual-stack systems
+
+---
+
+## [1.0.91] - 2026-04-10
+
+### Changed
+
+- Version bump to proper semver format (was `1.0.9a`, now `1.0.91`)
 
 ---
 
@@ -236,6 +302,8 @@ Initial public release.
 
 ---
 
+[1.0.92]: https://github.com/fentz26/EnvCP/compare/v1.0.91...v1.0.92
+[1.0.91]: https://github.com/fentz26/EnvCP/compare/v1.0.9...v1.0.91
 [1.0.9]: https://github.com/fentz26/EnvCP/compare/v1.0.8...v1.0.9
 [1.0.8]: https://github.com/fentz26/EnvCP/compare/v1.0.7...v1.0.8
 [1.0.7]: https://github.com/fentz26/EnvCP/compare/v1.0.6...v1.0.7
