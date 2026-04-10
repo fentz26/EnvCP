@@ -1,4 +1,4 @@
-name: Publish to npm, PyPI, and Docker Hub
+name: Publish to npm, PyPI, Docker Hub, and MCP Registry
 
 on:
   push:
@@ -149,3 +149,30 @@ jobs:
               --generate-notes \
               pypi-dist/*.whl pypi-dist/*.tar.gz
           fi
+
+  publish-mcp-registry:
+    needs: [publish-npm]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install mcp-publisher
+        run: |
+          curl -L "https://github.com/modelcontextprotocol/registry/releases/latest/download/mcp-publisher_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/').tar.gz" | tar xz mcp-publisher
+          sudo mv mcp-publisher /usr/local/bin/
+
+      - name: Update server.json version
+        run: |
+          VERSION="${GITHUB_REF#refs/tags/v}"
+          sed -i "s/\"version\": \".*\"/\"version\": \"$VERSION\"/" server.json
+          sed -i "s/\"version\": \".*\"/\"version\": \"$VERSION\"/" server.json
+
+      - name: Login to MCP Registry
+        env:
+          MCP_REGISTRY_PRIVATE_KEY: ${{ secrets.MCP_REGISTRY_PRIVATE_KEY }}
+        run: |
+          echo "$MCP_REGISTRY_PRIVATE_KEY" > /tmp/key.pem
+          mcp-publisher login dns --domain "envcp.fentz.dev" --private-key "$(openssl pkey -in /tmp/key.pem -noout -text | grep -A3 'priv:' | tail -n +2 | tr -d ' :\n')"
+
+      - name: Publish to MCP Registry
+        run: mcp-publisher publish
