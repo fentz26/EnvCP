@@ -1,4 +1,4 @@
-import * as fs from 'fs/promises';
+import * as fs from 'fs';
 import * as nodefs from 'fs/promises';
 import * as path from 'path';
 import { withLock } from '../utils/lock.js';
@@ -38,20 +38,28 @@ export class StorageManager {
       return this.cache;
     }
 
-    let data: string;
+  let data: string;
+  try {
+    const handle = await nodefs.open(this.storePath, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW);
     try {
-      const stat = await nodefs.lstat(this.storePath);
+      const stat = await handle.stat();
       if (!stat.isFile()) {
         throw new Error(`Storage path is not a regular file: ${this.storePath}`);
       }
-      data = await nodefs.readFile(this.storePath, 'utf8');
-    } catch (err: unknown) {
-      if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
-        this.cache = {};
-        return this.cache;
-      }
-      throw err;
+      data = await handle.readFile({ encoding: 'utf8' });
+    } finally {
+      await handle.close();
     }
+  } catch (err: unknown) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+      this.cache = {};
+      return this.cache;
+    }
+    if ((err as NodeJS.ErrnoException).code === 'ELOOP') {
+      throw new Error(`Storage path is not a regular file: ${this.storePath}`);
+    }
+    throw err;
+  }
 
     if (this.encrypted && this.password) {
       try {
@@ -212,7 +220,7 @@ export class StorageManager {
       let backups = 0;
       for (let i = 1; i <= this.maxBackups; i++) {
         try {
-          await fs.access(`${this.storePath}.bak.${i}`);
+          await nodefs.access(`${this.storePath}.bak.${i}`);
           backups++;
         } catch {
           // backup doesn't exist
@@ -242,7 +250,7 @@ export class LogManager {
     const date = new Date().toISOString().split('T')[0];
     const logFile = path.join(this.logDir, `operations-${date}.log`);
     const logLine = JSON.stringify(entry) + '\n';
-    await fs.appendFile(logFile, logLine);
+    await nodefs.appendFile(logFile, logLine);
   }
 
   async getLogs(date?: string): Promise<OperationLog[]> {
