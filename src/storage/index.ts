@@ -1,7 +1,7 @@
 import fs from 'fs-extra';
 import * as nodefs from 'fs/promises';
 import * as path from 'path';
-import lockfile from 'proper-lockfile';
+import { withLock } from '../utils/lock.js';
 import { Variable, OperationLog } from '../types.js';
 import { encrypt, decrypt } from '../utils/crypto.js';
 
@@ -80,26 +80,21 @@ export class StorageManager {
     await fs.ensureDir(storeDir);
     await nodefs.chmod(storeDir, 0o700);
 
-    // Ensure the store file exists so lockfile can lock it
-    await fs.writeFile(this.storePath, '', { encoding: 'utf8', flag: 'a' });
+    // Ensure the store file exists for locking
+  await fs.writeFile(this.storePath, '', { encoding: 'utf8', flag: 'a' });
 
-    const release = await lockfile.lock(this.storePath, { retries: { retries: 5, minTimeout: 50 } });
-    try {
-      // Rotate backups before writing
-      await this.rotateBackups();
+  await withLock(this.storePath, async () => {
+    await this.rotateBackups();
 
-      const content = this.encrypted && this.password
-        ? await encrypt(data, this.password)
-        : data;
+    const content = this.encrypted && this.password
+      ? await encrypt(data, this.password)
+      : data;
 
-      // Atomic write: write to temp file, then rename
-      const tmpPath = this.storePath + '.tmp';
-      await fs.writeFile(tmpPath, content, { encoding: 'utf8', mode: 0o600 });
-      await fs.rename(tmpPath, this.storePath);
-      await nodefs.chmod(this.storePath, 0o600);
-    } finally {
-      await release();
-    }
+    const tmpPath = this.storePath + '.tmp';
+    await fs.writeFile(tmpPath, content, { encoding: 'utf8', mode: 0o600 });
+    await fs.rename(tmpPath, this.storePath);
+    await nodefs.chmod(this.storePath, 0o600);
+  });
   }
 
   private async rotateBackups(): Promise<void> {
