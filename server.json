@@ -6,12 +6,12 @@
     "url": "https://github.com/fentz26/EnvCP",
     "source": "github"
   },
-  "version": "1.0.9",
+  "version": "1.0.9a",
   "packages": [
     {
       "registryType": "npm",
       "identifier": "@fentz26/envcp",
-      "version": "1.0.9",
+      "version": "1.0.9a",
       "transport": {
         "type": "stdio"
       }
