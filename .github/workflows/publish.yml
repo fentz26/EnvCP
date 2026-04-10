@@ -55,19 +55,19 @@ jobs:
 
       - name: Build Python package
         run: |
-          cd envcp-python
+          cd python
           python -m build
 
       - name: Upload PyPI artifacts
         uses: actions/upload-artifact@v4
         with:
           name: pypi-dist
-          path: envcp-python/dist/
+          path: python/dist/
 
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
-          packages-dir: envcp-python/dist/
+          packages-dir: python/dist/
 
   publish-docker:
     runs-on: ubuntu-latest
