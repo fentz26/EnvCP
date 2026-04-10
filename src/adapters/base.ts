@@ -4,9 +4,8 @@ import { maskValue } from '../utils/crypto.js';
 import { canAccess, isBlacklisted, canAIActiveCheck, validateVariableName, matchesPattern } from '../config/manager.js';
 import { SessionManager } from '../utils/session.js';
 import * as fs from 'fs/promises';
-import { pathExists } from '../utils/fs.js';
+import { pathExists, parseEnv } from '../utils/fs.js';
 import * as path from 'path';
-import * as dotenv from 'dotenv';
 
 export abstract class BaseAdapter {
   protected storage: StorageManager;
@@ -398,7 +397,7 @@ export abstract class BaseAdapter {
       content = await fs.readFile(envPath, 'utf8');
     }
 
-    const envVars = dotenv.parse(content);
+    const envVars = parseEnv(content);
 
     const needsQuoting = /[\s#"'\\]/.test(variable.value);
     const quotedValue = needsQuoting ? `"${variable.value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"` : variable.value;
