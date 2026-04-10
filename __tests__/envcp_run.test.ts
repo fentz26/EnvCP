@@ -1,4 +1,5 @@
-import fs from 'fs-extra';
+import * as fs from 'fs/promises';
+import { ensureDir, pathExists } from '../src/utils/fs.js';
 import os from 'os';
 import path from 'path';
 import { RESTAdapter } from '../src/adapters/rest';
@@ -73,7 +74,7 @@ describe('envcp_run policy filtering', () => {
 
   afterEach(async () => {
     if (tempDir) {
-      await fs.remove(tempDir);
+      await fs.rm(tempDir, { recursive: true, force: true });
     }
   });
 

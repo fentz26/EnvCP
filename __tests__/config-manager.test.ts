@@ -1,4 +1,5 @@
-import fs from 'fs-extra';
+import * as fs from 'fs/promises';
+import { ensureDir, pathExists } from '../src/utils/fs.js';
 import * as os from 'os';
 import * as path from 'path';
 import { loadConfig, saveConfig, initConfig, canAIActiveCheck, requiresUserReference, registerMcpConfig } from '../src/config/manager';
@@ -12,7 +13,7 @@ describe('loadConfig', () => {
   });
 
   afterEach(async () => {
-    await fs.remove(tmpDir);
+    await fs.rm(tmpDir, { recursive: true, force: true });
   });
 
   it('returns defaults when no config exists', async () => {
@@ -34,7 +35,7 @@ describe('loadConfig', () => {
     const home = process.env.HOME || process.env.USERPROFILE || '';
     const globalDir = path.join(home, '.envcp');
     const globalPath = path.join(globalDir, 'config.yaml');
-    const hadGlobal = await fs.pathExists(globalPath);
+    const hadGlobal = await pathExists(globalPath);
     let originalContent: string | undefined;
 
     if (hadGlobal) {
@@ -42,7 +43,7 @@ describe('loadConfig', () => {
     }
 
     try {
-      await fs.ensureDir(globalDir);
+      await ensureDir(globalDir);
       await fs.writeFile(globalPath, 'access:\n  allow_ai_read: true\n  mask_values: false\n');
       // Project overrides mask_values
       await fs.writeFile(path.join(tmpDir, 'envcp.yaml'), 'access:\n  mask_values: true\n');
@@ -54,7 +55,7 @@ describe('loadConfig', () => {
       if (hadGlobal && originalContent !== undefined) {
         await fs.writeFile(globalPath, originalContent);
       } else if (!hadGlobal) {
-        await fs.remove(globalPath);
+        await fs.rm(globalPath, { recursive: true, force: true });
       }
     }
   });
@@ -68,7 +69,7 @@ describe('saveConfig', () => {
   });
 
   afterEach(async () => {
-    await fs.remove(tmpDir);
+    await fs.rm(tmpDir, { recursive: true, force: true });
   });
 
   it('writes config to envcp.yaml', async () => {
@@ -87,15 +88,15 @@ describe('initConfig', () => {
   });
 
   afterEach(async () => {
-    await fs.remove(tmpDir);
+    await fs.rm(tmpDir, { recursive: true, force: true });
   });
 
   it('creates .envcp directory and config', async () => {
     const config = await initConfig(tmpDir, 'test-project');
     expect(config.project).toBe('test-project');
-    expect(await fs.pathExists(path.join(tmpDir, '.envcp'))).toBe(true);
-    expect(await fs.pathExists(path.join(tmpDir, '.envcp', 'logs'))).toBe(true);
-    expect(await fs.pathExists(path.join(tmpDir, 'envcp.yaml'))).toBe(true);
+    expect(await pathExists(path.join(tmpDir, '.envcp'))).toBe(true);
+    expect(await pathExists(path.join(tmpDir, '.envcp', 'logs'))).toBe(true);
+    expect(await pathExists(path.join(tmpDir, 'envcp.yaml'))).toBe(true);
   });
 
   it('creates .gitignore if it does not exist', async () => {
@@ -134,11 +135,11 @@ describe('registerMcpConfig', () => {
   });
 
   afterEach(async () => {
-    await fs.remove(tmpDir);
+    await fs.rm(tmpDir, { recursive: true, force: true });
   });
 
   it('registers to project-local .vscode/mcp.json when .vscode exists', async () => {
-    await fs.ensureDir(path.join(tmpDir, '.vscode'));
+    await ensureDir(path.join(tmpDir, '.vscode'));
     const result = await registerMcpConfig(tmpDir);
     expect(result.registered).toContain('VS Code');
     const content = await fs.readFile(path.join(tmpDir, '.vscode', 'mcp.json'), 'utf8');
@@ -147,7 +148,7 @@ describe('registerMcpConfig', () => {
   });
 
   it('registers to project-local .cursor/mcp.json when .cursor exists', async () => {
-    await fs.ensureDir(path.join(tmpDir, '.cursor'));
+    await ensureDir(path.join(tmpDir, '.cursor'));
     const result = await registerMcpConfig(tmpDir);
     expect(result.registered).toContain('Cursor (project)');
     const content = await fs.readFile(path.join(tmpDir, '.cursor', 'mcp.json'), 'utf8');
@@ -156,7 +157,7 @@ describe('registerMcpConfig', () => {
   });
 
   it('registers to project-local .jb-mcp.json when .idea exists', async () => {
-    await fs.ensureDir(path.join(tmpDir, '.idea'));
+    await ensureDir(path.join(tmpDir, '.idea'));
     const result = await registerMcpConfig(tmpDir);
     expect(result.registered).toContain('JetBrains');
     const content = await fs.readFile(path.join(tmpDir, '.jb-mcp.json'), 'utf8');
@@ -172,7 +173,7 @@ describe('registerMcpConfig', () => {
   });
 
   it('reports already configured when envcp entry exists', async () => {
-    await fs.ensureDir(path.join(tmpDir, '.vscode'));
+    await ensureDir(path.join(tmpDir, '.vscode'));
     await fs.writeFile(path.join(tmpDir, '.vscode', 'mcp.json'), JSON.stringify({ servers: { envcp: {} } }));
     const result = await registerMcpConfig(tmpDir);
     expect(result.alreadyConfigured).toContain('VS Code');
@@ -186,7 +187,7 @@ describe('registerMcpConfig', () => {
 
   it('registers to Zed settings when file exists', async () => {
     const zedPath = path.join(process.env.HOME || '', '.config', 'zed', 'settings.json');
-    const hadZed = await fs.pathExists(zedPath);
+    const hadZed = await pathExists(zedPath);
     let originalContent: string | undefined;
 
     if (hadZed) {
@@ -194,7 +195,7 @@ describe('registerMcpConfig', () => {
     }
 
     try {
-      await fs.ensureDir(path.dirname(zedPath));
+      await ensureDir(path.dirname(zedPath));
       const existingConfig = hadZed ? JSON.parse(originalContent!) : {};
       // Remove envcp if present
       if (existingConfig.context_servers?.envcp) {
@@ -210,14 +211,14 @@ describe('registerMcpConfig', () => {
       if (hadZed && originalContent) {
         await fs.writeFile(zedPath, originalContent);
       } else if (!hadZed) {
-        await fs.remove(zedPath);
+        await fs.rm(zedPath, { recursive: true, force: true });
       }
     }
   });
 
   it('registers to OpenCode config when file exists', async () => {
     const opencodePath = path.join(process.env.HOME || '', '.config', 'opencode', 'opencode.json');
-    const hadOpenCode = await fs.pathExists(opencodePath);
+    const hadOpenCode = await pathExists(opencodePath);
     let originalContent: string | undefined;
 
     if (hadOpenCode) {
@@ -225,7 +226,7 @@ describe('registerMcpConfig', () => {
     }
 
     try {
-      await fs.ensureDir(path.dirname(opencodePath));
+      await ensureDir(path.dirname(opencodePath));
       const existingConfig = hadOpenCode ? JSON.parse(originalContent!) : {};
       // Remove envcp if present
       if (existingConfig.mcp?.envcp) {
@@ -240,14 +241,14 @@ describe('registerMcpConfig', () => {
       if (hadOpenCode && originalContent) {
         await fs.writeFile(opencodePath, originalContent);
       } else if (!hadOpenCode) {
-        await fs.remove(opencodePath);
+        await fs.rm(opencodePath, { recursive: true, force: true });
       }
     }
   });
 
   it('registers to GitHub Copilot CLI config when file exists', async () => {
     const copilotPath = path.join(process.env.HOME || '', '.copilot', 'mcp-config.json');
-    const hadCopilot = await fs.pathExists(copilotPath);
+    const hadCopilot = await pathExists(copilotPath);
     let originalContent: string | undefined;
 
     if (hadCopilot) {
@@ -255,7 +256,7 @@ describe('registerMcpConfig', () => {
     }
 
     try {
-      await fs.ensureDir(path.dirname(copilotPath));
+      await ensureDir(path.dirname(copilotPath));
       const existingConfig = hadCopilot ? JSON.parse(originalContent!) : {};
       // Remove envcp if present
       if (existingConfig.mcp_servers) {
@@ -270,13 +271,13 @@ describe('registerMcpConfig', () => {
       if (hadCopilot && originalContent) {
         await fs.writeFile(copilotPath, originalContent);
       } else if (!hadCopilot) {
-        await fs.remove(copilotPath);
+        await fs.rm(copilotPath, { recursive: true, force: true });
       }
     }
   });
 
   it('handles invalid JSON in existing config gracefully', async () => {
-    await fs.ensureDir(path.join(tmpDir, '.vscode'));
+    await ensureDir(path.join(tmpDir, '.vscode'));
     await fs.writeFile(path.join(tmpDir, '.vscode', 'mcp.json'), 'not-json');
     // Should not throw
     const result = await registerMcpConfig(tmpDir);

@@ -1,4 +1,5 @@
-import fs from 'fs-extra';
+import * as fs from 'fs/promises';
+import { ensureDir, pathExists } from '../src/utils/fs.js';
 import * as os from 'os';
 import * as path from 'path';
 import { BaseAdapter } from '../src/adapters/base';
@@ -58,7 +59,7 @@ describe('BaseAdapter tool operations', () => {
   });
 
   afterEach(async () => {
-    await fs.remove(tmpDir);
+    await fs.rm(tmpDir, { recursive: true, force: true });
   });
 
   describe('listVariables', () => {
@@ -447,7 +448,7 @@ describe('BaseAdapter tool operations', () => {
       // Create a valid session first
       const { SessionManager } = await import('../src/utils/session');
       const sessionPath = path.join(tmpDir, '.envcp', '.session');
-      await fs.ensureDir(path.dirname(sessionPath));
+      await ensureDir(path.dirname(sessionPath));
       const sm = new SessionManager(sessionPath, 30, 5);
       await sm.init();
       await sm.create('testpass');

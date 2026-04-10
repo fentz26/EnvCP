@@ -1,7 +1,8 @@
 import * as path from 'path';
 import * as os from 'os';
 import * as nativeFs from 'fs';
-import fs from 'fs-extra';
+import * as fs from 'fs/promises';
+import { ensureDir, pathExists } from '../src/utils/fs.js';
 import { SessionManager } from '../src/utils/session';
 
 const makeTmpDir = () => nativeFs.mkdtempSync(path.join(os.tmpdir(), 'envcp-session-test-'));
@@ -19,7 +20,7 @@ describe('SessionManager', () => {
   });
 
   afterEach(async () => {
-    await fs.remove(dir);
+    await fs.rm(dir, { recursive: true, force: true });
   });
 
   it('creates a session and returns it', async () => {
@@ -32,7 +33,7 @@ describe('SessionManager', () => {
 
   it('session file is created on disk', async () => {
     await manager.create('password123');
-    expect(await fs.pathExists(sessionPath)).toBe(true);
+    expect(await pathExists(sessionPath)).toBe(true);
   });
 
   it('loads a valid session with correct password', async () => {
@@ -97,7 +98,7 @@ describe('SessionManager', () => {
   it('destroy removes session file and clears state', async () => {
     await manager.create('password123');
     await manager.destroy();
-    expect(await fs.pathExists(sessionPath)).toBe(false);
+    expect(await pathExists(sessionPath)).toBe(false);
     expect(manager.getSession()).toBeNull();
     expect(manager.getPassword()).toBeNull();
   });
@@ -149,7 +150,7 @@ describe('SessionManager', () => {
 
   it('load returns null for non-regular file (directory)', async () => {
     // Create a directory at the session path to trigger non-ENOENT but also non-file
-    await fs.ensureDir(sessionPath);
+    await ensureDir(sessionPath);
     const loaded = await manager.load('password123');
     expect(loaded).toBeNull();
   });

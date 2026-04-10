@@ -1,4 +1,5 @@
-import fs from 'fs-extra';
+import * as fs from 'fs/promises';
+import { ensureDir, pathExists } from '../src/utils/fs.js';
 import * as nativeFs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -14,7 +15,7 @@ describe('StorageManager', () => {
   });
 
   afterEach(async () => {
-    await fs.remove(tmpDir);
+    await fs.rm(tmpDir, { recursive: true, force: true });
   });
 
   it('stores and retrieves variables (encrypted)', async () => {

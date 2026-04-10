@@ -1,4 +1,5 @@
-import fs from 'fs-extra';
+import * as fs from 'fs/promises';
+import { ensureDir, pathExists } from '../src/utils/fs.js';
 import * as nativeFs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -14,7 +15,7 @@ describe('StorageManager advanced', () => {
   });
 
   afterEach(async () => {
-    await fs.remove(tmpDir);
+    await fs.rm(tmpDir, { recursive: true, force: true });
   });
 
   it('works in plaintext (unencrypted) mode', async () => {
@@ -81,7 +82,7 @@ describe('StorageManager advanced', () => {
     await storage.set('V1', { name: 'V1', value: '1', encrypted: false, created: now, updated: now, sync_to_env: true });
     await storage.set('V2', { name: 'V2', value: '2', encrypted: false, created: now, updated: now, sync_to_env: true });
 
-    expect(await fs.pathExists(`${storePath}.bak.1`)).toBe(true);
+    expect(await pathExists(`${storePath}.bak.1`)).toBe(true);
   });
 
   it('verify returns valid for healthy store', async () => {
@@ -103,7 +104,7 @@ describe('StorageManager advanced', () => {
   });
 
   it('verify returns invalid for empty store', async () => {
-    await fs.ensureDir(path.dirname(storePath));
+    await ensureDir(path.dirname(storePath));
     await fs.writeFile(storePath, '');
     const storage = new StorageManager(storePath, true);
     storage.setPassword('test');
@@ -148,7 +149,7 @@ describe('StorageManager advanced', () => {
   });
 
   it('verify returns invalid for corrupted encrypted store', async () => {
-    await fs.ensureDir(path.dirname(storePath));
+    await ensureDir(path.dirname(storePath));
     await fs.writeFile(storePath, 'not-valid-encrypted-data');
     const storage = new StorageManager(storePath, true);
     storage.setPassword('test');
@@ -158,7 +159,7 @@ describe('StorageManager advanced', () => {
   });
 
   it('verify returns invalid for non-object data', async () => {
-    await fs.ensureDir(path.dirname(storePath));
+    await ensureDir(path.dirname(storePath));
     await fs.writeFile(storePath, '"just a string"');
     const storage = new StorageManager(storePath, false);
     const result = await storage.verify();
@@ -181,10 +182,10 @@ describe('StorageManager advanced', () => {
 
     // Replace backup.1 with a directory (causes EISDIR, not ENOENT — line 136)
     const bak1 = `${storePath}.bak.1`;
-    if (await fs.pathExists(bak1)) {
-      await fs.remove(bak1);
+    if (await pathExists(bak1)) {
+      await fs.rm(bak1, { recursive: true, force: true });
     }
-    await fs.ensureDir(bak1);
+    await ensureDir(bak1);
 
     // This should still try bak.2 and recover
     const storage2 = new StorageManager(storePath, true, 2);
@@ -219,13 +220,13 @@ describe('LogManager', () => {
   });
 
   afterEach(async () => {
-    await fs.remove(tmpDir);
+    await fs.rm(tmpDir, { recursive: true, force: true });
   });
 
   it('creates log directory on init', async () => {
     const logger = new LogManager(logDir);
     await logger.init();
-    expect(await fs.pathExists(logDir)).toBe(true);
+    expect(await pathExists(logDir)).toBe(true);
   });
 
   it('writes log entries', async () => {

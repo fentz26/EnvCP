@@ -1,6 +1,7 @@
-import fs from 'fs-extra';
+import * as fs from 'fs/promises';
 import * as path from 'path';
-import lockfile from 'proper-lockfile';
+import { withLock } from './lock.js';
+import { ensureDir, pathExists } from './fs.js';
 import { Session, SessionSchema } from '../types.js';
 import { generateId, encrypt, decrypt } from './crypto.js';
 
@@ -18,7 +19,7 @@ export class SessionManager {
   }
 
   async init(): Promise<void> {
-    await fs.ensureDir(path.dirname(this.sessionPath));
+    await ensureDir(path.dirname(this.sessionPath));
   }
 
   async create(password: string): Promise<Session> {
@@ -39,15 +40,11 @@ export class SessionManager {
     session: this.session,
   });
 
-    const encrypted = await encrypt(sessionData, password);
-    // Ensure the file exists for lockfile (append-mode is a no-op if it exists)
-    await fs.writeFile(this.sessionPath, '', { encoding: 'utf8', mode: 0o600, flag: 'a' });
-    const releaseCreate = await lockfile.lock(this.sessionPath, { retries: { retries: 3, minTimeout: 50 } });
-    try {
-      await fs.writeFile(this.sessionPath, encrypted, { encoding: 'utf8', mode: 0o600 });
-    } finally {
-      await releaseCreate();
-    }
+  const encrypted = await encrypt(sessionData, password);
+  await fs.writeFile(this.sessionPath, '', { encoding: 'utf8', mode: 0o600, flag: 'a' });
+  await withLock(this.sessionPath, async () => {
+    await fs.writeFile(this.sessionPath, encrypted, { encoding: 'utf8', mode: 0o600 });
+  });
 
     return this.session;
   }
@@ -121,14 +118,11 @@ export class SessionManager {
     session: this.session,
   });
 
-    const encrypted = await encrypt(sessionData, this.password);
-    await fs.writeFile(this.sessionPath, '', { encoding: 'utf8', mode: 0o600, flag: 'a' });
-    const releaseExtend = await lockfile.lock(this.sessionPath, { retries: { retries: 3, minTimeout: 50 } });
-    try {
-      await fs.writeFile(this.sessionPath, encrypted, { encoding: 'utf8', mode: 0o600 });
-    } finally {
-      await releaseExtend();
-    }
+  const encrypted = await encrypt(sessionData, this.password);
+  await fs.writeFile(this.sessionPath, '', { encoding: 'utf8', mode: 0o600, flag: 'a' });
+  await withLock(this.sessionPath, async () => {
+    await fs.writeFile(this.sessionPath, encrypted, { encoding: 'utf8', mode: 0o600 });
+  });
 
     return this.session;
   }
