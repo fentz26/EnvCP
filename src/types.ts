@@ -51,6 +51,11 @@ export const EnvCPConfigSchema = z.object({
     enabled: z.boolean().default(true),
   }).default({}),
 
+  keychain: z.object({
+    enabled: z.boolean().default(false),
+    service: z.string().default('envcp'),
+  }).default({}),
+
   security: z.object({
     mode: z.enum(['hard-lock', 'recoverable']).default('recoverable'),
     recovery_file: z.string().default('.envcp/.recovery'),

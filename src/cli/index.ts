@@ -8,6 +8,7 @@ import { loadConfig, initConfig, saveConfig, parseEnvFile, registerMcpConfig, is
 import { StorageManager } from '../storage/index.js';
 import { SessionManager } from '../utils/session.js';
 import { maskValue, validatePassword, encrypt, decrypt, generateRecoveryKey, createRecoveryData, recoverPassword } from '../utils/crypto.js';
+import { KeychainManager } from '../utils/keychain.js';
 import { Variable, EnvCPConfig } from '../types.js';
 
 async function withSession(fn: (storage: StorageManager, password: string, config: EnvCPConfig, projectPath: string) => Promise<void>): Promise<void> {
@@ -35,18 +36,30 @@ async function withSession(fn: (storage: StorageManager, password: string, confi
   let password = '';
 
   if (!session) {
-    const answer = await inquirer.prompt([
-      { type: 'password', name: 'password', message: 'Enter password:', mask: '*' }
-    ]);
-    password = answer.password;
-
-    const validation = validatePassword(password, config.password || {});
-    if (!validation.valid) {
-      console.log(chalk.red(validation.error));
-      return;
+    // Try OS keychain first if enabled
+    if (config.keychain?.enabled) {
+      const keychain = new KeychainManager(config.keychain.service || 'envcp');
+      const stored = await keychain.retrievePassword(projectPath);
+      if (stored) {
+        password = stored;
+        console.log(chalk.gray('Password retrieved from OS keychain'));
+      }
     }
-    if (validation.warning) {
-      console.log(chalk.yellow(`⚠ ${validation.warning}`));
+
+    if (!password) {
+      const answer = await inquirer.prompt([
+        { type: 'password', name: 'password', message: 'Enter password:', mask: '*' }
+      ]);
+      password = answer.password;
+
+      const validation = validatePassword(password, config.password || {});
+      if (!validation.valid) {
+        console.log(chalk.red(validation.error));
+        return;
+      }
+      if (validation.warning) {
+        console.log(chalk.yellow(`⚠ ${validation.warning}`));
+      }
     }
 
     session = await sessionManager.create(password);
@@ -235,6 +248,7 @@ program
   .command('unlock')
   .description('Unlock EnvCP session with password')
   .option('-p, --password <password>', 'Password (will prompt if not provided)')
+  .option('--save-to-keychain', 'Save password to OS keychain for auto-unlock')
   .action(async (options) => {
     const projectPath = process.cwd();
     const config = await loadConfig(projectPath);
@@ -319,6 +333,25 @@ program
     console.log(chalk.gray(`  Expires in: ${config.session?.timeout_minutes || 30} minutes`));
     const maxExt = config.session?.max_extensions || 5;
     console.log(chalk.gray(`  Extensions remaining: ${maxExt - session.extensions}/${maxExt}`));
+
+    // Save to keychain if requested
+    if (options.saveToKeychain) {
+      const keychain = new KeychainManager(config.keychain?.service || 'envcp');
+      if (await keychain.isAvailable()) {
+        const result = await keychain.storePassword(password, projectPath);
+        if (result.success) {
+          // Enable keychain in config
+          config.keychain = { ...config.keychain, enabled: true };
+          await saveConfig(config, projectPath);
+          console.log(chalk.green(`Password saved to ${keychain.backendName}`));
+          console.log(chalk.gray('  Future sessions will auto-unlock from keychain'));
+        } else {
+          console.log(chalk.red(`Failed to save to keychain: ${result.error}`));
+        }
+      } else {
+        console.log(chalk.red(`OS keychain not available (${keychain.backendName})`));
+      }
+    }
   });
 
 program
@@ -1268,6 +1301,92 @@ program
           console.error(`Failed to rename vault: ${(error as Error).message}`);
           process.exit(1);
         }
+      })
+  );
+
+program
+  .command('keychain')
+  .description('Manage OS keychain integration')
+  .addCommand(
+    new Command('status')
+      .description('Check keychain availability and stored credentials')
+      .action(async () => {
+        const projectPath = process.cwd();
+        const config = await loadConfig(projectPath);
+        const keychain = new KeychainManager(config.keychain?.service || 'envcp');
+        const status = await keychain.getStatus(projectPath);
+
+        console.log(chalk.bold('Keychain Status'));
+        console.log(chalk.gray(`  Backend:    ${status.backend}`));
+        console.log(chalk.gray(`  Available:  ${status.available ? chalk.green('yes') : chalk.red('no')}`));
+        console.log(chalk.gray(`  Stored:     ${status.hasPassword ? chalk.green('yes') : chalk.yellow('no')}`));
+        console.log(chalk.gray(`  Enabled:    ${config.keychain?.enabled ? chalk.green('yes') : chalk.yellow('no')}`));
+
+        if (!status.available) {
+          console.log('');
+          if (process.platform === 'linux') {
+            console.log(chalk.yellow('Install libsecret: sudo apt install libsecret-tools'));
+          } else if (process.platform === 'darwin') {
+            console.log(chalk.yellow('macOS Keychain should be available by default'));
+          }
+        } else if (!status.hasPassword) {
+          console.log('');
+          console.log(chalk.gray('Run: envcp unlock --save-to-keychain'));
+        }
+      })
+  )
+  .addCommand(
+    new Command('save')
+      .description('Save current password to OS keychain')
+      .action(async () => {
+        await withSession(async (storage, password, config, projectPath) => {
+          if (!password) {
+            console.log(chalk.red('No password available (encryption disabled?)'));
+            return;
+          }
+          const keychain = new KeychainManager(config.keychain?.service || 'envcp');
+          if (!await keychain.isAvailable()) {
+            console.log(chalk.red(`OS keychain not available (${keychain.backendName})`));
+            return;
+          }
+          const result = await keychain.storePassword(password, projectPath);
+          if (result.success) {
+            config.keychain = { ...config.keychain, enabled: true };
+            await saveConfig(config, projectPath);
+            console.log(chalk.green(`Password saved to ${keychain.backendName}`));
+            console.log(chalk.gray('  Future sessions will auto-unlock from keychain'));
+          } else {
+            console.log(chalk.red(`Failed: ${result.error}`));
+          }
+        });
+      })
+  )
+  .addCommand(
+    new Command('remove')
+      .description('Remove stored password from OS keychain')
+      .action(async () => {
+        const projectPath = process.cwd();
+        const config = await loadConfig(projectPath);
+        const keychain = new KeychainManager(config.keychain?.service || 'envcp');
+        const result = await keychain.removePassword(projectPath);
+        if (result.success) {
+          config.keychain = { ...config.keychain, enabled: false };
+          await saveConfig(config, projectPath);
+          console.log(chalk.green('Password removed from keychain'));
+        } else {
+          console.log(chalk.yellow(`Nothing to remove or error: ${result.error}`));
+        }
+      })
+  )
+  .addCommand(
+    new Command('disable')
+      .description('Disable keychain auto-unlock (keeps stored credential)')
+      .action(async () => {
+        const projectPath = process.cwd();
+        const config = await loadConfig(projectPath);
+        config.keychain = { ...config.keychain, enabled: false };
+        await saveConfig(config, projectPath);
+        console.log(chalk.green('Keychain auto-unlock disabled'));
       })
   );
 

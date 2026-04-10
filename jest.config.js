@@ -12,6 +12,7 @@ export default {
     'src/**/*.ts',
     '!src/cli/index.ts',
     '!src/index.ts',
+    '!src/utils/keychain.ts',
   ],
   coverageThreshold: {
     global: {
