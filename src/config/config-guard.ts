@@ -6,33 +6,44 @@ import { EnvCPConfig } from '../types.js';
 import { loadConfig } from './manager.js';
 
 const DEBOUNCE_MS = 1000;
-const DELETION_GRACE_MS = 1700;
+const PERIODIC_CHECK_MS = 60_000;
 
 function deepFreeze<T>(obj: T): T {
   if (obj === null || typeof obj !== 'object') return obj;
   Object.freeze(obj);
-  for (const value of Object.values(obj as Record<string, unknown>)) {
-    if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+  if (Array.isArray(obj)) {
+    for (const item of obj) {
+      deepFreeze(item);
+    }
+  } else {
+    for (const value of Object.values(obj as Record<string, unknown>)) {
       deepFreeze(value);
     }
   }
   return obj;
 }
 
+export interface ConfigGuardOptions {
+  periodicCheckMs?: number;
+  debounceMs?: number;
+}
+
 export class ConfigGuard {
   private config: EnvCPConfig | null = null;
   private configHash: string | null = null;
-  private watcher: FSWatcher | null = null;
+  private watchers: FSWatcher[] = [];
   private debounceTimer: ReturnType<typeof setTimeout> | null = null;
-  private deletionTimer: ReturnType<typeof setTimeout> | null = null;
+  private periodicTimer: ReturnType<typeof setInterval> | null = null;
   private tamperingDetected = false;
   private lastInternalWriteMs = 0;
   private projectPath: string;
   private logPath: string;
+  private options: ConfigGuardOptions;
 
-  constructor(projectPath: string) {
+  constructor(projectPath: string, options?: ConfigGuardOptions) {
     this.projectPath = projectPath;
     this.logPath = path.join(projectPath, '.envcp', 'logs', 'audit.log');
+    this.options = options ?? {};
   }
 
   async loadAndLock(): Promise<EnvCPConfig> {
@@ -40,6 +51,7 @@ export class ConfigGuard {
     this.config = deepFreeze(config);
     this.configHash = await this.hashConfigFile();
     this.startWatching();
+    this.startPeriodicCheck();
     return this.config;
   }
 
@@ -60,15 +72,19 @@ export class ConfigGuard {
   }
 
   async reload(password: string): Promise<{ success: boolean; config?: EnvCPConfig; error?: string }> {
-    const storePath = path.join(this.projectPath, this.config?.storage.path || '.envcp/store.enc');
+    const currentConfig = this.config ?? await loadConfig(this.projectPath);
+    const storePath = path.join(this.projectPath, currentConfig.storage.path || '.envcp/store.enc');
 
-    if (this.config?.storage.encrypted !== false) {
-      try {
-        const { decrypt } = await import('../utils/crypto.js');
-        const encrypted = await fs.promises.readFile(storePath, 'utf8');
-        await decrypt(encrypted, password);
-      } catch {
-        return { success: false, error: 'Invalid password' };
+    if (currentConfig.storage.encrypted !== false) {
+      const storeExists = await fs.promises.access(storePath).then(() => true).catch(() => false);
+      if (storeExists) {
+        try {
+          const { decrypt } = await import('../utils/crypto.js');
+          const encrypted = await fs.promises.readFile(storePath, 'utf8');
+          await decrypt(encrypted, password);
+        } catch {
+          return { success: false, error: 'Invalid password' };
+        }
       }
     }
 
@@ -91,17 +107,17 @@ export class ConfigGuard {
   }
 
   destroy(): void {
-    if (this.watcher) {
-      try { this.watcher.close(); } catch { /* ignore */ }
-      this.watcher = null;
+    for (const w of this.watchers) {
+      try { w.close(); } catch { /* ignore */ }
     }
+    this.watchers = [];
     if (this.debounceTimer) {
       clearTimeout(this.debounceTimer);
       this.debounceTimer = null;
     }
-    if (this.deletionTimer) {
-      clearTimeout(this.deletionTimer);
-      this.deletionTimer = null;
+    if (this.periodicTimer) {
+      clearInterval(this.periodicTimer);
+      this.periodicTimer = null;
     }
   }
 
@@ -142,21 +158,13 @@ export class ConfigGuard {
           }
         });
         watcher.on('error', () => { /* ignore */ });
-
-        if (filePath === configPath) {
-          this.watcher = watcher;
-        }
+        this.watchers.push(watcher);
       } catch { /* ignore */ }
     }
   }
 
   private handleChange(filePath: string): void {
     if (Date.now() - this.lastInternalWriteMs < 500) return;
-
-    if (this.deletionTimer) {
-      clearTimeout(this.deletionTimer);
-      this.deletionTimer = null;
-    }
 
     if (this.debounceTimer) {
       clearTimeout(this.debounceTimer);
@@ -165,7 +173,29 @@ export class ConfigGuard {
     this.debounceTimer = setTimeout(() => {
       this.debounceTimer = null;
       this.verifyAndAlert(filePath);
-    }, DEBOUNCE_MS);
+    }, this.options.debounceMs ?? DEBOUNCE_MS);
+  }
+
+  private startPeriodicCheck(): void {
+    const intervalMs = this.options.periodicCheckMs ?? PERIODIC_CHECK_MS;
+    this.periodicTimer = setInterval(async () => {
+      const intact = await this.checkIntegrity();
+      if (!intact && !this.tamperingDetected) {
+        this.tamperingDetected = true;
+        const timestamp = new Date().toISOString();
+        const message = `[${timestamp}] SECURITY WARNING: Periodic integrity check detected config tampering`;
+        if (process.stderr.isTTY) {
+          process.stderr.write(`\n${'='.repeat(60)}\n`);
+          process.stderr.write(`${message}\n`);
+          process.stderr.write(`Run: envcp config reload (requires password)\n`);
+          process.stderr.write(`${'='.repeat(60)}\n\n`);
+        }
+        await this.auditLog('PERIODIC_TAMPER', message);
+      }
+    }, intervalMs);
+    if (this.periodicTimer && typeof this.periodicTimer === 'object' && 'unref' in this.periodicTimer) {
+      this.periodicTimer.unref();
+    }
   }
 
   private async verifyAndAlert(filePath: string): Promise<void> {
