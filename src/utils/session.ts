@@ -1,6 +1,7 @@
-import fs from 'fs-extra';
+import * as fs from 'fs/promises';
 import * as path from 'path';
 import { withLock } from './lock.js';
+import { ensureDir, pathExists } from './fs.js';
 import { Session, SessionSchema } from '../types.js';
 import { generateId, encrypt, decrypt } from './crypto.js';
 
@@ -18,7 +19,7 @@ export class SessionManager {
   }
 
   async init(): Promise<void> {
-    await fs.ensureDir(path.dirname(this.sessionPath));
+    await ensureDir(path.dirname(this.sessionPath));
   }
 
   async create(password: string): Promise<Session> {

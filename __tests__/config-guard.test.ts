@@ -1,4 +1,5 @@
-import fs from 'fs-extra';
+import * as fs from 'fs/promises';
+import { ensureDir, pathExists } from '../src/utils/fs.js';
 import * as os from 'os';
 import * as path from 'path';
 import { ConfigGuard } from '../src/config/config-guard';
@@ -8,11 +9,11 @@ describe('ConfigGuard', () => {
 
   beforeEach(async () => {
     tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-guard-'));
-    await fs.ensureDir(path.join(tmpDir, '.envcp', 'logs'));
+    await ensureDir(path.join(tmpDir, '.envcp', 'logs'));
   });
 
   afterEach(async () => {
-    await fs.remove(tmpDir);
+    await fs.rm(tmpDir, { recursive: true, force: true });
   });
 
   describe('loadAndLock', () => {
@@ -150,7 +151,7 @@ describe('ConfigGuard', () => {
       const guard = new ConfigGuard(tmpDir);
       await guard.loadAndLock();
 
-      await fs.remove(path.join(tmpDir, 'envcp.yaml'));
+      await fs.rm(path.join(tmpDir, 'envcp.yaml'));
 
       const intact = await guard.checkIntegrity();
       expect(intact).toBe(false);
@@ -250,7 +251,7 @@ describe('ConfigGuard', () => {
       await guard.reload('testpassword');
 
       const logPath = path.join(tmpDir, '.envcp', 'logs', 'audit.log');
-      const logExists = await fs.pathExists(logPath);
+      const logExists = await pathExists(logPath);
       expect(logExists).toBe(true);
 
       if (logExists) {
@@ -268,7 +269,7 @@ describe('ConfigGuard', () => {
         'storage:\n  encrypted: true\n  path: ".envcp/store.enc"\n');
 
       const storeDir = path.join(tmpDir, '.envcp');
-      await fs.ensureDir(storeDir);
+      await ensureDir(storeDir);
       await fs.writeFile(path.join(storeDir, 'store.enc'), 'not-valid-encrypted-content');
 
       const guard = new ConfigGuard(tmpDir);
@@ -297,7 +298,7 @@ describe('ConfigGuard', () => {
         'storage:\n  encrypted: false\n  path: ".envcp/store.enc"\n');
 
       const storeDir = path.join(tmpDir, '.envcp');
-      await fs.ensureDir(storeDir);
+      await ensureDir(storeDir);
       await fs.writeFile(path.join(storeDir, 'store.enc'), 'some-content');
 
       const guard = new ConfigGuard(tmpDir);
@@ -336,7 +337,7 @@ describe('ConfigGuard', () => {
       await new Promise(resolve => setTimeout(resolve, 500));
 
       const logPath = path.join(tmpDir, '.envcp', 'logs', 'audit.log');
-      if (await fs.pathExists(logPath)) {
+      if (await pathExists(logPath)) {
         const logContent = await fs.readFile(logPath, 'utf8');
         expect(logContent).toContain('SECURITY WARNING');
       }
@@ -389,7 +390,7 @@ describe('ConfigGuard', () => {
       expect(guard.isTampered()).toBe(true);
 
       const logPath = path.join(tmpDir, '.envcp', 'logs', 'audit.log');
-      if (await fs.pathExists(logPath)) {
+      if (await pathExists(logPath)) {
         const logContent = await fs.readFile(logPath, 'utf8');
         const tamperCount = (logContent.match(/PERIODIC_TAMPER/g) || []).length;
         expect(tamperCount).toBeLessThanOrEqual(1);
@@ -406,7 +407,7 @@ describe('ConfigGuard', () => {
       await guard.reload('testpw');
 
       const logPath = path.join(tmpDir, '.envcp', 'logs', 'audit.log');
-      expect(await fs.pathExists(logPath)).toBe(true);
+      expect(await pathExists(logPath)).toBe(true);
 
       const content = await fs.readFile(logPath, 'utf8');
       expect(content).toContain('CONFIG_RELOAD');

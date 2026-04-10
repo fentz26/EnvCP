@@ -3,7 +3,8 @@ import { EnvCPConfig, Variable, ToolDefinition } from '../types.js';
 import { maskValue } from '../utils/crypto.js';
 import { canAccess, isBlacklisted, canAIActiveCheck, validateVariableName, matchesPattern } from '../config/manager.js';
 import { SessionManager } from '../utils/session.js';
-import fs from 'fs-extra';
+import * as fs from 'fs/promises';
+import { pathExists } from '../utils/fs.js';
 import * as path from 'path';
 import * as dotenv from 'dotenv';
 
@@ -393,7 +394,7 @@ export abstract class BaseAdapter {
 
     let content = '';
 
-    if (await fs.pathExists(envPath)) {
+    if (await pathExists(envPath)) {
       content = await fs.readFile(envPath, 'utf8');
     }
 

@@ -1,4 +1,5 @@
-import fs from 'fs-extra';
+import * as fs from 'fs/promises';
+import { ensureDir, pathExists } from '../src/utils/fs.js';
 import * as os from 'os';
 import * as path from 'path';
 import {
@@ -25,11 +26,11 @@ describe('update-checker', () => {
 
   beforeEach(async () => {
     tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-update-'));
-    await fs.ensureDir(path.join(tmpDir, '.envcp'));
+    await ensureDir(path.join(tmpDir, '.envcp'));
   });
 
   afterEach(async () => {
-    await fs.remove(tmpDir);
+    await fs.rm(tmpDir, { recursive: true, force: true });
   });
 
   describe('compareVersions', () => {
@@ -127,7 +128,7 @@ describe('update-checker', () => {
     it('writeCache creates file', async () => {
       writeCache(tmpDir, { timestamp: Date.now(), latest: '2.0.0', critical: false });
       const cachePath = path.join(tmpDir, '.envcp', '.update-cache.json');
-      expect(await fs.pathExists(cachePath)).toBe(true);
+      expect(await pathExists(cachePath)).toBe(true);
       const data = JSON.parse(await fs.readFile(cachePath, 'utf8'));
       expect(data.latest).toBe('2.0.0');
     });
@@ -288,7 +289,7 @@ describe('update-checker', () => {
       await logUpdateCheck(tmpDir, info);
 
       const logPath = path.join(tmpDir, '.envcp', 'logs', 'audit.log');
-      expect(await fs.pathExists(logPath)).toBe(true);
+      expect(await pathExists(logPath)).toBe(true);
 
       const content = await fs.readFile(logPath, 'utf8');
       expect(content).toContain('UPDATE_CHECK');
@@ -302,9 +303,9 @@ describe('update-checker', () => {
       await logUpdateCheck(emptyDir, info);
 
       const logPath = path.join(emptyDir, '.envcp', 'logs', 'audit.log');
-      expect(await fs.pathExists(logPath)).toBe(true);
+      expect(await pathExists(logPath)).toBe(true);
 
-      await fs.remove(emptyDir);
+      await fs.rm(emptyDir, { recursive: true, force: true });
     });
   });
 });

@@ -1,7 +1,8 @@
-import fs from 'fs-extra';
+import * as fs from 'fs/promises';
 import * as nodefs from 'fs/promises';
 import * as path from 'path';
 import { withLock } from '../utils/lock.js';
+import { ensureDir, pathExists } from '../utils/fs.js';
 import { Variable, OperationLog } from '../types.js';
 import { encrypt, decrypt } from '../utils/crypto.js';
 
@@ -39,11 +40,11 @@ export class StorageManager {
 
     let data: string;
     try {
-      const stat = await fs.lstat(this.storePath);
+      const stat = await nodefs.lstat(this.storePath);
       if (!stat.isFile()) {
         throw new Error(`Storage path is not a regular file: ${this.storePath}`);
       }
-      data = await fs.readFile(this.storePath, 'utf8');
+      data = await nodefs.readFile(this.storePath, 'utf8');
     } catch (err: unknown) {
       if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
         this.cache = {};
@@ -77,11 +78,11 @@ export class StorageManager {
     const data = JSON.stringify(variables, null, 2);
 
     const storeDir = path.dirname(this.storePath);
-    await fs.ensureDir(storeDir);
+    await ensureDir(storeDir);
     await nodefs.chmod(storeDir, 0o700);
 
     // Ensure the store file exists for locking
-  await fs.writeFile(this.storePath, '', { encoding: 'utf8', flag: 'a' });
+  await nodefs.writeFile(this.storePath, '', { encoding: 'utf8', flag: 'a' });
 
   await withLock(this.storePath, async () => {
     await this.rotateBackups();
@@ -91,29 +92,29 @@ export class StorageManager {
       : data;
 
     const tmpPath = this.storePath + '.tmp';
-    await fs.writeFile(tmpPath, content, { encoding: 'utf8', mode: 0o600 });
-    await fs.rename(tmpPath, this.storePath);
+    await nodefs.writeFile(tmpPath, content, { encoding: 'utf8', mode: 0o600 });
+    await nodefs.rename(tmpPath, this.storePath);
     await nodefs.chmod(this.storePath, 0o600);
   });
   }
 
   private async rotateBackups(): Promise<void> {
     if (this.maxBackups <= 0) return;
-    if (!await fs.pathExists(this.storePath)) return;
+    if (!await pathExists(this.storePath)) return;
 
     // Shift existing backups: .bak.2 -> .bak.3, .bak.1 -> .bak.2, etc.
     for (let i = this.maxBackups; i > 1; i--) {
       const from = `${this.storePath}.bak.${i - 1}`;
       const to = `${this.storePath}.bak.${i}`;
       try {
-        await fs.rename(from, to);
+        await nodefs.rename(from, to);
       } catch (err: unknown) {
         if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
       }
     }
 
     // Copy current store to .bak.1
-    await fs.copy(this.storePath, `${this.storePath}.bak.1`);
+    await nodefs.cp(this.storePath, `${this.storePath}.bak.1`);
     await nodefs.chmod(`${this.storePath}.bak.1`, 0o600);
   }
 
@@ -125,7 +126,7 @@ export class StorageManager {
 
       let data: string;
       try {
-        data = await fs.readFile(bakPath, 'utf8');
+        data = await nodefs.readFile(bakPath, 'utf8');
       } catch (err: unknown) {
         if ((err as NodeJS.ErrnoException).code === 'ENOENT') continue;
         continue;
@@ -136,7 +137,7 @@ export class StorageManager {
         const variables = JSON.parse(decrypted);
 
         // Restore: copy backup to primary store
-        await fs.copy(bakPath, this.storePath);
+        await nodefs.cp(bakPath, this.storePath);
         await nodefs.chmod(this.storePath, 0o600);
         return variables;
       } catch {
@@ -174,7 +175,7 @@ export class StorageManager {
   }
 
   async exists(): Promise<boolean> {
-    return fs.pathExists(this.storePath);
+    return pathExists(this.storePath);
   }
 
   invalidateCache(): void {
@@ -184,7 +185,7 @@ export class StorageManager {
   async verify(): Promise<{ valid: boolean; error?: string; count?: number; backups?: number }> {
     let data: string;
     try {
-      data = await fs.readFile(this.storePath, 'utf8');
+      data = await nodefs.readFile(this.storePath, 'utf8');
     } catch {
       return { valid: false, error: 'Store file does not exist or cannot be read' };
     }
@@ -234,7 +235,7 @@ export class LogManager {
   }
 
   async init(): Promise<void> {
-    await fs.ensureDir(this.logDir);
+    await ensureDir(this.logDir);
   }
 
   async log(entry: OperationLog): Promise<void> {
@@ -248,11 +249,11 @@ export class LogManager {
     const logDate = date || new Date().toISOString().split('T')[0];
     const logFile = path.join(this.logDir, `operations-${logDate}.log`);
     
-    if (!await fs.pathExists(logFile)) {
+    if (!await pathExists(logFile)) {
       return [];
     }
 
-    const content = await fs.readFile(logFile, 'utf8');
+    const content = await nodefs.readFile(logFile, 'utf8');
     return content.trim().split('\n').map(line => JSON.parse(line));
   }
 }

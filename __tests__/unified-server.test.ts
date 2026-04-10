@@ -1,4 +1,5 @@
-import fs from 'fs-extra';
+import * as fs from 'fs/promises';
+import { ensureDir, pathExists } from '../src/utils/fs.js';
 import * as os from 'os';
 import * as path from 'path';
 import * as http from 'http';
@@ -174,7 +175,7 @@ describe('UnifiedServer single modes', () => {
   });
 
   afterAll(async () => {
-    await fs.remove(tmpDir);
+    await fs.rm(tmpDir, { recursive: true, force: true });
   });
 
   it('starts in rest mode', async () => {
@@ -494,7 +495,7 @@ describe('UnifiedServer adapter 503 paths', () => {
 
   afterAll(async () => {
     srv.stop();
-    await fs.remove(tmpDir);
+    await fs.rm(tmpDir, { recursive: true, force: true });
   });
 
   it('returns 503 for OpenAI when adapter nulled', async () => {
@@ -548,7 +549,7 @@ describe('UnifiedServer rate limiting', () => {
   });
 
   afterAll(async () => {
-    await fs.remove(tmpDir);
+    await fs.rm(tmpDir, { recursive: true, force: true });
   });
 
   it('rate limits after many rapid requests', async () => {

@@ -1,4 +1,5 @@
-import fs from 'fs-extra';
+import * as fs from 'fs/promises';
+import { ensureDir, pathExists } from '../src/utils/fs.js';
 import * as os from 'os';
 import * as path from 'path';
 import { BaseAdapter } from '../src/adapters/base';
@@ -26,7 +27,7 @@ describe('BaseAdapter.syncToEnv path hardening', () => {
   });
 
   afterEach(async () => {
-    await fs.remove(tmpDir);
+    await fs.rm(tmpDir, { recursive: true, force: true });
   });
 
   const buildConfig = (target: string): EnvCPConfig => EnvCPConfigSchema.parse({

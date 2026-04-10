@@ -1,6 +1,7 @@
-import fs from 'fs-extra';
+import * as fs from 'fs/promises';
 import * as path from 'path';
 import * as yaml from 'js-yaml';
+import { ensureDir, pathExists } from '../utils/fs.js';
 import { EnvCPConfig, EnvCPConfigSchema } from '../types.js';
 
 const DEFAULT_CONFIG: Partial<EnvCPConfig> = {
@@ -73,7 +74,7 @@ export async function loadConfig(projectPath: string): Promise<EnvCPConfig> {
   let merged: Record<string, unknown> = DEFAULT_CONFIG as Record<string, unknown>;
 
   // Layer 1: global config (~/.envcp/config.yaml)
-  if (await fs.pathExists(globalConfigPath)) {
+  if (await pathExists(globalConfigPath)) {
     const content = await fs.readFile(globalConfigPath, 'utf8');
     const parsed = yaml.load(content, { schema: yaml.DEFAULT_SCHEMA }) as Record<string, unknown>;
     if (parsed && typeof parsed === 'object') {
@@ -82,7 +83,7 @@ export async function loadConfig(projectPath: string): Promise<EnvCPConfig> {
   }
 
   // Layer 2: project config (envcp.yaml) — overrides global
-  if (await fs.pathExists(projectConfigPath)) {
+  if (await pathExists(projectConfigPath)) {
     const content = await fs.readFile(projectConfigPath, 'utf8');
     const parsed = yaml.load(content, { schema: yaml.DEFAULT_SCHEMA }) as Record<string, unknown>;
     if (parsed && typeof parsed === 'object') {
@@ -101,8 +102,8 @@ export async function saveConfig(config: EnvCPConfig, projectPath: string): Prom
 
 export async function initConfig(projectPath: string, projectName?: string): Promise<EnvCPConfig> {
   const envcpDir = path.join(projectPath, '.envcp');
-  await fs.ensureDir(envcpDir);
-  await fs.ensureDir(path.join(envcpDir, 'logs'));
+  await ensureDir(envcpDir);
+  await ensureDir(path.join(envcpDir, 'logs'));
   
   const config: EnvCPConfig = {
     ...DEFAULT_CONFIG,
@@ -112,7 +113,7 @@ export async function initConfig(projectPath: string, projectName?: string): Pro
   await saveConfig(config, projectPath);
   
   const gitignorePath = path.join(projectPath, '.gitignore');
-  if (await fs.pathExists(gitignorePath)) {
+  if (await pathExists(gitignorePath)) {
     const gitignore = await fs.readFile(gitignorePath, 'utf8');
     if (!gitignore.includes('.envcp/')) {
       await fs.appendFile(gitignorePath, '\n# EnvCP\n.envcp/\nstore.enc\n');
@@ -277,19 +278,19 @@ export async function registerMcpConfig(projectPath: string): Promise<{ register
     // For project-local: check if the tool's directory exists
     if (target.projectLocal && target.detectDir) {
       const dirPath = path.join(projectPath, target.detectDir);
-      if (!await fs.pathExists(dirPath)) continue;
+      if (!await pathExists(dirPath)) continue;
     }
 
     // For global configs that don't exist yet: skip (tool not installed)
-    if (target.requireExisting && !await fs.pathExists(configPath)) continue;
+    if (target.requireExisting && !await pathExists(configPath)) continue;
 
     // For project-local Google AntiGravity: always skip creating the file fresh
     // (only update if it already exists, since we can't detect the tool)
-    if (target.name === 'Google AntiGravity' && !await fs.pathExists(configPath)) continue;
+    if (target.name === 'Google AntiGravity' && !await pathExists(configPath)) continue;
 
     try {
       let config: Record<string, unknown> = {};
-      if (await fs.pathExists(configPath)) {
+      if (await pathExists(configPath)) {
         const content = await fs.readFile(configPath, 'utf8');
         config = JSON.parse(content);
       }
@@ -303,7 +304,7 @@ export async function registerMcpConfig(projectPath: string): Promise<{ register
       }
 
       if (result.written) {
-        await fs.ensureDir(path.dirname(configPath));
+        await ensureDir(path.dirname(configPath));
         await fs.writeFile(configPath, JSON.stringify(config, null, 2), 'utf8');
         registered.push(target.name);
       }

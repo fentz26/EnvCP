@@ -1,4 +1,5 @@
-import fs from 'fs-extra';
+import * as fs from 'fs/promises';
+import { ensureDir, pathExists } from '../src/utils/fs.js';
 import * as os from 'os';
 import * as path from 'path';
 import * as http from 'http';
@@ -59,7 +60,7 @@ describe('RESTAdapter HTTP server', () => {
 
   afterAll(async () => {
     adapter.stopServer();
-    await fs.remove(tmpDir);
+    await fs.rm(tmpDir, { recursive: true, force: true });
   });
 
   it('GET /api/health returns ok', async () => {
@@ -151,7 +152,7 @@ describe('RESTAdapter with API key', () => {
 
   afterAll(async () => {
     adapter.stopServer();
-    await fs.remove(tmpDir);
+    await fs.rm(tmpDir, { recursive: true, force: true });
   });
 
   it('rejects requests without API key', async () => {
@@ -187,7 +188,7 @@ describe('OpenAIAdapter', () => {
 
   afterAll(async () => {
     adapter.stopServer();
-    await fs.remove(tmpDir);
+    await fs.rm(tmpDir, { recursive: true, force: true });
   });
 
   it('getOpenAIFunctions returns function definitions', () => {
@@ -336,7 +337,7 @@ describe('RESTAdapter sync and error routes', () => {
 
   afterAll(async () => {
     adapter.stopServer();
-    await fs.remove(tmpDir);
+    await fs.rm(tmpDir, { recursive: true, force: true });
   });
 
   it('POST /api/sync syncs to .env file', async () => {
@@ -394,7 +395,7 @@ describe('OpenAIAdapter with API key', () => {
 
   afterAll(async () => {
     adapter.stopServer();
-    await fs.remove(tmpDir);
+    await fs.rm(tmpDir, { recursive: true, force: true });
   });
 
   it('rejects without API key', async () => {
@@ -424,7 +425,7 @@ describe('GeminiAdapter', () => {
 
   afterAll(async () => {
     adapter.stopServer();
-    await fs.remove(tmpDir);
+    await fs.rm(tmpDir, { recursive: true, force: true });
   });
 
   it('getGeminiFunctionDeclarations returns declarations', () => {
@@ -532,7 +533,7 @@ describe('GeminiAdapter error handling', () => {
 
   afterAll(async () => {
     adapter.stopServer();
-    await fs.remove(tmpDir);
+    await fs.rm(tmpDir, { recursive: true, force: true });
   });
 
   it('returns 500 when callTool throws in /v1/functions/call', async () => {
@@ -559,7 +560,7 @@ describe('OpenAIAdapter error handling', () => {
 
   afterAll(async () => {
     adapter.stopServer();
-    await fs.remove(tmpDir);
+    await fs.rm(tmpDir, { recursive: true, force: true });
   });
 
   it('returns 500 when callTool throws in /v1/functions/call', async () => {
@@ -586,7 +587,7 @@ describe('Adapter rate limiting', () => {
     const statuses = results.map(r => r.status);
     expect(statuses.some(s => s === 429)).toBe(true);
     adapter.stopServer();
-    await fs.remove(tmpDir);
+    await fs.rm(tmpDir, { recursive: true, force: true });
   });
 
   it('OpenAI adapter rate limits after many requests', async () => {
@@ -601,7 +602,7 @@ describe('Adapter rate limiting', () => {
     const statuses = results.map(r => r.status);
     expect(statuses.some(s => s === 429)).toBe(true);
     adapter.stopServer();
-    await fs.remove(tmpDir);
+    await fs.rm(tmpDir, { recursive: true, force: true });
   });
 
   it('Gemini adapter rate limits after many requests', async () => {
@@ -616,7 +617,7 @@ describe('Adapter rate limiting', () => {
     const statuses = results.map(r => r.status);
     expect(statuses.some(s => s === 429)).toBe(true);
     adapter.stopServer();
-    await fs.remove(tmpDir);
+    await fs.rm(tmpDir, { recursive: true, force: true });
   });
 });
 
@@ -634,7 +635,7 @@ describe('GeminiAdapter with API key', () => {
 
   afterAll(async () => {
     adapter.stopServer();
-    await fs.remove(tmpDir);
+    await fs.rm(tmpDir, { recursive: true, force: true });
   });
 
   it('rejects without API key', async () => {

@@ -3,7 +3,8 @@ import inquirer from 'inquirer';
 import chalk from 'chalk';
 import * as path from 'path';
 import * as os from 'os';
-import fs from 'fs-extra';
+import * as fs from 'fs/promises';
+import { ensureDir, pathExists } from '../utils/fs.js';
 import { loadConfig, initConfig, saveConfig, parseEnvFile, registerMcpConfig, isBlacklisted, canAccess } from '../config/manager.js';
 import { ConfigGuard } from '../config/config-guard.js';
 import { StorageManager } from '../storage/index.js';
@@ -164,7 +165,7 @@ program
     // Auto-import .env
     if (!options.skipEnv) {
       const envPath = path.join(projectPath, '.env');
-      if (await fs.pathExists(envPath)) {
+      if (await pathExists(envPath)) {
         const envContent = await fs.readFile(envPath, 'utf8');
         const vars = parseEnvFile(envContent);
         const count = Object.keys(vars).length;
@@ -306,10 +307,10 @@ program
       // Generate recovery key for new stores in recoverable mode
       if (config.security?.mode === 'recoverable') {
         const recoveryPath = path.join(projectPath, config.security.recovery_file || '.envcp/.recovery');
-        if (!await fs.pathExists(recoveryPath)) {
+        if (!await pathExists(recoveryPath)) {
           const recoveryKey = generateRecoveryKey();
           const recoveryData = await createRecoveryData(password, recoveryKey);
-          await fs.ensureDir(path.dirname(recoveryPath));
+          await ensureDir(path.dirname(recoveryPath));
           await fs.writeFile(recoveryPath, recoveryData, 'utf8');
 
           console.log('');
@@ -486,7 +487,7 @@ program
     }
 
     const recoveryPath = path.join(projectPath, config.security?.recovery_file || '.envcp/.recovery');
-    if (!await fs.pathExists(recoveryPath)) {
+    if (!await pathExists(recoveryPath)) {
       console.log(chalk.red('No recovery file found. Recovery is not available.'));
       return;
     }
@@ -578,7 +579,7 @@ program
         // Check recovery file
         if (config.security?.mode === 'recoverable') {
           const recoveryPath = path.join(projectPath, config.security.recovery_file || '.envcp/.recovery');
-          const hasRecovery = await fs.pathExists(recoveryPath);
+          const hasRecovery = await pathExists(recoveryPath);
           console.log(chalk.gray(`  Recovery: ${hasRecovery ? 'available' : 'not found'}`));
         } else {
           console.log(chalk.gray(`  Recovery: hard-lock mode (disabled)`));
@@ -750,7 +751,7 @@ program
       if (options.dryRun) {
         const envPath = path.join(projectPath, config.sync.target);
         const existing: Record<string, string> = {};
-        if (await fs.pathExists(envPath)) {
+        if (await pathExists(envPath)) {
           const content = await fs.readFile(envPath, 'utf8');
           Object.assign(existing, parseEnvFile(content));
         }
@@ -1009,7 +1010,7 @@ program
   .option('--dry-run', 'Preview what would be imported without writing')
   .action(async (file, options) => {
     await withSession(async (storage) => {
-      if (!await fs.pathExists(file)) {
+      if (!await pathExists(file)) {
         console.log(chalk.red(`File not found: ${file}`));
         return;
       }
@@ -1130,7 +1131,7 @@ program
       }, null, 2);
 
       const encrypted = await encrypt(backupData, password);
-      await fs.ensureDir(path.dirname(outputPath));
+      await ensureDir(path.dirname(outputPath));
       await fs.writeFile(outputPath, encrypted, 'utf8');
 
       console.log(chalk.green(`Backup created: ${outputPath}`));
@@ -1145,7 +1146,7 @@ program
   .option('--merge', 'Merge with existing variables (default: replace)')
   .action(async (file, options) => {
     await withSession(async (storage, password) => {
-      if (!await fs.pathExists(file)) {
+      if (!await pathExists(file)) {
         console.log(chalk.red(`Backup file not found: ${file}`));
         return;
       }
@@ -1218,7 +1219,7 @@ program
 
       // 4. Store file
       const storePath = path.join(projectPath, config.storage.path);
-      if (await fs.pathExists(storePath)) {
+      if (await pathExists(storePath)) {
         const stat = await fs.stat(storePath);
         checks.push({ name: 'Store file', status: 'pass', detail: `Exists (${stat.size} bytes)` });
       } else {
@@ -1247,7 +1248,7 @@ program
       // 6. Recovery file
       if (config.security?.mode === 'recoverable') {
         const recoveryPath = path.join(projectPath, config.security.recovery_file || '.envcp/.recovery');
-        if (await fs.pathExists(recoveryPath)) {
+        if (await pathExists(recoveryPath)) {
           checks.push({ name: 'Recovery file', status: 'pass', detail: 'Present' });
         } else {
           checks.push({ name: 'Recovery file', status: 'warn', detail: 'Missing — password recovery will not work' });
@@ -1258,7 +1259,7 @@ program
 
       // 7. .envcp directory
       const envcpDir = path.join(projectPath, '.envcp');
-      if (await fs.pathExists(envcpDir)) {
+      if (await pathExists(envcpDir)) {
         checks.push({ name: '.envcp directory', status: 'pass', detail: 'Exists' });
       } else {
         checks.push({ name: '.envcp directory', status: 'fail', detail: 'Missing — run `envcp init`' });
@@ -1266,7 +1267,7 @@ program
 
       // 8. .gitignore check
       const gitignorePath = path.join(projectPath, '.gitignore');
-      if (await fs.pathExists(gitignorePath)) {
+      if (await pathExists(gitignorePath)) {
         const gitignore = await fs.readFile(gitignorePath, 'utf8');
         if (gitignore.includes('.envcp/')) {
           checks.push({ name: '.gitignore', status: 'pass', detail: '.envcp/ is ignored' });
@@ -1450,8 +1451,8 @@ program
 
 // Show welcome screen on first ever run
 const firstRunMarker = path.join(os.homedir(), '.envcp', '.welcomed');
-if (!await fs.pathExists(firstRunMarker)) {
-  await fs.ensureDir(path.dirname(firstRunMarker));
+if (!await pathExists(firstRunMarker)) {
+  await ensureDir(path.dirname(firstRunMarker));
   await fs.writeFile(firstRunMarker, new Date().toISOString());
   console.log(`
    ███████╗███╗   ██╗██╗   ██╗ ██████╗██████╗
