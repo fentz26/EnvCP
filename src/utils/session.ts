@@ -1,4 +1,5 @@
-import * as fs from 'fs/promises';
+import * as fs from 'fs';
+import * as nodefs from 'fs/promises';
 import * as path from 'path';
 import { withLock } from './lock.js';
 import { ensureDir, pathExists } from './fs.js';
@@ -41,9 +42,9 @@ export class SessionManager {
   });
 
   const encrypted = await encrypt(sessionData, password);
-  await fs.writeFile(this.sessionPath, '', { encoding: 'utf8', mode: 0o600, flag: 'a' });
+  await nodefs.writeFile(this.sessionPath, '', { encoding: 'utf8', mode: 0o600, flag: 'a' });
   await withLock(this.sessionPath, async () => {
-    await fs.writeFile(this.sessionPath, encrypted, { encoding: 'utf8', mode: 0o600 });
+    await nodefs.writeFile(this.sessionPath, encrypted, { encoding: 'utf8', mode: 0o600 });
   });
 
     return this.session;
@@ -52,11 +53,16 @@ export class SessionManager {
   async load(password?: string): Promise<Session | null> {
     let encrypted: string;
     try {
-      const stat = await fs.lstat(this.sessionPath);
-      if (!stat.isFile()) {
-        return null;
+      const handle = await nodefs.open(this.sessionPath, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW);
+      try {
+        const stat = await handle.stat();
+        if (!stat.isFile()) {
+          return null;
+        }
+        encrypted = await handle.readFile({ encoding: 'utf8' });
+      } finally {
+        await handle.close();
       }
-      encrypted = await fs.readFile(this.sessionPath, 'utf8');
     } catch (err: unknown) {
       if ((err as NodeJS.ErrnoException).code === 'ENOENT') return null;
       return null;
@@ -119,9 +125,9 @@ export class SessionManager {
   });
 
   const encrypted = await encrypt(sessionData, this.password);
-  await fs.writeFile(this.sessionPath, '', { encoding: 'utf8', mode: 0o600, flag: 'a' });
+  await nodefs.writeFile(this.sessionPath, '', { encoding: 'utf8', mode: 0o600, flag: 'a' });
   await withLock(this.sessionPath, async () => {
-    await fs.writeFile(this.sessionPath, encrypted, { encoding: 'utf8', mode: 0o600 });
+    await nodefs.writeFile(this.sessionPath, encrypted, { encoding: 'utf8', mode: 0o600 });
   });
 
     return this.session;
@@ -132,7 +138,7 @@ export class SessionManager {
     this.password = null;
 
     try {
-      await fs.unlink(this.sessionPath);
+      await nodefs.unlink(this.sessionPath);
     } catch (err: unknown) {
       if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
     }
