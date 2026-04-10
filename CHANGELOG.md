@@ -1,0 +1,247 @@
+# Changelog
+
+All notable changes to EnvCP are documented here.  
+Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).  
+Versions follow [Semantic Versioning](https://semver.org/).
+
+---
+
+## [1.0.9] - 2026-04-10
+
+### Added
+
+- **OS Keychain Integration** ([#108](https://github.com/fentz26/EnvCP/issues/108))  
+  Store your master password in the OS-protected credential store for auto-unlock with biometric gating.
+  - macOS: Keychain Access (Touch ID)
+  - Linux: GNOME Keyring / libsecret (fingerprint)
+  - Windows: Credential Manager (Windows Hello)
+  - New commands: `envcp keychain status`, `envcp keychain save`, `envcp keychain remove`, `envcp keychain disable`
+  - New flag: `envcp unlock --save-to-keychain`
+  - Config: `keychain: { enabled: false, service: 'envcp' }` in `envcp.yaml`
+  - Project-scoped accounts — different passwords per project directory
+  - Security model unchanged: keychain stores the master password, Argon2id still derives the AES-256-GCM key
+
+- **Weak password blocklist**  
+  ~35 most common breached passwords (`password`, `12345678`, `qwerty123`, `trustno1`, etc.) are always rejected regardless of policy settings. Case-insensitive matching.
+
+- **Password strength warnings**  
+  CLI now warns (but allows) passwords under 12 characters or those using only a single character class. Warnings appear at all password entry points (`unlock`, `withSession`, `serve`).
+
+- **Multilingual README**  
+  Added translated READMEs: French, Spanish, Korean, Chinese, Vietnamese, Japanese.
+
+### Changed
+
+- **Hardened default password policy**  
+  | Setting | Before | After |
+  |---------|--------|-------|
+  | `min_length` | 1 | **8** |
+  | `allow_single_char` | true | **false** |
+  | `allow_numeric_only` | true | **false** |
+  
+  Existing projects with `envcp.yaml` overrides are not affected. With Argon2id at 64MB/3 passes, the old `min_length: 1` allowed passwords crackable in under 10 seconds.
+
+- **Renamed `envcp-python/` to `python/`** for cleaner project structure.
+
+### Fixed
+
+- **TOCTOU race conditions** ([#101](https://github.com/fentz26/EnvCP/issues/101))  
+  Eliminated time-of-check-time-of-use races across the codebase:
+  - `storage/index.ts`: Replaced `pathExists` + `readFile` chains with single `try/catch ENOENT` blocks in `load()`, `save()`, `rotateBackups()`, `tryRestoreFromBackup()`, and `verify()`
+  - `session.ts`: Same atomic pattern for `create()`, `load()`, `extend()`, `destroy()`
+  - All file operations now use atomic try/catch instead of check-then-act
+
+- **API key logging** ([#102](https://github.com/fentz26/EnvCP/issues/102))  
+  `envcp serve` no longer leaks the first 4 characters of the API key. Now displays `****...` (fully masked).
+
+- **Version mismatch** ([#103](https://github.com/fentz26/EnvCP/issues/103))  
+  `server.json` version and packages array now match `package.json`.
+
+- **Docker Hub username hardcoded** ([#105](https://github.com/fentz26/EnvCP/issues/105))  
+  Publish workflow now uses `${{ vars.DOCKERHUB_USERNAME }}` repo variable instead of hardcoded username.
+
+### Security
+
+- Password policy defaults hardened (see Changed section above)
+- Weak password blocklist added (see Added section above)
+- All 6 security audit findings from [#101](https://github.com/fentz26/EnvCP/issues/101)-[#106](https://github.com/fentz26/EnvCP/issues/106) resolved
+
+### Tests
+
+- **Coverage: 31% -> 98.4%** ([#107](https://github.com/fentz26/EnvCP/issues/107))
+  - 12 tests -> **332 tests** across **16 suites**
+  - 98.33% line coverage, 97% statement coverage
+  - Coverage threshold raised from 26% to **95%** in CI
+  - New test suites: `base-adapter`, `adapters` (REST/OpenAI/Gemini HTTP integration), `unified-server`, `config-manager`, `storage-advanced`, `mcp-server`, `crypto-recovery`, `http-server`, `keychain`
+  - Remaining ~18 uncovered lines are dead code, process signals, ESM mock limitations, or 30s timeout paths
+
+---
+
+## [1.0.8] - 2026-04-09
+
+### Added
+
+- **MCP Registry metadata** ([#97](https://github.com/fentz26/EnvCP/issues/97))  
+  Added `server.json` and `mcpName` field for MCP Registry publishing. DNS-based auth with custom domain `dev.fentz.envcp`.
+
+- **Python wrapper package** ([#99](https://github.com/fentz26/EnvCP/issues/99))  
+  `pip install envcp` now works — Python wrapper auto-installs Node.js package via npm.
+
+- **Docker Hub and GHCR publishing**  
+  Release workflow now builds and pushes Docker images to both Docker Hub and GitHub Container Registry.
+
+- **Download badges** in README (npm total downloads).
+
+### Fixed
+
+- PyPI `packages-dir` path corrected in publish workflow.
+- Docker image now runs `npm run build` before building to ensure `dist/` exists.
+- npm and PyPI publishing merged into single workflow to avoid race conditions.
+- Added `homepage` and `bugs` URL to `package.json` metadata.
+
+---
+
+## [1.0.7] - 2026-04-08
+
+### Added
+
+- **Welcome screen** on first CLI run with vault location info and quick-start guide.
+- **Curl one-line installer**: `curl -fsSL https://envcp.fentz.dev/install.sh | bash`
+- **Mintlify documentation site** with wiki sync CD pipeline.
+- **`envcp vault rename`** command to rename the current project vault.
+- **Coverage reporting** in CI with configurable threshold.
+- **Cloudflare Worker** for docs proxy and API routes at `envcp.fentz.dev`.
+- `ASSISTANT.md` for Mintlify documentation context.
+
+### Fixed
+
+- CLI `sync` now respects blacklist, access policies, and `sync_to_env` flag.
+- Removed non-existent `config set` command from welcome screens.
+- Unescape backslash-quoted chars in double-quoted `.env` values.
+- CLI `get` and `list` commands now respect `mask_values` config.
+- Removed unused `algorithm` and `compression` config options.
+- Added `isolatedModules` to TypeScript config.
+- Removed unused password hash and salt from session data.
+- Corrected Cursor deeplink (npx, URL-encoded) and replaced MIT with SAL license.
+
+---
+
+## [1.0.6] - 2026-04-08
+
+### Added
+
+- **Security headers** on all HTTP responses (`X-Content-Type-Options`, `X-Frame-Options`, `X-XSS-Protection`, `Cache-Control: no-store`).
+- **Dependabot** configuration for automated security updates.
+- **CodeQL** security scanning workflow.
+- Comprehensive **wiki documentation** for API, integrations, and session management.
+
+### Fixed
+
+- CodeQL security alerts resolved.
+- `fs-extra` ESM import issue fixed.
+- `syncToEnv` target path hardened against traversal.
+- `envcp_run` now enforces variable access policy.
+
+### Dependencies
+
+- `dotenv` 16.6.1 -> 17.4.1
+- `actions/checkout` v4 -> v6
+- `actions/setup-node` v4 -> v6
+- `github/codeql-action` v3 -> v4
+
+---
+
+## [1.0.5] - 2026-04-08
+
+### Added
+
+- **Dry-run mode** for testing operations without writing.
+- **Secret isolation** fix — variables properly scoped.
+- **`envcp doctor`** command for diagnostics and health checks.
+- **CI workflow** for automated testing and building.
+- `CONTRIBUTING.md` and `SECURITY.md`.
+
+---
+
+## [1.0.4] - 2026-04-08
+
+### Added
+
+- **Simplified setup** — streamlined `envcp init` flow.
+- **Passwordless mode** — run without encryption for dev/testing.
+- **Universal IDE support** — auto-registers MCP config for VS Code, Cursor, JetBrains, Zed, Continue.dev, OpenCode, GitHub Copilot CLI, Google AntiGravity.
+
+---
+
+## [1.0.3] - 2026-04-08
+
+### Added
+
+- **Auto `.env` import** during `envcp init` — reads existing `.env` and imports variables.
+- **MCP auto-registration** during init for detected IDE tools.
+- **Atomic writes** for store file to prevent corruption on crash.
+- **Automatic backup rotation** on every write with auto-restore from backup on corruption.
+- **`envcp backup`** and **`envcp restore`** commands for manual backup management.
+- **Password recovery mode** — choose `hard-lock` (no recovery) or `recoverable` (recovery key shown once).
+- **`envcp verify`** command for store integrity verification.
+- **`envcp export --encrypted`** and **`envcp import`** for portable encrypted migration.
+
+---
+
+## [1.0.2] - 2026-04-08
+
+### Changed
+
+- README reorganized — simple usage on top, advanced on bottom.
+
+### Fixed
+
+- Package name corrected to `@fentz26/envcp` in README.
+
+---
+
+## [1.0.1] - 2026-04-08
+
+Initial public release.
+
+### Security (shipped in v1.0.1)
+
+- **Command injection** — `envcp_run` now rejects shell metacharacters (`;`, `|`, `&`, `` ` ``, `$()`, etc.) and validates against an allowlist.
+- **Regex injection** — `matchesPattern` escapes special regex characters before matching.
+- **Variable name validation** — `set` handlers reject names that don't match `^[A-Za-z_][A-Za-z0-9_]*$`.
+- **Path traversal** — `envcp_add_to_env` rejects `env_file` paths outside the project directory.
+- **Information leakage** — `checkAccess` no longer reveals whether a variable exists or is blacklisted.
+- **`.env` quoting** — Values with spaces/special characters are properly double-quoted.
+- **CORS** — Only accepts `localhost`, `127.0.0.1`, and `[::1]` origins.
+- **Command gating** — `envcp_run` requires `allow_ai_execute: true` and an explicit `allowed_commands` list.
+- **Session security** — Plaintext password removed from session file; uses verification hash instead.
+- **Rate limiting** — 60 requests/minute per IP on all HTTP endpoints.
+- **Deprecated API cleanup** — Replaced `url.parse` with `new URL()`.
+- **Type safety** — Replaced all `as any` casts and `error: any` catches with proper types.
+- **Code deduplication** — Extracted `BaseAdapter` and `registerDefaultTools`, eliminating ~670 lines of duplication.
+- **Symlink attacks** — `lstat` checks reject symlinks at store and session paths.
+- **Concurrent writes** — `proper-lockfile` for storage and session write safety.
+- **Encryption versioning** — `v2:` prefix for Argon2id data, `v1:` for legacy PBKDF2 (backward-compatible decryption).
+
+### Core
+
+- AES-256-GCM encryption with Argon2id key derivation (64MB memory, 3 passes)
+- MCP server (stdio) for AI tool integration
+- REST, OpenAI, and Gemini HTTP adapter modes
+- Unified server with auto-detection of client type
+- Variable management: add, get, list, delete, sync, export, import
+- Session management with timeout and extension limits
+- Configurable access control: per-operation AI permissions, blacklist patterns, confirmation requirements
+- Audit logging of all operations
+
+---
+
+[1.0.9]: https://github.com/fentz26/EnvCP/compare/v1.0.8...v1.0.9
+[1.0.8]: https://github.com/fentz26/EnvCP/compare/v1.0.7...v1.0.8
+[1.0.7]: https://github.com/fentz26/EnvCP/compare/v1.0.6...v1.0.7
+[1.0.6]: https://github.com/fentz26/EnvCP/compare/v1.0.5...v1.0.6
+[1.0.5]: https://github.com/fentz26/EnvCP/compare/v1.0.4...v1.0.5
+[1.0.4]: https://github.com/fentz26/EnvCP/compare/v1.0.3...v1.0.4
+[1.0.3]: https://github.com/fentz26/EnvCP/compare/v1.0.2...v1.0.3
+[1.0.2]: https://github.com/fentz26/EnvCP/compare/v1.0.1...v1.0.2
+[1.0.1]: https://github.com/fentz26/EnvCP/releases/tag/v1.0.1
