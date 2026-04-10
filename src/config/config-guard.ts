@@ -76,13 +76,14 @@ export class ConfigGuard {
     const storePath = path.join(this.projectPath, currentConfig.storage.path || '.envcp/store.enc');
 
     if (currentConfig.storage.encrypted !== false) {
-      const storeExists = await fs.promises.access(storePath).then(() => true).catch(() => false);
-      if (storeExists) {
-        try {
-          const { decrypt } = await import('../utils/crypto.js');
-          const encrypted = await fs.promises.readFile(storePath, 'utf8');
-          await decrypt(encrypted, password);
-        } catch {
+      try {
+        const encrypted = await fs.promises.readFile(storePath, 'utf8');
+        const { decrypt } = await import('../utils/crypto.js');
+        await decrypt(encrypted, password);
+      } catch (err: any) {
+        if (err?.code === 'ENOENT') {
+          // Store file doesn't exist yet — no password verification needed
+        } else {
           return { success: false, error: 'Invalid password' };
         }
       }
