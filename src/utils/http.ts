@@ -149,9 +149,16 @@ export class RateLimiter {
 export function rateLimitMiddleware(
   limiter: RateLimiter,
   req: http.IncomingMessage,
-  res: http.ServerResponse
+  res: http.ServerResponse,
+  whitelist: string[] = []
 ): boolean {
-  const key = req.socket.remoteAddress || 'unknown';
+  let key = req.socket.remoteAddress || 'unknown';
+  if (key.startsWith('::ffff:')) {
+    key = key.slice(7);
+  }
+  if (whitelist.length > 0 && whitelist.includes(key)) {
+    return true;
+  }
   if (!limiter.isAllowed(key)) {
     res.setHeader('Retry-After', '60');
     sendJson(res, 429, { error: 'Too many requests' });

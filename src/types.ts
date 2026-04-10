@@ -1,15 +1,27 @@
 import { z } from 'zod';
 import * as path from 'path';
 
+// Server mode types (defined first for use in EnvCPConfigSchema)
+export const ServerModeSchema = z.enum(['mcp', 'rest', 'openai', 'gemini', 'all', 'auto']);
+export type ServerMode = z.infer<typeof ServerModeSchema>;
+
+export const RateLimitConfigSchema = z.object({
+  enabled: z.boolean().default(true),
+  requests_per_minute: z.number().int().positive().default(60),
+  whitelist: z.array(z.string()).default([]),
+});
+
+export type RateLimitConfig = z.infer<typeof RateLimitConfigSchema>;
+
 export const EnvCPConfigSchema = z.object({
   version: z.string().default('1.0'),
   project: z.string().optional(),
-  
+
   storage: z.object({
     path: z.string().default('.envcp/store.enc'),
     encrypted: z.boolean().default(true),
   }).default({}),
-  
+
   access: z.object({
     allow_ai_read: z.boolean().default(false),
     allow_ai_write: z.boolean().default(false),
@@ -26,27 +38,27 @@ export const EnvCPConfigSchema = z.object({
     denied_patterns: z.array(z.string()).optional(),
     blacklist_patterns: z.array(z.string()).default([]),
   }).default({}),
-  
+
   sync: z.object({
     enabled: z.boolean().default(false),
     target: z.string()
-      .refine((value) => !path.isAbsolute(value), {
-        message: 'sync.target must be a relative path within the project directory',
-      })
-      .default('.env'),
+    .refine((value) => !path.isAbsolute(value), {
+      message: 'sync.target must be a relative path within the project directory',
+    })
+    .default('.env'),
     exclude: z.array(z.string()).default([]),
     include: z.array(z.string()).optional(),
     format: z.enum(['dotenv', 'json', 'yaml']).default('dotenv'),
     header: z.string().optional(),
   }).default({}),
-  
+
   session: z.object({
     enabled: z.boolean().default(true),
     timeout_minutes: z.number().default(30),
     max_extensions: z.number().default(5),
     path: z.string().default('.envcp/.session'),
   }).default({}),
-  
+
   encryption: z.object({
     enabled: z.boolean().default(true),
   }).default({}),
@@ -78,6 +90,16 @@ export const EnvCPConfigSchema = z.object({
     accessed: z.string().optional(),
     sync_to_env: z.boolean().default(true),
   })).optional(),
+
+  server: z.object({
+    mode: ServerModeSchema.optional(),
+    port: z.number().optional(),
+    host: z.string().optional(),
+    cors: z.boolean().optional(),
+    api_key: z.string().optional(),
+    auto_detect: z.boolean().optional(),
+    rate_limit: RateLimitConfigSchema.optional(),
+  }).optional(),
 });
 
 export type EnvCPConfig = z.infer<typeof EnvCPConfigSchema>;
@@ -117,10 +139,6 @@ export const SessionSchema = z.object({
 
 export type Session = z.infer<typeof SessionSchema>;
 
-// Server mode types
-export const ServerModeSchema = z.enum(['mcp', 'rest', 'openai', 'gemini', 'all', 'auto']);
-export type ServerMode = z.infer<typeof ServerModeSchema>;
-
 export const ServerConfigSchema = z.object({
   mode: ServerModeSchema.default('auto'),
   port: z.number().default(3456),
@@ -128,6 +146,7 @@ export const ServerConfigSchema = z.object({
   cors: z.boolean().default(true),
   api_key: z.string().optional(),
   auto_detect: z.boolean().default(true),
+  rate_limit: RateLimitConfigSchema.optional(),
 });
 
 export type ServerConfig = z.infer<typeof ServerConfigSchema>;

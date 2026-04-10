@@ -92,23 +92,31 @@ export class UnifiedServer {
       await this.geminiAdapter.init();
     }
 
-    // Single mode - start specific adapter server
-    if (mode === 'rest') {
-      await this.restAdapter!.startServer(port, host, api_key);
-      return;
-    }
+// Single mode - start specific adapter server
+const rl = this.serverConfig.rate_limit;
 
-    if (mode === 'openai') {
-      await this.openaiAdapter!.startServer(port, host, api_key);
-      return;
-    }
+if (mode === 'rest') {
+  await this.restAdapter!.startServer(port, host, api_key, rl);
+  return;
+}
 
-    if (mode === 'gemini') {
-      await this.geminiAdapter!.startServer(port, host, api_key);
-      return;
-    }
+if (mode === 'openai') {
+  await this.openaiAdapter!.startServer(port, host, api_key, rl);
+  return;
+}
 
-    // Auto or All mode - unified server that routes based on detection
+if (mode === 'gemini') {
+  await this.geminiAdapter!.startServer(port, host, api_key, rl);
+  return;
+}
+
+// Auto or All mode - unified server that routes based on detection
+const rateLimitEnabled = rl?.enabled !== false;
+if (rateLimitEnabled) {
+  this.rateLimiter?.destroy();
+  this.rateLimiter = new RateLimiter(rl?.requests_per_minute ?? 60, 60000);
+}
+const whitelist = rl?.whitelist ?? [];
     this.httpServer = http.createServer(async (req, res) => {
       setCorsHeaders(res, undefined, req.headers.origin);
 
@@ -118,7 +126,7 @@ export class UnifiedServer {
         return;
       }
 
-      if (!rateLimitMiddleware(this.rateLimiter, req, res)) {
+      if (rateLimitEnabled && !rateLimitMiddleware(this.rateLimiter, req, res, whitelist)) {
         return;
       }
 

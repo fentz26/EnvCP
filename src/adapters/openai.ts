@@ -1,5 +1,5 @@
 import { BaseAdapter } from './base.js';
-import { EnvCPConfig, OpenAIFunction, OpenAIToolCall, OpenAIMessage } from '../types.js';
+import { EnvCPConfig, OpenAIFunction, OpenAIToolCall, OpenAIMessage, RateLimitConfig } from '../types.js';
 import { setCorsHeaders, sendJson, parseBody, validateApiKey, RateLimiter, rateLimitMiddleware } from '../utils/http.js';
 import * as http from 'http';
 
@@ -55,8 +55,15 @@ export class OpenAIAdapter extends BaseAdapter {
   }
 
 
-  async startServer(port: number, host: string, apiKey?: string): Promise<void> {
-    await this.init();
+async startServer(port: number, host: string, apiKey?: string, rateLimitConfig?: RateLimitConfig): Promise<void> {
+  await this.init();
+
+  const rateLimitEnabled = rateLimitConfig?.enabled !== false;
+  if (rateLimitEnabled) {
+    this.rateLimiter?.destroy();
+    this.rateLimiter = new RateLimiter(rateLimitConfig?.requests_per_minute ?? 60, 60000);
+  }
+  const whitelist = rateLimitConfig?.whitelist ?? [];
 
     this.server = http.createServer(async (req, res) => {
       setCorsHeaders(res, undefined, req.headers.origin);
@@ -67,7 +74,7 @@ export class OpenAIAdapter extends BaseAdapter {
         return;
       }
 
-      if (!rateLimitMiddleware(this.rateLimiter, req, res)) {
+      if (rateLimitEnabled && !rateLimitMiddleware(this.rateLimiter, req, res, whitelist)) {
         return;
       }
 
