@@ -850,17 +850,18 @@ program
       }
     }
 
-    // HTTP-based modes
-    const { UnifiedServer } = await import('../server/unified.js');
-    
-    const serverConfig = {
-      mode: mode as 'mcp' | 'rest' | 'openai' | 'gemini' | 'all' | 'auto',
-      port,
-      host,
-      api_key: apiKey,
-      cors: true,
-      auto_detect: mode === 'auto',
-    };
+// HTTP-based modes
+const { UnifiedServer } = await import('../server/unified.js');
+
+const serverConfig = {
+  mode: mode as 'mcp' | 'rest' | 'openai' | 'gemini' | 'all' | 'auto',
+  port,
+  host,
+  api_key: apiKey,
+  cors: true,
+  auto_detect: mode === 'auto',
+  rate_limit: config.server?.rate_limit,
+};
 
     const server = new UnifiedServer(config, serverConfig, projectPath, password);
     
