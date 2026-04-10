@@ -10,7 +10,6 @@
 
 <p align="center">
 <sup>
-<a href="README.md">English</a> |
 <a href="docs/i18n/README.fr.md">Français</a> |
 <a href="docs/i18n/README.es.md">Español</a> |
 <a href="docs/i18n/README.ko.md">한국어</a> |
