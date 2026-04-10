@@ -23,9 +23,10 @@
 <a href="https://www.npmjs.com/package/@fentz26/envcp"><img src="https://img.shields.io/npm/v/%40fentz26%2Fenvcp?style=flat-square&color=000000&labelColor=000000&label=version" alt="npm version"></a>
 <a href="https://www.npmjs.com/package/@fentz26/envcp"><img src="https://img.shields.io/npm/dt/%40fentz26%2Fenvcp?style=flat-square&color=000000&labelColor=000000&label=downloads" alt="npm downloads"></a>
 <a href="https://www.npmjs.com/package/@fentz26/envcp"><img src="https://img.shields.io/npm/unpacked-size/%40fentz26%2Fenvcp?style=flat-square&color=000000&labelColor=000000&label=size" alt="npm size"></a>
-  <a href="https://github.com/fentz26/EnvCP/actions"><img src="https://img.shields.io/github/actions/workflow/status/fentz26/EnvCP/ci.yml?style=flat-square&color=000000&labelColor=000000&label=ci" alt="CI"></a>
-  <a href="https://github.com/fentz26/EnvCP/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-SAL%20v1.0-000000?style=flat-square&labelColor=000000" alt="license"></a>
-  <a href="https://nodejs.org"><img src="https://img.shields.io/node/v/%40fentz26%2Fenvcp?style=flat-square&color=000000&labelColor=000000&label=node" alt="node version"></a>
+<a href="https://github.com/fentz26/EnvCP/actions"><img src="https://img.shields.io/github/actions/workflow/status/fentz26/EnvCP/ci.yml?style=flat-square&color=000000&labelColor=000000&label=ci" alt="CI"></a>
+<a href="https://github.com/fentz26/EnvCP/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-SAL%20v1.0-000000?style=flat-square&labelColor=000000" alt="license"></a>
+<a href="https://github.com/fentz26/EnvCP/releases"><img src="https://img.shields.io/badge/SLSA-3-green?style=flat-square&labelColor=000000" alt="SLSA Level 3"></a>
+<a href="https://nodejs.org"><img src="https://img.shields.io/node/v/%40fentz26%2Fenvcp?style=flat-square&color=000000&labelColor=000000&label=node" alt="node version"></a>
 </p>
 
 <p align="center">
@@ -100,6 +101,36 @@ envcp export [--format env|json|yaml]
 - **Automatic .env injection** — Values can be automatically injected into your .env files
 - **AI Access Control** — Block AI from proactively listing or checking your secrets
 - **Universal Compatibility** — Works with any AI tool via MCP, OpenAI, Gemini, or REST protocols
+
+---
+
+## Security & Supply Chain
+
+EnvCP is built with security-first principles:
+
+- **SLSA Level 3** — Build provenance for supply chain integrity
+- **Encrypted at rest** — AES-256-GCM with Argon2id key derivation
+- **Local-only** — Your secrets never leave your machine
+
+### Verifying Releases
+
+You can verify the integrity and provenance of EnvCP releases using `slsa-verifier`:
+
+```bash
+# Download the release tarball and provenance
+gh release download v1.0.9 --pattern '*.tgz' --pattern 'multiple.intoto.jsonl'
+
+# Verify the release
+slsa-verifier verify-artifact \
+  --provenance-path multiple.intoto.jsonl \
+  --source-uri github.com/fentz26/EnvCP \
+  fentz26-envcp-1.0.9.tgz
+```
+
+This confirms:
+- The release was built from the official source
+- The build process was tamper-resistant
+- The artifact hasn't been modified after the build
 
 ---
 
