@@ -1,6 +1,6 @@
 import { StorageManager, LogManager } from '../storage/index.js';
 import { EnvCPConfig, Variable, ToolDefinition } from '../types.js';
-import { maskValue } from '../utils/crypto.js';
+import { maskValue, hashVariablePassword, verifyVariablePassword, encryptVariableValue, decryptVariableValue } from '../utils/crypto.js';
 import { canAccess, isBlacklisted, canAIActiveCheck, validateVariableName, matchesPattern } from '../config/manager.js';
 import { SessionManager } from '../utils/session.js';
 import { resolveVaultPath } from '../vault/index.js';
@@ -56,20 +56,21 @@ export abstract class BaseAdapter {
       },
       {
         name: 'envcp_get',
-        description: 'Get an environment variable. Returns masked value by default.',
+        description: 'Get an environment variable. Returns masked value by default. Protected variables require variable_password.',
         parameters: {
           type: 'object',
           properties: {
             name: { type: 'string', description: 'Variable name' },
             show_value: { type: 'boolean', description: 'Show actual value (requires user confirmation)' },
+            variable_password: { type: 'string', description: 'Password for protected variables' },
           },
           required: ['name'],
         },
-        handler: async (params) => this.getVariable(params as { name: string; show_value?: boolean }),
+        handler: async (params) => this.getVariable(params as { name: string; show_value?: boolean; variable_password?: string }),
       },
       {
         name: 'envcp_set',
-        description: 'Create or update an environment variable.',
+        description: 'Create or update an environment variable. Use protect=true with variable_password to add per-variable protection.',
         parameters: {
           type: 'object',
           properties: {
@@ -77,10 +78,13 @@ export abstract class BaseAdapter {
             value: { type: 'string', description: 'Variable value' },
             tags: { type: 'array', items: { type: 'string' }, description: 'Tags' },
             description: { type: 'string', description: 'Description' },
+            protect: { type: 'boolean', description: 'Enable per-variable password protection' },
+            unprotect: { type: 'boolean', description: 'Remove per-variable password protection' },
+            variable_password: { type: 'string', description: 'Password for per-variable protection' },
           },
           required: ['name', 'value'],
         },
-        handler: async (params) => this.setVariable(params as { name: string; value: string; tags?: string[]; description?: string }),
+        handler: async (params) => this.setVariable(params as { name: string; value: string; tags?: string[]; description?: string; protect?: boolean; unprotect?: boolean; variable_password?: string }),
       },
       {
         name: 'envcp_delete',
@@ -174,7 +178,7 @@ export abstract class BaseAdapter {
   }
 
   // Shared tool implementations
-  protected async listVariables(args: { tags?: string[] }): Promise<{ variables: string[]; count: number }> {
+  protected async listVariables(args: { tags?: string[] }): Promise<{ variables: Array<string | { name: string; protected: boolean }>; count: number }> {
     if (!this.config.access.allow_ai_read) {
       throw new Error('AI read access is disabled');
     }
@@ -186,13 +190,16 @@ export abstract class BaseAdapter {
     const names = await this.storage.list();
     let filtered = names.filter(n => canAccess(n, this.config) && !isBlacklisted(n, this.config));
 
+    const allVars = await this.storage.load();
+
     if (args.tags && args.tags.length > 0) {
-      const variables = await this.storage.load();
       filtered = filtered.filter(name => {
-        const v = variables[name];
+        const v = allVars[name];
         return v.tags && args.tags!.some(t => v.tags!.includes(t));
       });
     }
+
+    const hasAnyProtected = filtered.some(name => allVars[name]?.protected);
 
     await this.logs.log({
       timestamp: new Date().toISOString(),
@@ -202,15 +209,26 @@ export abstract class BaseAdapter {
       message: `Listed ${filtered.length} variables`,
     });
 
+    if (hasAnyProtected) {
+      return {
+        variables: filtered.map(name => ({
+          name,
+          protected: !!allVars[name]?.protected,
+        })),
+        count: filtered.length,
+      };
+    }
+
     return { variables: filtered, count: filtered.length };
   }
 
-  protected async getVariable(args: { name: string; show_value?: boolean }): Promise<{
+  protected async getVariable(args: { name: string; show_value?: boolean; variable_password?: string }): Promise<{
     name: string;
     value: string;
     tags?: string[];
     description?: string;
     encrypted: boolean;
+    protected: boolean;
   }> {
     if (!this.config.access.allow_ai_read) {
       throw new Error('AI read access is disabled');
@@ -228,6 +246,60 @@ export abstract class BaseAdapter {
 
     if (!canAccess(args.name, this.config)) {
       throw new Error(`Access denied to variable '${args.name}'`);
+    }
+
+    // Protected variable: require variable_password to access value
+    if (variable.protected) {
+      if (!args.variable_password) {
+        await this.logs.log({
+          timestamp: new Date().toISOString(),
+          operation: 'get',
+          variable: args.name,
+          source: 'api',
+          success: false,
+          message: 'Protected variable access denied — no password provided',
+        });
+        throw new Error(`Variable '${args.name}' is protected. Provide variable_password to access it.`);
+      }
+
+      if (!variable.password_hash || !await verifyVariablePassword(args.variable_password, variable.password_hash)) {
+        await this.logs.log({
+          timestamp: new Date().toISOString(),
+          operation: 'get',
+          variable: args.name,
+          source: 'api',
+          success: false,
+          message: 'Protected variable access denied — wrong password',
+        });
+        throw new Error(`Invalid password for protected variable '${args.name}'`);
+      }
+
+      // Decrypt the protected value
+      const decryptedValue = await decryptVariableValue(variable.protected_value!, args.variable_password);
+
+      variable.accessed = new Date().toISOString();
+      await this.storage.set(args.name, variable);
+
+      const canReveal = args.show_value && !this.config.access.mask_values && !this.config.access.require_confirmation;
+      const value = canReveal ? decryptedValue : maskValue(decryptedValue);
+
+      await this.logs.log({
+        timestamp: new Date().toISOString(),
+        operation: 'get',
+        variable: args.name,
+        source: 'api',
+        success: true,
+        message: canReveal ? 'Protected value revealed' : 'Protected value masked',
+      });
+
+      return {
+        name: variable.name,
+        value,
+        tags: variable.tags,
+        description: variable.description,
+        encrypted: variable.encrypted,
+        protected: true,
+      };
     }
 
     variable.accessed = new Date().toISOString();
@@ -251,6 +323,7 @@ export abstract class BaseAdapter {
       tags: variable.tags,
       description: variable.description,
       encrypted: variable.encrypted,
+      protected: false,
     };
   }
 
@@ -259,6 +332,9 @@ export abstract class BaseAdapter {
     value: string;
     tags?: string[];
     description?: string;
+    protect?: boolean;
+    unprotect?: boolean;
+    variable_password?: string;
   }): Promise<{ success: boolean; message: string }> {
     if (!this.config.access.allow_ai_write) {
       throw new Error('AI write access is disabled');
@@ -272,8 +348,108 @@ export abstract class BaseAdapter {
       throw new Error(`Variable '${args.name}' is blacklisted`);
     }
 
+    // Enforce require_variable_password config
+    if (this.config.access.require_variable_password && !args.protect && !args.unprotect) {
+      const existing = await this.storage.get(args.name);
+      if (!existing) {
+        throw new Error('require_variable_password is enabled — new variables must use protect=true with a variable_password');
+      }
+    }
+
     const existing = await this.storage.get(args.name);
     const now = new Date().toISOString();
+
+    // Handle unprotect: verify existing password, then remove protection
+    if (args.unprotect) {
+      if (!existing?.protected) {
+        throw new Error(`Variable '${args.name}' is not protected`);
+      }
+      if (!args.variable_password) {
+        throw new Error('variable_password is required to remove protection');
+      }
+      if (!await verifyVariablePassword(args.variable_password, existing.password_hash!)) {
+        throw new Error(`Invalid password for protected variable '${args.name}'`);
+      }
+
+      // Decrypt the protected value to restore it as the plain value
+      const decryptedValue = await decryptVariableValue(existing.protected_value!, args.variable_password);
+
+      const variable: Variable = {
+        name: args.name,
+        value: args.value !== undefined ? args.value : decryptedValue,
+        encrypted: this.config.storage.encrypted,
+        tags: args.tags ?? existing.tags,
+        description: args.description ?? existing.description,
+        created: existing.created,
+        updated: now,
+        sync_to_env: true,
+        protected: false,
+      };
+
+      await this.storage.set(args.name, variable);
+
+      await this.logs.log({
+        timestamp: now,
+        operation: 'update',
+        variable: args.name,
+        source: 'api',
+        success: true,
+        message: 'Variable protection removed',
+      });
+
+      return { success: true, message: `Variable '${args.name}' protection removed` };
+    }
+
+    // Handle protect: encrypt value with variable-specific password
+    if (args.protect) {
+      if (!args.variable_password) {
+        throw new Error('variable_password is required when protect=true');
+      }
+
+      // If updating an already-protected variable, verify existing password
+      if (existing?.protected) {
+        if (!await verifyVariablePassword(args.variable_password, existing.password_hash!)) {
+          throw new Error(`Invalid password for protected variable '${args.name}'`);
+        }
+      }
+
+      const passwordHash = await hashVariablePassword(args.variable_password);
+      const protectedValue = await encryptVariableValue(args.value, args.variable_password);
+
+      const variable: Variable = {
+        name: args.name,
+        value: '[PROTECTED]',
+        encrypted: this.config.storage.encrypted,
+        tags: args.tags ?? existing?.tags,
+        description: args.description ?? existing?.description,
+        created: existing?.created || now,
+        updated: now,
+        sync_to_env: true,
+        protected: true,
+        password_hash: passwordHash,
+        protected_value: protectedValue,
+      };
+
+      await this.storage.set(args.name, variable);
+
+      await this.logs.log({
+        timestamp: now,
+        operation: existing ? 'update' : 'add',
+        variable: args.name,
+        source: 'api',
+        success: true,
+        message: `Protected variable ${existing ? 'updated' : 'created'}`,
+      });
+
+      return { success: true, message: `Protected variable '${args.name}' ${existing ? 'updated' : 'created'}` };
+    }
+
+    // If updating an existing protected variable without protect/unprotect, require password
+    if (existing?.protected) {
+      if (!args.variable_password) {
+        throw new Error(`Variable '${args.name}' is protected. Provide variable_password and protect=true to update.`);
+      }
+    }
 
     const variable: Variable = {
       name: args.name,
@@ -284,6 +460,7 @@ export abstract class BaseAdapter {
       created: existing?.created || now,
       updated: now,
       sync_to_env: true,
+      protected: false,
     };
 
     await this.storage.set(args.name, variable);

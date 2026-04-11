@@ -45,6 +45,7 @@ export const EnvCPConfigSchema = z.object({
     allowed_patterns: z.array(z.string()).optional(),
     denied_patterns: z.array(z.string()).optional(),
     blacklist_patterns: z.array(z.string()).default([]),
+    require_variable_password: z.boolean().default(false),
   }).default({}),
 
   sync: z.object({
@@ -122,6 +123,9 @@ export const VariableSchema = z.object({
   updated: z.string(),
   accessed: z.string().optional(),
   sync_to_env: z.boolean().default(true),
+  protected: z.boolean().default(false),
+  password_hash: z.string().optional(),
+  protected_value: z.string().optional(),
 });
 
 export type Variable = z.infer<typeof VariableSchema>;
