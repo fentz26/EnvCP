@@ -7,12 +7,16 @@ import { EnvCPConfigSchema } from '../src/types';
 
 describe('loadConfig', () => {
   let tmpDir: string;
+  let origHome: string | undefined;
 
   beforeEach(async () => {
     tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-cfg-'));
+    origHome = process.env.HOME;
+    process.env.HOME = tmpDir;
   });
 
   afterEach(async () => {
+    process.env.HOME = origHome;
     await fs.rm(tmpDir, { recursive: true, force: true });
   });
 
@@ -63,12 +67,16 @@ describe('loadConfig', () => {
 
 describe('saveConfig', () => {
   let tmpDir: string;
+  let origHome: string | undefined;
 
   beforeEach(async () => {
     tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-cfg-'));
+    origHome = process.env.HOME;
+    process.env.HOME = tmpDir;
   });
 
   afterEach(async () => {
+    process.env.HOME = origHome;
     await fs.rm(tmpDir, { recursive: true, force: true });
   });
 
@@ -82,12 +90,16 @@ describe('saveConfig', () => {
 
 describe('initConfig', () => {
   let tmpDir: string;
+  let origHome: string | undefined;
 
   beforeEach(async () => {
-    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-init-'));
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-cfg-'));
+    origHome = process.env.HOME;
+    process.env.HOME = tmpDir;
   });
 
   afterEach(async () => {
+    process.env.HOME = origHome;
     await fs.rm(tmpDir, { recursive: true, force: true });
   });
 
@@ -129,12 +141,16 @@ describe('initConfig', () => {
 
 describe('registerMcpConfig', () => {
   let tmpDir: string;
+  let origHome: string | undefined;
 
   beforeEach(async () => {
-    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-mcp-reg-'));
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-cfg-'));
+    origHome = process.env.HOME;
+    process.env.HOME = tmpDir;
   });
 
   afterEach(async () => {
+    process.env.HOME = origHome;
     await fs.rm(tmpDir, { recursive: true, force: true });
   });
 
@@ -317,3 +333,4 @@ describe('canAIActiveCheck / requiresUserReference', () => {
     expect(requiresUserReference(config)).toBe(false);
   });
 });
+

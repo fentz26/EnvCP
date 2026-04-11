@@ -344,6 +344,12 @@ describe('UnifiedServer all mode routes', () => {
     expect(status).toBe(200);
   });
 
+  it('POST /v1/functions/call routed to Gemini handler via ?mode=gemini', async () => {
+    const { status, data } = await fetch(port, 'POST', '/v1/functions/call?mode=gemini', { name: 'envcp_list', args: {} });
+    expect(status).toBe(200);
+    expect((data as any).name).toBe('envcp_list');
+  });
+
   // 404 routes through unified OpenAI handler
   it('returns 404 for unknown OpenAI route via unified', async () => {
     const { status } = await fetch(port, 'GET', '/v1/unknown', undefined, { 'openai-organization': 'test' });
@@ -604,5 +610,15 @@ describe('UnifiedServer.detectClientType', () => {
 
   it('returns unknown for unrecognized requests', () => {
     expect(server.detectClientType(makeReq('/something'))).toBe('unknown');
+  });
+
+  it('routes /api/* to REST when client type is MCP (fallback)', async () => {
+    const port = 30000 + Math.floor(Math.random() * 10000);
+    const serverConfig: ServerConfig = { mode: 'auto', port, host: '127.0.0.1', cors: true, auto_detect: true };
+    const srv = new UnifiedServer(makeConfig(), serverConfig, '/tmp/nonexistent-' + Date.now());
+    await srv.start();
+    const { status, data } = await fetch(port, 'GET', '/api/health', undefined, { 'x-mcp-version': '1.0' });
+    expect(status).toBe(200);
+    srv.stop();
   });
 });

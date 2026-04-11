@@ -3,6 +3,7 @@ import { ensureDir, pathExists } from '../src/utils/fs.js';
 import * as os from 'os';
 import * as path from 'path';
 import { BaseAdapter } from '../src/adapters/base';
+import { parseEnv } from '../src/utils/fs';
 import { EnvCPConfig, EnvCPConfigSchema, Variable } from '../src/types';
 
 class TestAdapter extends BaseAdapter {
@@ -469,5 +470,18 @@ describe('BaseAdapter tool operations', () => {
       const result = await a.callTool('envcp_list', {});
       expect(result.count).toBe(0);
     });
+  });
+});
+
+describe('parseEnv', () => {
+  it('strips single-quoted values', () => {
+    const result = parseEnv("KEY='hello world'\nOTHER=value");
+    expect(result.KEY).toBe('hello world');
+    expect(result.OTHER).toBe('value');
+  });
+
+  it('strips double-quoted values', () => {
+    const result = parseEnv('KEY="hello world"');
+    expect(result.KEY).toBe('hello world');
   });
 });

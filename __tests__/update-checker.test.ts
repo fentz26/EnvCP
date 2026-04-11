@@ -12,6 +12,7 @@ import {
   getCachedResult,
   writeCache,
   fetchLatestRelease,
+  getCurrentVersion,
   VersionInfo,
   ReleaseInfo,
 } from '../src/utils/update-checker';
@@ -31,6 +32,14 @@ describe('update-checker', () => {
 
   afterEach(async () => {
     await fs.rm(tmpDir, { recursive: true, force: true });
+  });
+
+  describe('getCurrentVersion', () => {
+    it('returns a version string', () => {
+      const v = getCurrentVersion();
+      expect(typeof v).toBe('string');
+      expect(v.length).toBeGreaterThan(0);
+    });
   });
 
   describe('compareVersions', () => {
@@ -148,6 +157,20 @@ describe('update-checker', () => {
       writeCache(tmpDir, { timestamp: Date.now() - 48 * 60 * 60 * 1000, latest: '2.0.0', critical: false });
       expect(getCachedResult(tmpDir)).toBeNull();
     });
+
+    it('getCachedResult returns null for corrupted cache', async () => {
+      const cachePath = path.join(tmpDir, '.envcp', '.update-cache.json');
+      await fs.writeFile(cachePath, 'not valid json');
+      expect(getCachedResult(tmpDir)).toBeNull();
+    });
+
+    it('writeCache creates directory when missing', async () => {
+      const freshDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-cache-mkdir-'));
+      writeCache(freshDir, { timestamp: Date.now(), latest: '2.0.0', critical: false });
+      const cachePath = path.join(freshDir, '.envcp', '.update-cache.json');
+      expect(await pathExists(cachePath)).toBe(true);
+      await fs.rm(freshDir, { recursive: true, force: true });
+    });
   });
 
   describe('checkForUpdate', () => {
@@ -229,6 +252,22 @@ describe('update-checker', () => {
       );
       expect(info.updateAvailable).toBe(false);
       expect(info.critical).toBe(false);
+    });
+
+    it('returns advisory from cache when update available', async () => {
+      const advisory = { id: 'ENVCP-2026-002', summary: 'Test advisory', severity: 'high', url: 'http://example.com' };
+      writeCache(tmpDir, {
+        timestamp: Date.now(),
+        latest: '99.0.0',
+        critical: false,
+        advisory,
+      });
+      const info = await checkForUpdate(tmpDir, () =>
+        Promise.resolve(makeRelease('v99.0.0', 'Minor update'))
+      );
+      expect(info.updateAvailable).toBe(true);
+      expect(info.advisory).toBeDefined();
+      expect(info.advisory!.id).toBe('ENVCP-2026-002');
     });
   });
 

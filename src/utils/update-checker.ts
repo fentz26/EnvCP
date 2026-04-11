@@ -35,8 +35,11 @@ export interface ReleaseInfo {
 
 export function getCurrentVersion(): string {
   try {
+    /* istanbul ignore next -- ts-jest ESM __dirname source-mapping artifact */
     const pkgPath = path.join(__dirname, '..', '..', 'package.json');
+    /* istanbul ignore next */
     const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
+    /* istanbul ignore next */
     return pkg.version;
   } catch {
     return '0.0.0';
