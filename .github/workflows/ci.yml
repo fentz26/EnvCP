@@ -29,8 +29,30 @@ jobs:
         run: npm run build
 
       - name: Run tests
-        run: npm test
+        run: npm test -- --ci --reporters=default --reporters=jest-junit
+        env:
+          JEST_JUNIT_OUTPUT_DIR: ./coverage
+          JEST_JUNIT_OUTPUT_NAME: junit.xml
 
       - name: Coverage report
         if: matrix.node-version == 20
-        run: npm test -- --coverage
+        run: npm test -- --coverage --ci --reporters=default --reporters=jest-junit
+        env:
+          JEST_JUNIT_OUTPUT_DIR: ./coverage
+          JEST_JUNIT_OUTPUT_NAME: junit.xml
+
+      - name: Upload coverage reports to Codecov
+        if: matrix.node-version == 20
+        uses: codecov/codecov-action@75cd11691c0faa626561e295848008c8a7dddffe # v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ./coverage/lcov.info
+          flags: unit
+          fail_ci_if_error: true
+
+      - name: Upload test results to Codecov
+        if: matrix.node-version == 20 && !cancelled()
+        uses: codecov/test-results-action@0fa95f0e1eeaafde2c782583b36b28ad0d8c77d3 # v1
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ./coverage/junit.xml

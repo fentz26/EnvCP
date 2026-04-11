@@ -118,7 +118,7 @@ app.get('/api/docs', (c) => {
     description: 'Cloud-hosted EnvCP service',
     authentication: { type: 'API Key', header: 'X-API-Key' },
     endpoints: {
-      'GET /': 'API info',
+      'GET /': 'Redirect to /docs/',
       'GET /api/health': 'Health check',
       'GET /api/docs': 'API documentation',
       'GET /install.sh': 'Installation script',

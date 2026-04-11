@@ -28,6 +28,12 @@ const DEFAULT_CONFIG: Partial<EnvCPConfig> = {
     audit_log: true,
     blacklist_patterns: ['*_SECRET', '*_PRIVATE', 'ADMIN_*', 'ROOT_*'],
     require_variable_password: false,
+    command_blacklist: ['mkfs', 'shred', 'wipefs', 'fdisk', 'parted'],
+    run_safety: {
+      disallow_root_delete: true,
+      disallow_path_manipulation: true,
+      require_command_whitelist: false,
+    },
   },
   sync: {
     enabled: false,
