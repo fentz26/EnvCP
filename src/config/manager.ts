@@ -27,6 +27,7 @@ const DEFAULT_CONFIG: Partial<EnvCPConfig> = {
     mask_values: true,
     audit_log: true,
     blacklist_patterns: ['*_SECRET', '*_PRIVATE', 'ADMIN_*', 'ROOT_*'],
+    require_variable_password: false,
   },
   sync: {
     enabled: false,

@@ -177,6 +177,41 @@ export function validatePassword(password: string, config: {
   return { valid: true, warning };
 }
 
+/**
+ * Hashes a per-variable password using Argon2id for storage.
+ * The returned string is the standard Argon2 encoded hash (includes salt, params).
+ */
+export async function hashVariablePassword(password: string): Promise<string> {
+  return argon2.hash(password, {
+    type: argon2.argon2id,
+    memoryCost: 65536,
+    timeCost: 3,
+    parallelism: 1,
+  });
+}
+
+/**
+ * Verifies a per-variable password against a stored Argon2id hash.
+ */
+export async function verifyVariablePassword(password: string, hash: string): Promise<boolean> {
+  return argon2.verify(hash, password);
+}
+
+/**
+ * Encrypts a variable value with a per-variable password.
+ * Uses the same v2 AES-256-GCM + Argon2id scheme as vault encryption.
+ */
+export async function encryptVariableValue(value: string, variablePassword: string): Promise<string> {
+  return encrypt(value, variablePassword);
+}
+
+/**
+ * Decrypts a variable value with a per-variable password.
+ */
+export async function decryptVariableValue(encryptedValue: string, variablePassword: string): Promise<string> {
+  return decrypt(encryptedValue, variablePassword);
+}
+
 export function quickHash(input: string): string {
   return crypto.createHash('sha256').update(input).digest('hex').slice(0, 16);
 }
