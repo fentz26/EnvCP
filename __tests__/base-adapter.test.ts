@@ -432,6 +432,26 @@ describe('BaseAdapter tool operations', () => {
       expect(result.stderr).toContain('Excluded variables by policy');
       expect(result.stderr).toContain('SECRET_KEY');
     });
+
+    it('logs run start and exit to audit trail (issue #147)', async () => {
+      await adapter.seedVariable({ name: 'AUDIT_VAR', value: 'auditval', encrypted: false, created: now, updated: now, sync_to_env: true });
+      const result = await adapter.runRunCommand({ command: 'echo audit', variables: ['AUDIT_VAR'] });
+      expect(result.exitCode).toBe(0);
+
+      const date = new Date().toISOString().split('T')[0];
+      const logFile = path.join(tmpDir, '.envcp', 'logs', `operations-${date}.log`);
+      const content = await fs.readFile(logFile, 'utf8');
+      const entries = content.trim().split('\n').map(l => JSON.parse(l)) as Array<{ operation: string; variable?: string; message?: string }>;
+
+      const startEntry = entries.find(e => e.operation === 'run' && e.message?.includes('Starting:'));
+      expect(startEntry).toBeDefined();
+      expect(startEntry!.variable).toBe('echo audit');
+      expect(startEntry!.message).toContain('AUDIT_VAR');
+
+      const exitEntry = entries.find(e => e.operation === 'run' && e.message?.includes('Exited'));
+      expect(exitEntry).toBeDefined();
+      expect(exitEntry!.message).toContain('code 0');
+    });
   });
 
   describe('ensurePassword', () => {

@@ -799,9 +799,12 @@ export abstract class BaseAdapter {
       }
     }
 
+    const injectedNames = args.variables.filter(n => !excludedVariables.includes(n));
     const TIMEOUT_MS = 30000;
 
-    return new Promise((resolve) => {
+    // Create process Promise first so the timeout is registered synchronously
+    // before any async log I/O — this keeps fake-timer tests working correctly.
+    const processPromise = new Promise<{ exitCode: number | null; stdout: string; stderr: string }>((resolve) => {
       const proc = spawn(prog, cmdArgs, {
         env,
         cwd: this.projectPath,
@@ -831,5 +834,29 @@ export abstract class BaseAdapter {
         resolve({ exitCode: code, stdout, stderr });
       });
     });
+
+    // Audit log: command start (variable names only — never values)
+    await this.logs.log({
+      timestamp: new Date().toISOString(),
+      operation: 'run',
+      variable: args.command,
+      source: 'api',
+      success: true,
+      message: `Starting: ${args.command} (injected: ${injectedNames.join(', ') || 'none'})`,
+    });
+
+    const result = await processPromise;
+
+    // Audit log: command exit (exit code only — no stdout/stderr values)
+    await this.logs.log({
+      timestamp: new Date().toISOString(),
+      operation: 'run',
+      variable: args.command,
+      source: 'api',
+      success: result.exitCode === 0,
+      message: `Exited with code ${result.exitCode}`,
+    });
+
+    return result;
   }
 }

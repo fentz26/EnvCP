@@ -155,7 +155,7 @@ export type Variable = z.infer<typeof VariableSchema>;
 
 export const OperationLogSchema = z.object({
   timestamp: z.string(),
-  operation: z.enum(['add', 'get', 'update', 'delete', 'list', 'sync', 'export', 'unlock', 'lock', 'check_access']),
+  operation: z.enum(['add', 'get', 'update', 'delete', 'list', 'sync', 'export', 'unlock', 'lock', 'check_access', 'run']),
   variable: z.string().optional(),
   source: z.enum(['cli', 'mcp', 'api']),
   success: z.boolean(),
