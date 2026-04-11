@@ -31,15 +31,13 @@
           {
             "group": "CLI Reference",
             "pages": [
-              "cli-reference/commands",
-              "cli-reference/options"
+              "cli-reference/commands"
             ]
           },
           {
             "group": "Configuration",
             "pages": [
-              "configuration/reference",
-              "configuration/access-control"
+              "configuration/reference"
             ]
           },
           {
@@ -54,8 +52,7 @@
           {
             "group": "API Reference",
             "pages": [
-              "api-reference/endpoints",
-              "api-reference/tools"
+              "api-reference/endpoints"
             ]
           }
         ]
@@ -66,8 +63,7 @@
           {
             "group": "Security",
             "pages": [
-              "security/best-practices",
-              "security/encryption"
+              "security/best-practices"
             ]
           },
           {

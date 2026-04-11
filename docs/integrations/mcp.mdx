@@ -230,9 +230,12 @@ Get a specific environment variable value.
 
 **Parameters**:
 - `name` (string, required): Variable name
-- `mask` (boolean, optional): Whether to mask the value (default: true)
+- `show_value` (boolean, optional): Reveal unmasked value (default: false)
+- `variable_password` (string, optional): Password for per-variable protected variables
 
 **Returns**: Variable value (masked or unmasked based on settings)
+
+**Per-variable protection**: If the variable is protected with its own password, you must supply `variable_password` to access the value. Without it, the AI sees the variable exists but cannot read its value.
 
 ### envcp_set
 
@@ -241,16 +244,24 @@ Create or update an environment variable.
 **Example prompts**:
 - "Add a new API key called STRIPE_KEY with value sk_test_123"
 - "Update DATABASE_URL to postgres://localhost/mydb"
-- "Set OPENAI_API_KEY to sk-..."
+- "Protect PROD_DB_PASSWORD with password 'hunter2'"
 
 **Parameters**:
 - `name` (string, required): Variable name
 - `value` (string, required): Variable value
 - `description` (string, optional): Variable description
+- `tags` (array, optional): Tags for organizing variables
+- `protect` (boolean, optional): Enable per-variable password protection
+- `unprotect` (boolean, optional): Remove per-variable password protection
+- `variable_password` (string, optional): Password when using `protect` or `unprotect`
 
 **Returns**: Success confirmation
 
 **Note**: This requires `allow_ai_write: true` in your configuration.
+
+**Per-variable protection example**:
+- "Protect PROD_DB_PASSWORD — ask me for a variable password" → AI sets `protect=true` with the password you provide
+- "Remove protection from PROD_DB_PASSWORD" → AI sets `unprotect=true` with the existing password
 
 ### envcp_delete
 
@@ -454,13 +465,21 @@ access:
   
   # Require confirmation before providing values
   require_confirmation: true
-  
-  # Block sensitive patterns
-  blacklist:
+
+  # Mask values in AI responses (show sk-1****890 instead of full value)
+  mask_values: true
+
+  # Block sensitive patterns from AI access
+  blacklist_patterns:
     - "*_SECRET"
     - "*_PRIVATE"
     - "ADMIN_*"
+
+  # Require variable_password for protected variables
+  require_variable_password: false
 ```
+
+See [Configuration Reference](/configuration/reference#access) for the full list of access control options.
 
 ## Troubleshooting
 

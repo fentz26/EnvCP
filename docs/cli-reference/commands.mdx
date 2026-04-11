@@ -260,65 +260,6 @@ Backup created: .envcp/backups/.env.backup.20260408_123456
 
 ---
 
-### export
-
-Export variables to stdout or file.
-
-```bash
-envcp export [options]
-```
-
-**Options**:
-- `--format <format>` - Format: `env`, `json`, `yaml` (default: `env`)
-- `--output, -o <file>` - Output file (default: stdout)
-- `--password, -p <password>` - Unlock password
-
-**Examples**:
-
-```bash
-# Export to stdout (.env format)
-envcp export
-
-# Save to file
-envcp export --output backup.env
-
-# JSON format
-envcp export --format json
-
-# JSON to file
-envcp export --format json --output backup.json
-
-# YAML format
-envcp export --format yaml > config.yaml
-```
-
-**Output formats**:
-
-**.env format**:
-```bash
-API_KEY=sk-1234567890
-DATABASE_URL=postgres://localhost/db
-STRIPE_KEY=sk_test_123
-```
-
-**JSON format**:
-```json
-{
-  "API_KEY": "sk-1234567890",
-  "DATABASE_URL": "postgres://localhost/db",
-  "STRIPE_KEY": "sk_test_123"
-}
-```
-
-**YAML format**:
-```yaml
-API_KEY: sk-1234567890
-DATABASE_URL: postgres://localhost/db
-STRIPE_KEY: sk_test_123
-```
-
----
-
 ### run
 
 Run a command with environment variables injected.
@@ -547,6 +488,470 @@ Press Ctrl+C to stop
 
 ---
 
+### export
+
+Export variables to stdout or file.
+
+```bash
+envcp export [options]
+```
+
+**Options**:
+- `--format, -f <format>` - Format: `env`, `json`, `yaml` (default: `env`)
+- `--output, -o <file>` - Output file (default: stdout)
+- `--encrypted` - Create an encrypted portable export file (requires `--output`)
+- `--password, -p <password>` - Unlock password
+
+**Examples**:
+
+```bash
+# Export to stdout (.env format)
+envcp export
+
+# Save to file
+envcp export --output backup.env
+
+# JSON format
+envcp export --format json
+
+# Encrypted portable export (prompts for export password)
+envcp export --encrypted --output backup.enc
+
+# YAML format
+envcp export --format yaml > config.yaml
+```
+
+**Encrypted export**: creates a file encrypted with a separate password. Share securely between machines or projects and import with `envcp import`.
+
+---
+
+### import
+
+Import variables from an encrypted export file.
+
+```bash
+envcp import <file> [options]
+```
+
+**Options**:
+- `--merge` - Merge with existing variables (default: replace all)
+- `--dry-run` - Preview what would change without writing
+
+**Examples**:
+
+```bash
+# Replace store with imported variables (prompts for export password)
+envcp import backup.enc
+
+# Merge into existing store
+envcp import backup.enc --merge
+
+# Preview changes first
+envcp import backup.enc --dry-run
+```
+
+**Output**:
+
+```bash
+$ envcp import backup.enc --dry-run
+Import info:
+  From project: my-project
+  Exported: 2026-04-10T12:00:00Z
+  Variables: 5
+
+Dry run: import (replace)
+  + API_KEY = sk-1****890
+  ~ STRIPE_KEY = sk_****123 (changed)
+
+No files were modified.
+```
+
+---
+
+### backup
+
+Create an encrypted backup of all variables using your vault password.
+
+```bash
+envcp backup [options]
+```
+
+**Options**:
+- `--output, -o <path>` - Output file path (default: `.envcp/backup-<timestamp>.enc`)
+
+**Examples**:
+
+```bash
+# Default path
+envcp backup
+
+# Custom path
+envcp backup --output ~/secure/my-project.enc
+```
+
+**Output**:
+
+```bash
+$ envcp backup
+Backup created: .envcp/backup-2026-04-10T12-00-00.enc
+  Variables: 5
+  Encrypted: yes
+```
+
+Unlike `export --encrypted`, backups use your existing vault password rather than a separate export password.
+
+---
+
+### restore
+
+Restore variables from an encrypted backup.
+
+```bash
+envcp restore <file> [options]
+```
+
+**Options**:
+- `--merge` - Merge with existing variables (default: replace all)
+
+**Examples**:
+
+```bash
+# Replace current store with backup
+envcp restore .envcp/backup-2026-04-10T12-00-00.enc
+
+# Merge backup into current store
+envcp restore .envcp/backup-2026-04-10T12-00-00.enc --merge
+```
+
+---
+
+### recover
+
+Recover vault access using your recovery key (reset password).
+
+```bash
+envcp recover
+```
+
+Only available in `recoverable` security mode. Not available in `hard-lock` mode.
+
+**Interactive flow**:
+1. Prompts for recovery key (shown once during `init`)
+2. Verifies key and decrypts store
+3. Prompts for new password
+4. Re-encrypts store and generates a new recovery key
+
+**Output**:
+
+```bash
+$ envcp recover
+Enter your recovery key: ****
+Recovery key verified. Store contains 5 variables.
+Set new password: ****
+Confirm new password: ****
+Password reset successfully!
+
+NEW RECOVERY KEY (save this somewhere safe!):
+  a1b2c3d4e5f6...
+Your old recovery key no longer works.
+Session unlocked with new password.
+```
+
+---
+
+### verify
+
+Verify store integrity and check backup status.
+
+```bash
+envcp verify
+```
+
+**Output**:
+
+```bash
+$ envcp verify
+Store integrity: OK
+  Variables: 5
+  Backups: 2
+  Recovery: available
+```
+
+---
+
+### doctor
+
+Diagnose common issues and check system health.
+
+```bash
+envcp doctor
+```
+
+Checks performed:
+- Config file loadable
+- Encryption enabled/disabled
+- Security mode
+- Store file exists
+- Session status
+- Recovery file present (recoverable mode)
+- `.envcp/` directory exists
+- `.gitignore` includes `.envcp/`
+- MCP registration status
+
+**Output**:
+
+```bash
+$ envcp doctor
+
+EnvCP Doctor
+
+  [PASS] Config: Loaded (project: my-project)
+  [PASS] Encryption: Enabled (AES-256-GCM)
+  [PASS] Security mode: recoverable
+  [PASS] Store file: Exists (4096 bytes)
+  [WARN] Session: No active session — run `envcp unlock`
+  [PASS] Recovery file: Present
+  [PASS] .envcp directory: Exists
+  [WARN] .gitignore: .envcp/ not in .gitignore — secrets may be committed
+  [PASS] MCP registration: 1 tool(s) configured
+
+All checks passed with 2 warning(s).
+```
+
+---
+
+### update
+
+Check for EnvCP updates.
+
+```bash
+envcp update [options]
+```
+
+**Options**:
+- `--check` - Check for available updates (default when no options provided)
+
+**Examples**:
+
+```bash
+envcp update
+envcp update --check
+```
+
+**Output**:
+
+```bash
+$ envcp update
+Checking for updates...
+You are running the latest version of EnvCP (v1.0.0)
+```
+
+---
+
+### vault
+
+Manage project, global, or named vaults.
+
+```bash
+envcp vault [--global | --project | --name <name>] <subcommand>
+```
+
+**Flags**:
+- `--global` - Operate on the global vault (`~/.envcp/store.enc`)
+- `--project` - Operate on the project vault (default)
+- `--name <name>` - Operate on a named vault
+
+**Subcommands**:
+
+#### vault init
+
+Initialize a vault.
+
+```bash
+envcp vault init
+envcp vault --global init
+envcp vault --name staging init
+```
+
+#### vault add
+
+Add a variable to a vault.
+
+```bash
+envcp vault add <name> [options]
+envcp vault --global add <name> [options]
+```
+
+**Options**: `--value, -v`, `--tags, -t`
+
+#### vault list
+
+List variables in a vault.
+
+```bash
+envcp vault list
+envcp vault --global list
+envcp vault --global list --show-values
+```
+
+#### vault get
+
+Get a variable from a vault.
+
+```bash
+envcp vault get <name>
+envcp vault --global get <name> --show-value
+```
+
+#### vault delete
+
+Delete a variable from a vault.
+
+```bash
+envcp vault delete <name>
+envcp vault --global delete <name>
+```
+
+---
+
+### vault-switch
+
+Switch the active vault context for subsequent commands.
+
+```bash
+envcp vault-switch <name>
+```
+
+**Arguments**:
+- `<name>` - `global`, `project`, or a named vault created with `envcp vault --name <name> init`
+
+**Examples**:
+
+```bash
+# Switch to global vault
+envcp vault-switch global
+
+# Switch back to project vault
+envcp vault-switch project
+
+# Switch to a named vault
+envcp vault-switch staging
+```
+
+**Output**:
+
+```bash
+$ envcp vault-switch global
+Switched to vault: global
+```
+
+After switching, commands like `envcp list`, `envcp get`, `envcp add` operate on the active vault.
+
+---
+
+### vault-list
+
+List all available vaults and their status.
+
+```bash
+envcp vault-list
+```
+
+**Output**:
+
+```bash
+$ envcp vault-list
+Available vaults:
+  global (active)
+    /home/user/.envcp/store.enc
+  project
+    /home/user/my-project/.envcp/store.enc
+  staging [not initialized]
+    /home/user/my-project/.envcp/vaults/staging/store.enc
+```
+
+---
+
+### keychain
+
+Manage OS keychain integration for auto-unlock.
+
+```bash
+envcp keychain <subcommand>
+```
+
+**Subcommands**:
+
+#### keychain status
+
+Check keychain availability and stored credentials.
+
+```bash
+envcp keychain status
+```
+
+**Output**:
+
+```bash
+$ envcp keychain status
+Keychain Status
+  Backend:    libsecret
+  Available:  yes
+  Stored:     yes
+  Enabled:    yes
+```
+
+#### keychain save
+
+Save the current session password to the OS keychain. Enables auto-unlock on future sessions.
+
+```bash
+envcp keychain save
+```
+
+Equivalent to running `envcp unlock --save-to-keychain`.
+
+#### keychain remove
+
+Remove the stored password from the OS keychain.
+
+```bash
+envcp keychain remove
+```
+
+Also disables keychain auto-unlock in config.
+
+#### keychain disable
+
+Disable keychain auto-unlock without removing the stored credential.
+
+```bash
+envcp keychain disable
+```
+
+---
+
+### config reload
+
+Reload the configuration from `envcp.yaml` (requires password to confirm).
+
+```bash
+envcp config reload
+```
+
+Use this after manually editing `envcp.yaml` to apply changes while a session is active.
+
+**Output**:
+
+```bash
+$ envcp config reload
+Enter password to reload config: ****
+Config reloaded successfully
+  New config hash: a1b2c3d4e5f6...
+```
+
+---
+
 ## Advanced Usage
 
 ### Scripting
@@ -654,5 +1059,6 @@ envcp list
 
 - [Configuration Reference](/configuration/reference) - All config options
 - [MCP Integration](/integrations/mcp) - Set up with Claude/Cursor
+- [Global Vault](/advanced/session-management) - Sharing secrets across projects
 - [Security Best Practices](/security/best-practices) - Secure your setup
 - [Troubleshooting](/advanced/troubleshooting) - Common issues

@@ -78,18 +78,25 @@ envcp serve --mode auto --port 3456
 
 ```bash
 # Variable Management
-envcp add <name> [options]    # Add a variable
-envcp list [--show-values]    # List variables
-envcp get <name>              # Get a variable
-envcp remove <name>           # Remove a variable
+envcp add <name> [options] # Add a variable
+envcp list [--show-values] # List variables
+envcp get <name> # Get a variable
+envcp remove <name> # Remove a variable
+
+# Vault Management
+envcp vault --global init|add|list|get|delete  # Operate on global vault
+envcp vault --project init|add|list|get|delete # Operate on project vault
+envcp vault --name <name> init|add|list|get|delete # Named vaults
+envcp vault-switch <name> # Switch active vault (global, project, or named)
+envcp vault-list # List all available vaults
 
 # Session Management
-envcp unlock                  # Unlock with password
-envcp lock                    # Lock immediately
-envcp status                  # Check session status
+envcp unlock # Unlock with password
+envcp lock # Lock immediately
+envcp status # Check session status
 
 # Sync and Export
-envcp sync                    # Sync to .env file
+envcp sync # Sync to .env file
 envcp export [--format env|json|yaml]
 ```
 
@@ -311,18 +318,72 @@ All protocols expose the same tools:
 | Tool | Description |
 |------|-------------|
 | `envcp_list` | List variable names (not values) |
-| `envcp_get` | Get a variable (masked by default) |
-| `envcp_set` | Create/update a variable |
+| `envcp_get` | Get a variable (masked by default, `variable_password` required for protected vars) |
+| `envcp_set` | Create/update a variable (supports `protect`, `unprotect`, `variable_password`) |
 | `envcp_delete` | Delete a variable |
 | `envcp_sync` | Sync to .env file |
 | `envcp_run` | Run command with env vars injected |
 | `envcp_check_access` | Check if variable is accessible |
+
+## Global Vault
+
+Share secrets across multiple projects with a global vault at `~/.envcp/store.enc`:
+
+```bash
+# Initialize global vault
+envcp vault --global init
+
+# Add a shared secret
+envcp vault --global add SHARED_API_KEY --value "secret123"
+
+# Switch to global vault
+envcp vault-switch global
+
+# List all vaults
+envcp vault-list
+```
+
+### Named Vaults
+
+Create separate vaults for different contexts:
+
+```bash
+# Create a named vault
+envcp vault --name work init
+envcp vault --name work add WORK_API_KEY --value "work-secret"
+
+# Switch between vaults
+envcp vault-switch work
+envcp vault-switch project  # Back to project vault
+```
+
+## Per-Variable Password Protection
+
+Add an extra layer of security with per-variable passwords:
+
+```bash
+# Create a protected variable (via API/MCP)
+envcp_set name=SECRET value=mysecret protect=true variable_password=mypass
+
+# Get a protected variable (requires password)
+envcp_get name=SECRET variable_password=mypass
+
+# Remove protection
+envcp_set name=SECRET unprotect=true variable_password=mypass
+```
+
+Protected variables use Argon2id + AES-256-GCM encryption with a variable-specific key.
 
 ## Configuration (envcp.yaml)
 
 ```yaml
 version: "1.0"
 project: my-project
+
+# Vault configuration
+vault:
+  default: project # or "global" to use global vault by default
+  global_path: .envcp/store.enc # path relative to home directory
 
 storage:
   path: .envcp/store.enc
@@ -331,20 +392,21 @@ storage:
 
 session:
   enabled: true
-  timeout: 1800  # 30 minutes
+  timeout: 1800 # 30 minutes
 
 access:
   allow_ai_read: true
   allow_ai_write: false
-  allow_ai_active_check: false  # Prevent AI from proactively listing
+  allow_ai_active_check: false # Prevent AI from proactively listing
+  require_variable_password: false # Require password for all new variables
   require_confirmation: true
   blacklist:
-    - "*_SECRET"
-    - "*_PRIVATE"
-    - "ADMIN_*"
+  - "*_SECRET"
+  - "*_PRIVATE"
+  - "ADMIN_*"
 
 password:
-  min_length: 1  # No requirements by default
+  min_length: 1 # No requirements by default
   require_uppercase: false
   require_lowercase: false
   require_numbers: false
@@ -354,8 +416,8 @@ sync:
   enabled: true
   target: .env
   exclude:
-    - "*_PRIVATE"
-    - "*_SECRET"
+  - "*_PRIVATE"
+  - "*_SECRET"
 ```
 
 ## AI Access Control

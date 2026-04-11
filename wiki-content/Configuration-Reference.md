@@ -12,60 +12,71 @@ The `envcp.yaml` file is created in your project root when you run `envcp init`.
 version: "1.0"
 project: my-awesome-project
 
-# Storage settings
+vault:
+  default: project          # project | global
+  global_path: .envcp/store.enc
+
 storage:
   path: .envcp/store.enc
   encrypted: true
-  algorithm: aes-256-gcm
-  log_path: .envcp/logs
 
-# Session management
 session:
   enabled: true
-  timeout: 1800  # 30 minutes in seconds
-  auto_extend: true
-  extend_time: 900  # 15 minutes
+  timeout_minutes: 30
+  max_extensions: 5
+  path: .envcp/.session
 
-# AI access control
+encryption:
+  enabled: true
+
+security:
+  mode: recoverable         # recoverable | hard-lock
+  recovery_file: .envcp/.recovery
+
+keychain:
+  enabled: false
+  service: envcp
+
 access:
-  allow_ai_read: true
+  allow_ai_read: false
   allow_ai_write: false
+  allow_ai_delete: false
+  allow_ai_export: false
+  allow_ai_execute: false
   allow_ai_active_check: false
+  require_user_reference: true
   require_confirmation: true
-  blacklist:
+  mask_values: true
+  audit_log: true
+  require_variable_password: false
+  blacklist_patterns:
     - "*_SECRET"
     - "*_PRIVATE"
     - "ADMIN_*"
-    - "ROOT_*"
-    - "MASTER_*"
-  whitelist: []
 
-# Password requirements
 password:
-  min_length: 1
-  max_length: 128
-  require_uppercase: false
-  require_lowercase: false
-  require_numbers: false
-  require_special: false
+  min_length: 8
+  require_complexity: false
+  allow_numeric_only: false
+  allow_single_char: false
 
-# .env sync settings
 sync:
-  enabled: true
+  enabled: false
   target: .env
-  backup: true
-  backup_path: .envcp/backups
-  exclude:
-    - "*_PRIVATE"
-    - "*_SECRET"
-  format: env  # env, json, yaml
+  exclude: []
+  format: dotenv            # dotenv | json | yaml
 
-# Logging
-logging:
-  enabled: true
-  level: info  # debug, info, warn, error
-  max_size: 10485760  # 10MB
-  max_files: 5
+server:
+  mode: auto                # mcp | rest | openai | gemini | all | auto
+  port: 3456
+  host: 127.0.0.1
+  cors: true
+  api_key: ""
+  auto_detect: true
+  rate_limit:
+    enabled: true
+    requests_per_minute: 60
+    whitelist: []
 ```
 
 ## Configuration Sections
@@ -77,229 +88,270 @@ version: "1.0"
 project: my-project-name
 ```
 
-- **version**: Configuration schema version (always "1.0" for now)
-- **project**: Human-readable project name
+- **version**: Configuration schema version (always `"1.0"`)
+- **project**: Human-readable project name (defaults to directory name)
 
-### Storage
+---
+
+### vault
+
+Controls which vault is active by default and where the global vault is stored.
+
+```yaml
+vault:
+  default: project
+  global_path: .envcp/store.enc
+```
+
+- **default**: Default vault context — `project` (per-project store) or `global` (shared across projects). Default: `project`
+- **global_path**: Path to the global vault file. Default: `.envcp/store.enc`
+
+See [vault-switch](CLI-Reference#vault-switch) to change the active vault at runtime.
+
+---
+
+### storage
+
+Controls where and how variables are stored.
 
 ```yaml
 storage:
   path: .envcp/store.enc
   encrypted: true
-  algorithm: aes-256-gcm
-  log_path: .envcp/logs
 ```
 
-- **path**: Location of encrypted storage file (relative to project root)
-- **encrypted**: Whether to encrypt the storage (always `true`)
-- **algorithm**: Encryption algorithm (currently only `aes-256-gcm` supported)
-- **log_path**: Directory for log files
+- **path**: Location of the encrypted store file relative to the project root. Default: `.envcp/store.enc`
+- **encrypted**: Enable encryption. Set to `false` only for local development without sensitive data. Default: `true`
 
-### Session Management
+---
+
+### encryption
+
+```yaml
+encryption:
+  enabled: true
+```
+
+- **enabled**: Master switch for encryption. When `false`, no password is required. Default: `true`
+
+---
+
+### security
+
+```yaml
+security:
+  mode: recoverable
+  recovery_file: .envcp/.recovery
+```
+
+- **mode**:
+  - `recoverable` — Password can be reset using a recovery key. The recovery key is generated during `init` and must be saved securely.
+  - `hard-lock` — No recovery possible. Losing the password means losing all data. Maximum security.
+- **recovery_file**: Path to the encrypted recovery data file. Default: `.envcp/.recovery`
+
+---
+
+### session
+
+Controls how long you stay unlocked after entering your password.
 
 ```yaml
 session:
   enabled: true
-  timeout: 1800
-  auto_extend: true
-  extend_time: 900
+  timeout_minutes: 30
+  max_extensions: 5
+  path: .envcp/.session
 ```
 
-- **enabled**: Enable quick password mode (unlock once, stay unlocked)
-- **timeout**: Session duration in seconds (default: 1800 = 30 minutes)
-- **auto_extend**: Automatically extend session on activity
-- **extend_time**: How many seconds to extend by (default: 900 = 15 minutes)
+- **enabled**: Enable session management. When `false`, password is required every time. Default: `true`
+- **timeout_minutes**: Session duration in minutes. Default: `30`
+- **max_extensions**: Maximum number of times a session can be extended with `envcp extend`. Default: `5`
+- **path**: Session file path. Default: `.envcp/.session`
 
-**Examples**:
-- 5 minutes: `300`
-- 30 minutes: `1800`
-- 1 hour: `3600`
-- 8 hours: `28800`
-- 24 hours: `86400`
+**Common values**:
 
-### Access Control
+| Use case      | timeout_minutes |
+|---------------|----------------|
+| Maximum security | 5           |
+| Normal use    | 30              |
+| Development   | 480 (8 hours)   |
+| Rarely lock   | 1440 (24 hours) |
+
+---
+
+### keychain
+
+Enable OS keychain integration for passwordless auto-unlock.
+
+```yaml
+keychain:
+  enabled: false
+  service: envcp
+```
+
+- **enabled**: Auto-unlock from OS keychain on session start. Default: `false`
+- **service**: Keychain service name. Default: `envcp`
+
+Enable with `envcp keychain save` or `envcp unlock --save-to-keychain`.
+
+**Supported backends**:
+- macOS: Keychain
+- Linux: libsecret (GNOME Keyring / KWallet)
+- Windows: Windows Credential Manager
+
+---
+
+### access
+
+Controls what AI tools are allowed to do with your variables.
 
 ```yaml
 access:
-  allow_ai_read: true
+  allow_ai_read: false
   allow_ai_write: false
+  allow_ai_delete: false
+  allow_ai_export: false
+  allow_ai_execute: false
   allow_ai_active_check: false
+  require_user_reference: true
   require_confirmation: true
-  blacklist:
-    - "*_SECRET"
-    - "*_PRIVATE"
-  whitelist: []
+  mask_values: true
+  audit_log: true
+  require_variable_password: false
+  allowed_commands: []
+  allowed_patterns: []
+  denied_patterns: []
+  blacklist_patterns: []
 ```
 
-#### allow_ai_read
+#### Permission flags
 
-- **Type**: boolean
-- **Default**: `true`
-- **Description**: Allow AI to read variable values when explicitly requested
+| Field | Default | Description |
+|-------|---------|-------------|
+| `allow_ai_read` | `false` | AI can read variable values |
+| `allow_ai_write` | `false` | AI can create/update variables |
+| `allow_ai_delete` | `false` | AI can delete variables |
+| `allow_ai_export` | `false` | AI can export variables |
+| `allow_ai_execute` | `false` | AI can run commands via `envcp run` |
+| `allow_ai_active_check` | `false` | AI can proactively list/check variables without being asked |
 
-```yaml
-# AI can get variables when you ask
-allow_ai_read: true
+When `allow_ai_active_check` is `false`, the AI can only access variables when you explicitly ask it to.
 
-# AI cannot get any variables
-allow_ai_read: false
-```
+#### require_user_reference
 
-#### allow_ai_write
-
-- **Type**: boolean
-- **Default**: `false`
-- **Description**: Allow AI to create/update variables
-
-```yaml
-# AI can create/update variables
-allow_ai_write: true
-
-# AI cannot modify variables (recommended)
-allow_ai_write: false
-```
-
-#### allow_ai_active_check
-
-- **Type**: boolean
-- **Default**: `false`
-- **Description**: Allow AI to proactively list or check variables
-
-When `false`, AI can only access variables when you explicitly ask. This prevents AI from scanning your secrets.
-
-```yaml
-# AI cannot proactively list variables (recommended)
-allow_ai_active_check: false
-
-# AI can list and check variables on its own
-allow_ai_active_check: true
-```
+- **Type**: boolean — Default: `true`
+- Require the user to explicitly reference a variable by name before AI can access it. Prevents the AI from scanning secrets unprompted.
 
 #### require_confirmation
 
-- **Type**: boolean
-- **Default**: `true`
-- **Description**: Require user confirmation before providing values to AI
+- **Type**: boolean — Default: `true`
+- Prompt for confirmation before providing values to AI.
+
+#### mask_values
+
+- **Type**: boolean — Default: `true`
+- Show masked values (e.g., `sk-1****890`) instead of full values in AI responses.
+
+#### audit_log
+
+- **Type**: boolean — Default: `true`
+- Log all AI access operations to `.envcp/logs/`.
+
+#### require_variable_password
+
+- **Type**: boolean — Default: `false`
+- When `true`, variables with per-variable password protection must have their password supplied to be accessed via AI tools. See [Per-Variable Password Protection](#per-variable-password-protection).
+
+#### allowed_commands
+
+- **Type**: array of strings — Default: `[]` (all commands)
+- Restrict which shell commands AI can run via `envcp run`. Empty list = no restriction.
 
 ```yaml
-# Prompt user before giving values to AI
-require_confirmation: true
-
-# Provide values without confirmation
-require_confirmation: false
+allowed_commands:
+  - "npm test"
+  - "npm run build"
 ```
 
-#### blacklist
+#### Pattern filters
 
-- **Type**: array of strings (glob patterns)
-- **Default**: `["*_SECRET", "*_PRIVATE", "ADMIN_*"]`
-- **Description**: Variable patterns that AI cannot access
-
-Glob patterns:
-- `*`: Matches any characters
-- `?`: Matches single character
-- `[abc]`: Matches any character in brackets
-
-Examples:
 ```yaml
-blacklist:
-  # Ends with _SECRET
+# Deny specific patterns (blacklist)
+blacklist_patterns:
   - "*_SECRET"
-  
-  # Ends with _PRIVATE
   - "*_PRIVATE"
-  
-  # Starts with ADMIN_
   - "ADMIN_*"
-  
-  # Starts with ROOT_
-  - "ROOT_*"
-  
-  # Exact match
-  - "MASTER_PASSWORD"
-  
-  # Contains SECRET
-  - "*SECRET*"
-  
-  # Production databases
-  - "PROD_DB_*"
-  - "PRODUCTION_*"
-```
 
-#### whitelist
+# Deny additional patterns
+denied_patterns:
+  - "PROD_*"
 
-- **Type**: array of strings (glob patterns)
-- **Default**: `[]`
-- **Description**: If not empty, ONLY these patterns are accessible to AI
-
-When whitelist is set, it overrides blacklist. Only whitelisted variables are accessible.
-
-```yaml
-# Only allow specific variables
-whitelist:
-  - "API_KEY"
+# Allow ONLY these patterns (overrides blacklist when non-empty)
+allowed_patterns:
   - "PUBLIC_*"
-  - "DEV_*"
-
-# When whitelist is set, these won't be accessible even if not blacklisted
-# ADMIN_KEY - not in whitelist
-# PRIVATE_KEY - not in whitelist
+  - "API_KEY"
 ```
 
-### Password Requirements
+- **blacklist_patterns**: Variable name patterns AI cannot access (glob syntax: `*`, `?`, `[abc]`)
+- **denied_patterns**: Additional patterns to deny
+- **allowed_patterns**: When non-empty, AI can only access variables matching these patterns (overrides blacklist)
+
+---
+
+### password
+
+Controls vault password requirements. These rules apply when setting a new password during `init`, `unlock`, or `recover`.
 
 ```yaml
 password:
-  min_length: 1
-  max_length: 128
-  require_uppercase: false
-  require_lowercase: false
-  require_numbers: false
-  require_special: false
+  min_length: 8
+  require_complexity: false
+  allow_numeric_only: false
+  allow_single_char: false
 ```
 
-- **min_length**: Minimum password length (default: 1, allows any password)
-- **max_length**: Maximum password length
-- **require_uppercase**: Require at least one uppercase letter
-- **require_lowercase**: Require at least one lowercase letter
-- **require_numbers**: Require at least one number
-- **require_special**: Require at least one special character
+- **min_length**: Minimum password length. Default: `8`
+- **require_complexity**: Require at least 3 of: lowercase, uppercase, numbers, special characters. Default: `false`
+- **allow_numeric_only**: Allow passwords made entirely of digits. Default: `false`
+- **allow_single_char**: Allow single-character passwords. Default: `false`
 
-**Default behavior**: No requirements (even "1" or "123" is allowed). This is intentional - you decide your security level.
+Common weak passwords (e.g., `password123`, `12345678`) are always rejected regardless of policy.
 
 **Strict example**:
+
 ```yaml
 password:
-  min_length: 12
-  max_length: 128
-  require_uppercase: true
-  require_lowercase: true
-  require_numbers: true
-  require_special: true
+  min_length: 16
+  require_complexity: true
+  allow_numeric_only: false
+  allow_single_char: false
 ```
 
-### Sync Settings
+---
+
+### sync
+
+Controls automatic syncing of variables to a plain-text `.env` file.
 
 ```yaml
 sync:
-  enabled: true
+  enabled: false
   target: .env
-  backup: true
-  backup_path: .envcp/backups
-  exclude:
-    - "*_PRIVATE"
-    - "*_SECRET"
-  format: env
+  exclude: []
+  include: []
+  format: dotenv
+  header: ""
 ```
 
-- **enabled**: Enable syncing to .env file
-- **target**: Target file path (default: `.env`)
-- **backup**: Create backup before overwriting
-- **backup_path**: Where to store backups
-- **exclude**: Variable patterns to exclude from sync (glob patterns)
-- **format**: Output format (`env`, `json`, or `yaml`)
+- **enabled**: Enable sync to plain-text file. Default: `false`
+- **target**: Target file path (must be relative). Default: `.env`
+- **exclude**: Variable name patterns to exclude from sync (glob syntax)
+- **include**: If non-empty, only sync variables matching these patterns
+- **format**: Output format — `dotenv`, `json`, `yaml`. Default: `dotenv`
+- **header**: Optional comment header prepended to the output file
 
-**Example: Multiple .env files**:
+**Example**:
+
 ```yaml
 sync:
   enabled: true
@@ -307,57 +359,86 @@ sync:
   exclude:
     - "*_PROD_*"
     - "*_SECRET"
+  format: dotenv
+  header: "# Auto-generated by EnvCP — do not edit manually"
 ```
 
-**Example: JSON format**:
+**Note**: `.env` files are plain text. Avoid syncing highly sensitive variables. Add your sync target to `.gitignore`.
+
+---
+
+### server
+
+Configuration for the EnvCP HTTP/MCP server (`envcp serve`).
+
 ```yaml
-sync:
-  enabled: true
-  target: config.json
-  format: json
+server:
+  mode: auto
+  port: 3456
+  host: 127.0.0.1
+  cors: true
+  api_key: ""
+  auto_detect: true
+  rate_limit:
+    enabled: true
+    requests_per_minute: 60
+    whitelist: []
 ```
 
-### Logging
+- **mode**: Server mode — `mcp`, `rest`, `openai`, `gemini`, `all`, `auto`. Default: `auto`
+- **port**: HTTP port (not used for MCP stdio mode). Default: `3456`
+- **host**: Bind address. Use `127.0.0.1` (localhost only) or `0.0.0.0` (all interfaces). Default: `127.0.0.1`
+- **cors**: Enable CORS headers. Default: `true`
+- **api_key**: Required API key for HTTP authentication. Empty = no auth required (use only on localhost)
+- **auto_detect**: Auto-detect client type from request headers in `auto` mode. Default: `true`
+
+#### rate_limit
 
 ```yaml
-logging:
+rate_limit:
   enabled: true
-  level: info
-  max_size: 10485760
-  max_files: 5
+  requests_per_minute: 60
+  whitelist:
+    - "127.0.0.1"
 ```
 
-- **enabled**: Enable logging
-- **level**: Log level (`debug`, `info`, `warn`, `error`)
-- **max_size**: Maximum log file size in bytes (default: 10MB)
-- **max_files**: Number of log files to keep
+- **enabled**: Enable rate limiting. Default: `true`
+- **requests_per_minute**: Maximum requests per minute per client IP. Default: `60`
+- **whitelist**: IP addresses excluded from rate limiting (e.g., trusted internal services)
 
-**Log levels**:
-- `debug`: Everything (verbose)
-- `info`: Normal operations
-- `warn`: Warnings only
-- `error`: Errors only
+---
+
+## Per-Variable Password Protection
+
+Individual variables can be protected with a second password, separate from the vault password. Protected variables cannot be read by AI tools unless the variable password is supplied.
+
+Per-variable protection is managed through the AI tool API — the AI can set or remove protection when you ask it to:
+
+- `protect=true` + `variable_password` → protect the variable
+- `unprotect=true` + `variable_password` → remove protection
+
+When `access.require_variable_password` is `true`, protected variables are completely hidden from AI reads unless the password is provided inline.
+
+---
 
 ## Environment-Specific Configurations
 
-You can create different configurations for different environments:
+Create different config files for different environments:
 
 ```bash
-# Development
 envcp.dev.yaml
-
-# Production
 envcp.prod.yaml
-
-# Testing
 envcp.test.yaml
 ```
 
-Specify which config to use:
+Use a specific config:
 
 ```bash
-envcp --config envcp.dev.yaml serve
+envcp --config envcp.prod.yaml serve
+envcp --config envcp.dev.yaml list
 ```
+
+---
 
 ## Configuration Examples
 
@@ -370,41 +451,36 @@ project: secure-project
 storage:
   path: .envcp/store.enc
   encrypted: true
-  algorithm: aes-256-gcm
+
+security:
+  mode: hard-lock
 
 session:
   enabled: true
-  timeout: 300  # 5 minutes only
-  auto_extend: false
+  timeout_minutes: 5
+  max_extensions: 1
 
 access:
   allow_ai_read: true
   allow_ai_write: false
+  allow_ai_delete: false
+  allow_ai_export: false
   allow_ai_active_check: false
   require_confirmation: true
-  blacklist:
+  mask_values: true
+  blacklist_patterns:
     - "*_SECRET"
-    - "*_PRIVATE"
     - "*_KEY"
-    - "ADMIN_*"
-    - "ROOT_*"
-    - "MASTER_*"
-    - "*PASSWORD*"
     - "*TOKEN*"
+    - "ADMIN_*"
+    - "PROD_*"
 
 password:
   min_length: 16
-  require_uppercase: true
-  require_lowercase: true
-  require_numbers: true
-  require_special: true
+  require_complexity: true
 
 sync:
-  enabled: false  # Don't sync to plain text files
-
-logging:
-  enabled: true
-  level: debug
+  enabled: false
 ```
 
 ### Development Friendly
@@ -413,38 +489,33 @@ logging:
 version: "1.0"
 project: dev-project
 
-storage:
-  path: .envcp/store.enc
-  encrypted: true
-  algorithm: aes-256-gcm
+security:
+  mode: recoverable
 
 session:
   enabled: true
-  timeout: 28800  # 8 hours
-  auto_extend: true
+  timeout_minutes: 480
+
+keychain:
+  enabled: true
 
 access:
   allow_ai_read: true
-  allow_ai_write: true  # Let AI help manage variables
+  allow_ai_write: true
   allow_ai_active_check: false
   require_confirmation: false
-  blacklist:
-    - "*_PROD_*"
-    - "*_PRODUCTION_*"
+  mask_values: false
+  blacklist_patterns:
+    - "PROD_*"
 
 password:
-  min_length: 1  # Easy password for dev
+  min_length: 8
 
 sync:
   enabled: true
   target: .env.local
-  backup: true
   exclude:
-    - "*_PROD_*"
-
-logging:
-  enabled: true
-  level: info
+    - "PROD_*"
 ```
 
 ### Team Shared Settings
@@ -453,30 +524,29 @@ logging:
 version: "1.0"
 project: team-project
 
-storage:
-  path: .envcp/store.enc
-  encrypted: true
-  algorithm: aes-256-gcm
+security:
+  mode: recoverable
 
 session:
   enabled: true
-  timeout: 3600  # 1 hour
+  timeout_minutes: 60
 
 access:
   allow_ai_read: true
   allow_ai_write: false
+  allow_ai_delete: false
   allow_ai_active_check: false
   require_confirmation: true
-  blacklist:
+  mask_values: true
+  audit_log: true
+  blacklist_patterns:
     - "*_PROD_*"
     - "*_SECRET"
     - "ADMIN_*"
-  whitelist: []
 
 password:
-  min_length: 8
-  require_uppercase: true
-  require_numbers: true
+  min_length: 12
+  require_complexity: true
 
 sync:
   enabled: true
@@ -485,14 +555,15 @@ sync:
     - "*_SECRET"
     - "*_PROD_*"
 
-logging:
-  enabled: true
-  level: info
+server:
+  rate_limit:
+    enabled: true
+    requests_per_minute: 30
 ```
 
 ## Next Steps
 
-- [AI Access Control](AI-Access-Control) - Deep dive into access control
+- [CLI Reference](CLI-Reference) - All CLI commands
+- [MCP Integration](MCP-Integration) - Set up with Claude/Cursor
 - [Security Best Practices](Security-Best-Practices) - Secure your setup
 - [Session Management](Session-Management) - Understanding sessions
-- [CLI Reference](CLI-Reference) - All CLI commands

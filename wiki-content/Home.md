@@ -35,11 +35,15 @@ EnvCP is a secure environment variable manager designed specifically for AI-assi
 ### Key Features
 
 - **Local-only storage** - Your secrets never leave your machine
-- **AES-256-GCM encryption** - Military-grade encryption at rest
+- **AES-256-GCM encryption** - Military-grade encryption at rest with Argon2id key derivation
 - **Reference-based access** - AI references variables by name, never sees values
 - **Multi-platform support** - Works with Claude, ChatGPT, Gemini, local LLMs, and more
 - **AI access control** - Granular control over what AI can access
 - **Session management** - Unlock once, work seamlessly
+- **OS keychain integration** - Optional passwordless auto-unlock via macOS Keychain, libsecret, or Windows Credential Manager
+- **Global vault** - Share secrets across multiple projects with a single vault
+- **Per-variable password protection** - Individual variables can require a second password beyond the vault password
+- **Password recovery** - Recover access with a one-time recovery key (recoverable mode)
 - **Automatic .env sync** - Keep your .env files up to date
 
 ### How It Works
