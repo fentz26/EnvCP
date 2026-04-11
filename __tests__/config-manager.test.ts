@@ -514,3 +514,39 @@ describe('loadConfig — USERPROFILE fallback', () => {
   });
 });
 
+describe('loadConfig — FAILSAFE_SCHEMA rejects !!js/ tags (issue #151)', () => {
+  let tmpDir: string;
+  let origHome: string | undefined;
+
+  beforeEach(async () => {
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-failsafe-'));
+    origHome = process.env.HOME;
+    process.env.HOME = tmpDir;
+  });
+
+  afterEach(async () => {
+    process.env.HOME = origHome;
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  });
+
+  it('rejects !!js/regexp tag in project config — throws or uses defaults', async () => {
+    const projectConfig = 'server:\n  api_key: !!js/regexp /evil/gi\n';
+    await fs.writeFile(path.join(tmpDir, 'envcp.yaml'), projectConfig);
+    // FAILSAFE_SCHEMA does not support !!js/ types — should throw a YAMLException
+    await expect(loadConfig(tmpDir)).rejects.toThrow();
+  });
+
+  it('rejects !!js/undefined tag in global config — throws', async () => {
+    const globalDir = path.join(tmpDir, '.envcp');
+    await ensureDir(globalDir);
+    await fs.writeFile(path.join(globalDir, 'config.yaml'), 'server:\n  host: !!js/undefined\n');
+    await expect(loadConfig(tmpDir)).rejects.toThrow();
+  });
+
+  it('still parses valid plain YAML after schema switch', async () => {
+    await fs.writeFile(path.join(tmpDir, 'envcp.yaml'), 'access:\n  allow_ai_read: true\n');
+    const config = await loadConfig(tmpDir);
+    expect(config.access.allow_ai_read).toBe(true);
+  });
+});
+
