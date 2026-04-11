@@ -13,17 +13,28 @@ import { maskValue, validatePassword, encrypt, decrypt, generateRecoveryKey, cre
 import { KeychainManager } from '../utils/keychain.js';
 import { checkForUpdate, formatUpdateMessage, logUpdateCheck } from '../utils/update-checker.js';
 import { Variable, EnvCPConfig } from '../types.js';
+import {
+  getGlobalVaultPath,
+  getProjectVaultPath,
+  resolveVaultPath,
+  getActiveVault,
+  setActiveVault,
+  listVaults,
+  initNamedVault,
+} from '../vault/index.js';
 
-async function withSession(fn: (storage: StorageManager, password: string, config: EnvCPConfig, projectPath: string) => Promise<void>): Promise<void> {
+async function withSession(fn: (storage: StorageManager, password: string, config: EnvCPConfig, projectPath: string) => Promise<void>, vaultOverride?: 'global' | 'project'): Promise<void> {
   const projectPath = process.cwd();
   const config = await loadConfig(projectPath);
 
-  // Passwordless mode: no session, no password
+  const vaultPath = vaultOverride
+    ? vaultOverride === 'global'
+      ? getGlobalVaultPath(config)
+      : getProjectVaultPath(projectPath, config)
+    : await resolveVaultPath(projectPath, config);
+
   if (config.encryption?.enabled === false) {
-    const storage = new StorageManager(
-      path.join(projectPath, config.storage.path),
-      false
-    );
+    const storage = new StorageManager(vaultPath, false);
     await fn(storage, '', config, projectPath);
     return;
   }
@@ -39,7 +50,6 @@ async function withSession(fn: (storage: StorageManager, password: string, confi
   let password = '';
 
   if (!session) {
-    // Try OS keychain first if enabled
     if (config.keychain?.enabled) {
       const keychain = new KeychainManager(config.keychain.service || 'envcp');
       const stored = await keychain.retrievePassword(projectPath);
@@ -57,7 +67,6 @@ async function withSession(fn: (storage: StorageManager, password: string, confi
 
       const { valid: passwordValid, warning: passwordWarning } = validatePassword(password, config.password || {});
       if (!passwordValid) {
-        // nosem: no tainted data flows to log
         console.log(chalk.red("Invalid password"));
         return;
       }
@@ -71,10 +80,7 @@ async function withSession(fn: (storage: StorageManager, password: string, confi
 
   password = sessionManager.getPassword() || password;
 
-  const storage = new StorageManager(
-    path.join(projectPath, config.storage.path),
-    config.storage.encrypted
-  );
+  const storage = new StorageManager(vaultPath, config.storage.encrypted);
   if (password) storage.setPassword(password);
 
   await fn(storage, password, config, projectPath);
@@ -1346,25 +1352,165 @@ program
 
 program
   .command('vault')
-  .description('Manage vault settings')
+  .description('Manage vaults (global, project, or named)')
+  .option('--global', 'Operate on the global vault')
+  .option('--project', 'Operate on the project vault')
+  .option('--name <name>', 'Operate on a named vault')
   .addCommand(
-    new Command('rename')
-      .description('Rename the current vault (updates project name in config)')
-      .argument('<name>', 'New vault name')
-      .action(async (name: string) => {
+    new Command('init')
+      .description('Initialize a vault')
+      .action(async (options, cmd) => {
+        const parentOpts = cmd.parent.opts();
         const projectPath = process.cwd();
-        try {
-          const config = await loadConfig(projectPath);
-          const old = config.project || path.basename(projectPath);
-          config.project = name;
-          await saveConfig(config, projectPath);
-          console.log(`Vault renamed: ${old} -> ${name}`);
-        } catch (error) {
-          console.error(`Failed to rename vault: ${(error as Error).message}`);
-          process.exit(1);
+        const config = await loadConfig(projectPath);
+        
+        let vaultPath: string;
+        let vaultName: string;
+        
+        if (parentOpts.global) {
+          vaultPath = getGlobalVaultPath(config);
+          vaultName = 'global';
+        } else if (parentOpts.name) {
+          vaultPath = await initNamedVault(projectPath, parentOpts.name);
+          vaultName = parentOpts.name;
+        } else {
+          vaultPath = getProjectVaultPath(projectPath, config);
+          vaultName = 'project';
         }
+        
+        const vaultDir = path.dirname(vaultPath);
+        await ensureDir(vaultDir);
+        console.log(chalk.green(`Vault "${vaultName}" initialized at ${vaultPath}`));
+      })
+  )
+  .addCommand(
+    new Command('add')
+      .description('Add a variable to vault')
+      .argument('<name>', 'Variable name')
+      .option('-v, --value <value>', 'Variable value')
+      .option('-t, --tags <tags>', 'Tags (comma-separated)')
+      .action(async (name, options, cmd) => {
+        const parentOpts = cmd.parent.opts();
+        const vaultOverride = parentOpts.global ? 'global' : parentOpts.project ? 'project' : undefined;
+        
+        await withSession(async (storage) => {
+          const value = options.value || (await inquirer.prompt([{ type: 'input', name: 'value', message: 'Value:' }])).value;
+          const tags = options.tags ? options.tags.split(',').map((t: string) => t.trim()) : [];
+          
+          const now = new Date().toISOString();
+          await storage.set(name, {
+            name,
+            value,
+            encrypted: storage.encrypted,
+            created: now,
+            updated: now,
+            sync_to_env: true,
+            tags,
+          });
+          console.log(chalk.green(`Variable '${name}' added to vault`));
+        }, vaultOverride);
+      })
+  )
+  .addCommand(
+    new Command('list')
+      .description('List vault contents')
+      .option('-v, --show-values', 'Show actual values')
+      .action(async (options, cmd) => {
+        const parentOpts = cmd.parent.opts();
+        const vaultOverride = parentOpts.global ? 'global' : parentOpts.project ? 'project' : undefined;
+        
+        await withSession(async (storage) => {
+          const variables = await storage.load();
+          const names = Object.keys(variables);
+          if (names.length === 0) {
+            console.log(chalk.gray('Vault is empty'));
+            return;
+          }
+          for (const name of names) {
+            const v = variables[name];
+            const display = options.showValues ? v.value : maskValue(v.value);
+            const tags = v.tags?.length ? ` [${v.tags.join(', ')}]` : '';
+            console.log(`  ${name} = ${display}${tags}`);
+          }
+        }, vaultOverride);
+      })
+  )
+  .addCommand(
+    new Command('get')
+      .description('Get a variable from vault')
+      .argument('<name>', 'Variable name')
+      .option('-v, --show-value', 'Show actual value')
+      .action(async (name, options, cmd) => {
+        const parentOpts = cmd.parent.opts();
+        const vaultOverride = parentOpts.global ? 'global' : parentOpts.project ? 'project' : undefined;
+        
+        await withSession(async (storage) => {
+          const v = await storage.get(name);
+          if (!v) {
+            console.log(chalk.red(`Variable '${name}' not found`));
+            return;
+          }
+          const display = options.showValue ? v.value : maskValue(v.value);
+          console.log(`${name} = ${display}`);
+        }, vaultOverride);
+      })
+  )
+  .addCommand(
+    new Command('delete')
+      .description('Delete a variable from vault')
+      .argument('<name>', 'Variable name')
+      .action(async (name, cmd) => {
+        const parentOpts = cmd.parent.parent.opts();
+        const vaultOverride = parentOpts.global ? 'global' : parentOpts.project ? 'project' : undefined;
+        
+        await withSession(async (storage) => {
+          const deleted = await storage.delete(name);
+          if (deleted) {
+            console.log(chalk.green(`Variable '${name}' deleted`));
+          } else {
+            console.log(chalk.red(`Variable '${name}' not found`));
+          }
+        }, vaultOverride);
       })
   );
+
+program
+  .command('vault-switch')
+  .description('Switch active vault context')
+  .argument('<name>', 'Vault name (global, project, or named vault)')
+  .action(async (name: string) => {
+    const projectPath = process.cwd();
+    const config = await loadConfig(projectPath);
+    
+    if (name !== 'global' && name !== 'project') {
+      const vaultDir = path.join(projectPath, '.envcp/vaults', name);
+      if (!await pathExists(vaultDir)) {
+        console.log(chalk.red(`Named vault "${name}" does not exist. Create it with: envcp vault --name ${name} init`));
+        return;
+      }
+    }
+    
+    await setActiveVault(projectPath, name);
+    console.log(chalk.green(`Switched to vault: ${name}`));
+  });
+
+program
+  .command('vault-list')
+  .description('List all available vaults')
+  .action(async () => {
+    const projectPath = process.cwd();
+    const config = await loadConfig(projectPath);
+    const vaults = await listVaults(projectPath, config);
+    
+    console.log('Available vaults:');
+    for (const v of vaults) {
+      const active = v.active ? chalk.green(' (active)') : '';
+      const exists = await pathExists(v.path);
+      const status = exists ? '' : chalk.gray(' [not initialized]');
+      console.log(`  ${v.name}${active}${status}`);
+      console.log(chalk.gray(`    ${v.path}`));
+    }
+});
 
 program
   .command('keychain')
