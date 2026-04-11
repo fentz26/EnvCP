@@ -54,6 +54,17 @@ const DEFAULT_CONFIG: Partial<EnvCPConfig> = {
     allow_numeric_only: false,
     allow_single_char: false,
   },
+  hsm: {
+    enabled: false,
+    type: 'yubikey' as const,
+    require_touch: true,
+    protected_key_path: '.envcp/.hsm-key',
+  },
+  auth: {
+    method: 'password' as const,
+    multi_factors: ['password', 'hsm'] as Array<'password' | 'keychain' | 'hsm'>,
+    fallback: 'password' as const,
+  },
 };
 
 // Deep merge utility: project values override global, arrays are replaced

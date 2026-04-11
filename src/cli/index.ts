@@ -11,6 +11,7 @@ import { StorageManager } from '../storage/index.js';
 import { SessionManager } from '../utils/session.js';
 import { maskValue, validatePassword, encrypt, decrypt, generateRecoveryKey, createRecoveryData, recoverPassword } from '../utils/crypto.js';
 import { KeychainManager } from '../utils/keychain.js';
+import { HsmManager } from '../utils/hsm.js';
 import { checkForUpdate, formatUpdateMessage, logUpdateCheck } from '../utils/update-checker.js';
 import { Variable, EnvCPConfig } from '../types.js';
 import {
@@ -50,8 +51,99 @@ async function withSession(fn: (storage: StorageManager, password: string, confi
   let password = '';
 
   if (!session) {
-    if (config.keychain?.enabled) {
-      const keychain = new KeychainManager(config.keychain.service || 'envcp');
+    const authMethod = config.auth?.method ?? 'password';
+    const fallback = config.auth?.fallback ?? 'password';
+
+    // --- HSM-only or multi-factor auth ---
+    if (authMethod === 'hsm' || authMethod === 'multi') {
+      let hsm: ReturnType<typeof HsmManager.fromConfig> | null = null;
+      try {
+        hsm = HsmManager.fromConfig(config, projectPath);
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.log(chalk.red(`HSM configuration error: ${msg}`));
+        if (fallback === 'none') return;
+        if (fallback === 'recovery_key') {
+          console.log(chalk.yellow('Run "envcp recover" to restore access using your recovery key.'));
+          return;
+        }
+        console.log(chalk.gray('Falling back to password...'));
+      }
+
+      if (hsm) {
+        const hsmAvailable = await hsm.isAvailable();
+
+        if (hsmAvailable) {
+          try {
+            // For 'hsm' mode: .hsm-key holds the vault password directly.
+            // For 'multi' mode: .hsm-key holds a random secret; vault key =
+            //   combineSecrets(hsmSecret, userFactor). Both factors are required.
+            const hsmSecret = await hsm.retrieveVaultPassword();
+
+            if (authMethod === 'multi') {
+              const factors = config.auth?.multi_factors ?? ['password', 'hsm'];
+              let userFactor = '';
+              if (factors.includes('password')) {
+                const answer = await inquirer.prompt([
+                  { type: 'password', name: 'password', message: 'Enter password (multi-factor):', mask: '*' }
+                ]);
+                userFactor = answer.password;
+              } else if (factors.includes('keychain')) {
+                const keychain = new KeychainManager(config.keychain?.service || 'envcp');
+                const stored = await keychain.retrievePassword(projectPath);
+                if (stored) {
+                  userFactor = stored;
+                  console.log(chalk.gray('Password retrieved from OS keychain (multi-factor)'));
+                }
+              }
+              if (!userFactor) {
+                console.log(chalk.red('Multi-factor authentication requires a second factor (password or keychain) but none was provided.'));
+                if (fallback === 'none') return;
+                if (fallback === 'recovery_key') {
+                  console.log(chalk.yellow('Run "envcp recover" to restore access using your recovery key.'));
+                  return;
+                }
+                console.log(chalk.gray('Falling back to password...'));
+              } else {
+                password = HsmManager.combineSecrets(hsmSecret, userFactor);
+                console.log(chalk.gray(`Authenticated via ${hsm.backendName} + password`));
+              }
+            } else {
+              password = hsmSecret;
+              console.log(chalk.gray(`Authenticated via ${hsm.backendName}`));
+            }
+          } catch (err: unknown) {
+            const msg = err instanceof Error ? err.message : String(err);
+            if (fallback === 'none') {
+              console.log(chalk.red(`HSM authentication failed: ${msg}`));
+              return;
+            }
+            if (fallback === 'recovery_key') {
+              console.log(chalk.yellow(`HSM authentication failed: ${msg}`));
+              console.log(chalk.yellow('Run "envcp recover" to restore access using your recovery key.'));
+              return;
+            }
+            console.log(chalk.yellow(`HSM unavailable: ${msg}`));
+            console.log(chalk.gray('Falling back to password...'));
+          }
+        } else {
+          if (fallback === 'none') {
+            console.log(chalk.red(`HSM device (${hsm.backendName}) not found. No fallback configured.`));
+            return;
+          }
+          if (fallback === 'recovery_key') {
+            console.log(chalk.yellow(`HSM device (${hsm.backendName}) not available.`));
+            console.log(chalk.yellow('Run "envcp recover" to restore access using your recovery key.'));
+            return;
+          }
+          console.log(chalk.yellow(`HSM device (${hsm.backendName}) not available. Falling back to password...`));
+        }
+      }
+    }
+
+    // --- OS keychain ---
+    if (!password && (authMethod === 'keychain' || config.keychain?.enabled)) {
+      const keychain = new KeychainManager(config.keychain?.service || 'envcp');
       const stored = await keychain.retrievePassword(projectPath);
       if (stored) {
         password = stored;
@@ -59,6 +151,7 @@ async function withSession(fn: (storage: StorageManager, password: string, confi
       }
     }
 
+    // --- Password prompt fallback ---
     if (!password) {
       const answer = await inquirer.prompt([
         { type: 'password', name: 'password', message: 'Enter password:', mask: '*' }
@@ -100,6 +193,10 @@ program
   .option('--no-encrypt', 'Skip encryption (passwordless mode)')
   .option('--skip-env', 'Skip .env auto-import')
   .option('--skip-mcp', 'Skip MCP auto-registration')
+  .option('--auth-method <method>', 'Authentication method: password | keychain | hsm | multi (default: password)')
+  .option('--hsm-type <type>', 'HSM type for --auth-method hsm|multi: yubikey | gpg | pkcs11')
+  .option('--key-id <id>', 'GPG key ID or PKCS#11 key label for HSM auth')
+  .option('--pkcs11-lib <path>', 'Path to PKCS#11 shared library for --hsm-type pkcs11')
   .action(async (options) => {
     const projectPath = process.cwd();
     const projectName = options.project || path.basename(projectPath);
@@ -251,6 +348,77 @@ program
       }
     }
 
+    // Setup HSM authentication if --auth-method hsm|multi provided
+    const authMethod = options.authMethod as string | undefined;
+    if (pwd && (authMethod === 'hsm' || authMethod === 'multi')) {
+      const hsmType = (options.hsmType as 'yubikey' | 'gpg' | 'pkcs11') || 'yubikey';
+      config.hsm = {
+        ...config.hsm,
+        enabled: true,
+        type: hsmType,
+        key_id: options.keyId ?? config.hsm?.key_id,
+        pkcs11_lib: options.pkcs11Lib ?? config.hsm?.pkcs11_lib,
+        require_touch: config.hsm?.require_touch ?? true,
+        protected_key_path: config.hsm?.protected_key_path ?? '.envcp/.hsm-key',
+      };
+      config.auth = {
+        method: authMethod as 'hsm' | 'multi',
+        multi_factors: ['password', 'hsm'],
+        fallback: 'password',
+      };
+
+      let hsm: ReturnType<typeof HsmManager.fromConfig> | null = null;
+      try {
+        hsm = HsmManager.fromConfig(config, projectPath);
+      } catch (err: unknown) {
+        console.log(chalk.yellow(`  HSM configuration error: ${err instanceof Error ? err.message : String(err)}`));
+        console.log(chalk.gray('  Run "envcp unlock --setup-hsm" later to enable hardware authentication.'));
+        await saveConfig(config, projectPath);
+      }
+
+      if (hsm) {
+        if (await hsm.isAvailable()) {
+          try {
+            if (authMethod === 'multi') {
+              // For multi-factor: store a random secret in .hsm-key; the vault
+              // (just created) is encrypted with combineSecrets(random, pwd).
+              const { randomBytes } = await import('crypto');
+              const hsmRandom = randomBytes(32).toString('hex');
+              pwd = HsmManager.combineSecrets(hsmRandom, pwd);
+              // Re-key any variables imported above
+              const vaultPath = path.join(projectPath, config.storage.path);
+              const s = new StorageManager(vaultPath, config.storage.encrypted);
+              // Re-encrypt: load with original pwd (already changed above), so
+              // we pass the original before reassignment — handled by re-saving below.
+              // The vault was created/written with the original pwd by the import
+              // block above. Re-key it now.
+              const origPwd = options.password as string | undefined;
+              if (origPwd) {
+                s.setPassword(origPwd);
+                const vars = await s.load();
+                s.setPassword(pwd);
+                await s.save(vars);
+              }
+              await hsm.protectVaultPassword(hsmRandom);
+            } else {
+              await hsm.protectVaultPassword(pwd);
+            }
+            await saveConfig(config, projectPath);
+            console.log('');
+            console.log(chalk.green(`  Vault protected by ${hsm.backendName} (${authMethod})`));
+            console.log(chalk.gray('  Future sessions will authenticate via hardware'));
+          } catch (err: unknown) {
+            console.log(chalk.yellow(`  HSM setup warning: ${err instanceof Error ? err.message : String(err)}`));
+            console.log(chalk.gray('  Falling back to password authentication'));
+          }
+        } else {
+          console.log(chalk.yellow(`  HSM device (${hsm.backendName}) not available at init time.`));
+          console.log(chalk.gray('  Run "envcp unlock --setup-hsm" later to enable hardware authentication.'));
+          await saveConfig(config, projectPath);
+        }
+      }
+    }
+
     console.log('');
     console.log(chalk.green('Done! Your AI tools can now use EnvCP.'));
   });
@@ -260,6 +428,11 @@ program
   .description('Unlock EnvCP session with password')
   .option('-p, --password <password>', 'Password (will prompt if not provided)')
   .option('--save-to-keychain', 'Save password to OS keychain for auto-unlock')
+  .option('--setup-hsm', 'Protect vault password with hardware security module')
+  .option('--multi', 'Use multi-factor: HSM + password (re-encrypts vault with combined key)')
+  .option('--hsm-type <type>', 'HSM type: yubikey | gpg | pkcs11 (default: yubikey)')
+  .option('--key-id <id>', 'GPG key ID or PKCS#11 key label')
+  .option('--pkcs11-lib <path>', 'Path to PKCS#11 shared library (.so / .dll)')
   .action(async (options) => {
     const projectPath = process.cwd();
     const config = await loadConfig(projectPath);
@@ -362,6 +535,72 @@ program
         }
       } else {
         console.log(chalk.red(`OS keychain not available (${keychain.backendName})`));
+      }
+    }
+
+    // Setup HSM if requested
+    if (options.setupHsm) {
+      const hsmType = (options.hsmType as 'yubikey' | 'gpg' | 'pkcs11') || 'yubikey';
+      const isMulti = !!options.multi;
+
+      config.hsm = {
+        ...config.hsm,
+        enabled: true,
+        type: hsmType,
+        key_id: options.keyId ?? config.hsm?.key_id,
+        pkcs11_lib: options.pkcs11Lib ?? config.hsm?.pkcs11_lib,
+        require_touch: config.hsm?.require_touch ?? true,
+        protected_key_path: config.hsm?.protected_key_path ?? '.envcp/.hsm-key',
+      };
+      config.auth = {
+        ...config.auth,
+        method: isMulti ? 'multi' : 'hsm',
+        multi_factors: ['password', 'hsm'],
+        fallback: config.auth?.fallback ?? 'password',
+      };
+
+      let hsm: ReturnType<typeof HsmManager.fromConfig>;
+      try {
+        hsm = HsmManager.fromConfig(config, projectPath);
+      } catch (err: unknown) {
+        console.log(chalk.red(`HSM configuration error: ${err instanceof Error ? err.message : String(err)}`));
+        return;
+      }
+
+      if (!await hsm.isAvailable()) {
+        console.log(chalk.red(`HSM device (${hsm.backendName}) not available. Aborting HSM setup.`));
+        return;
+      }
+
+      try {
+        if (isMulti) {
+          // Multi-factor: generate a random secret, re-encrypt the vault with
+          // combineSecrets(random, password), store the random via HSM.
+          const { randomBytes } = await import('crypto');
+          const hsmRandom = randomBytes(32).toString('hex');
+          const newVaultKey = HsmManager.combineSecrets(hsmRandom, password);
+
+          // Re-encrypt the vault with the new combined key
+          storage.setPassword(password);
+          const allVars = await storage.load();
+          storage.setPassword(newVaultKey);
+          await storage.save(allVars);
+
+          await hsm.protectVaultPassword(hsmRandom);
+          // Update session to use new vault key
+          await sessionManager.destroy();
+          await sessionManager.create(newVaultKey);
+        } else {
+          await hsm.protectVaultPassword(password);
+        }
+
+        await saveConfig(config, projectPath);
+        console.log(chalk.green(`Vault password protected by ${hsm.backendName}`));
+        console.log(chalk.gray(`  Key file: ${config.hsm.protected_key_path}`));
+        console.log(chalk.gray(`  Auth method: ${config.auth.method}`));
+        console.log(chalk.gray('  Future sessions will authenticate via hardware'));
+      } catch (err: unknown) {
+        console.log(chalk.red(`HSM setup failed: ${err instanceof Error ? err.message : String(err)}`));
       }
     }
   });
