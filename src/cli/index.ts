@@ -191,6 +191,7 @@ program
               encrypted: config.storage.encrypted,
               created: now, updated: now,
               sync_to_env: true,
+              protected: false,
             });
           }
 
@@ -638,6 +639,7 @@ program
         created: now,
         updated: now,
         sync_to_env: true,
+        protected: false,
       };
 
       await storage.set(name, variable);
@@ -1406,6 +1408,7 @@ program
             updated: now,
             sync_to_env: true,
             tags,
+            protected: false,
           });
           console.log(chalk.green(`Variable '${name}' added to vault`));
         }, vaultOverride);
