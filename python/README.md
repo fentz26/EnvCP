@@ -40,7 +40,7 @@ This Python package is a thin wrapper that calls `npx @fentz26/envcp` under the 
 
 ## Links
 
-- **Homepage:** https://envcp.fentz.dev
-- **Documentation:** https://envcp.fentz.dev/docs
+- **Homepage:** https://envcp.org
+- **Documentation:** https://envcp.org/docs
 - **GitHub:** https://github.com/fentz26/EnvCP
 - **npm:** https://www.npmjs.com/package/@fentz26/envcp

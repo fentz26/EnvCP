@@ -45,7 +45,7 @@ if npm install -g @fentz26/envcp; then
     echo "  envcp add KEY      # Add a secret"
     echo "  envcp --help       # See all commands"
     echo ""
-    echo -e "${BOLD}Docs:${NC} https://envcp.fentz.dev"
+    echo -e "${BOLD}Docs:${NC} https://envcp.org"
 else
     echo ""
     echo -e "${RED}Installation failed. Try with sudo:${NC}"

@@ -31,8 +31,8 @@ requires-python = ">=3.8"
 dependencies = []
 
 [project.urls]
-Homepage = "https://envcp.fentz.dev"
-Documentation = "https://envcp.fentz.dev/docs"
+Homepage = "https://envcp.org"
+Documentation = "https://envcp.org/docs"
 Repository = "https://github.com/fentz26/EnvCP"
 Issues = "https://github.com/fentz26/EnvCP/issues"
 

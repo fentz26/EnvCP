@@ -232,11 +232,11 @@ Versions follow [Semantic Versioning](https://semver.org/).
 ### Added
 
 - **Welcome screen** on first CLI run with vault location info and quick-start guide.
-- **Curl one-line installer**: `curl -fsSL https://envcp.fentz.dev/install.sh | bash`
+- **Curl one-line installer**: `curl -fsSL https://envcp.org/install.sh | bash`
 - **Mintlify documentation site** with wiki sync CD pipeline.
 - **`envcp vault rename`** command to rename the current project vault.
 - **Coverage reporting** in CI with configurable threshold.
-- **Cloudflare Worker** for docs proxy and API routes at `envcp.fentz.dev`.
+- **Cloudflare Worker** for docs proxy and API routes at `envcp.org`.
 - `ASSISTANT.md` for Mintlify documentation context.
 
 ### Fixed

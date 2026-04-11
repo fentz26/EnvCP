@@ -1,7 +1,7 @@
 # EnvCP
 
 <p align="center">
-  <a href="https://envcp.fentz.dev/docs"><img src="../../assets/logo-ascii.png" alt="EnvCP" width="100%"></a>
+  <a href="https://envcp.org/docs"><img src="../../assets/logo-ascii.png" alt="EnvCP" width="100%"></a>
 </p>
 
 <p align="center">
@@ -98,9 +98,9 @@ envcp export [--format env|json|yaml]
 
 ## 문서
 
-- [전체 문서](https://envcp.fentz.dev/docs)
-- [빠른 시작 가이드](https://envcp.fentz.dev/docs/quick-start)
-- [CLI 참조](https://envcp.fentz.dev/docs/cli-reference)
+- [전체 문서](https://envcp.org/docs)
+- [빠른 시작 가이드](https://envcp.org/docs/quick-start)
+- [CLI 참조](https://envcp.org/docs/cli-reference)
 
 ---
 

@@ -172,7 +172,7 @@ jobs:
           MCP_REGISTRY_PRIVATE_KEY: ${{ secrets.MCP_REGISTRY_PRIVATE_KEY }}
         run: |
           echo "$MCP_REGISTRY_PRIVATE_KEY" > /tmp/key.pem
-          mcp-publisher login dns --domain "envcp.fentz.dev" --private-key "$(openssl pkey -in /tmp/key.pem -noout -text | grep -A3 'priv:' | tail -n +2 | tr -d ' :\n')"
+          mcp-publisher login dns --domain "envcp.org" --private-key "$(openssl pkey -in /tmp/key.pem -noout -text | grep -A3 'priv:' | tail -n +2 | tr -d ' :\n')"
 
       - name: Publish to MCP Registry
         run: mcp-publisher publish

@@ -1,7 +1,7 @@
 # EnvCP
 
 <p align="center">
-  <a href="https://envcp.fentz.dev/docs"><img src="../../assets/logo-ascii.png" alt="EnvCP" width="100%"></a>
+  <a href="https://envcp.org/docs"><img src="../../assets/logo-ascii.png" alt="EnvCP" width="100%"></a>
 </p>
 
 <p align="center">
@@ -98,9 +98,9 @@ envcp export [--format env|json|yaml]
 
 ## Documentación
 
-- [Documentación completa](https://envcp.fentz.dev/docs)
-- [Guía de inicio rápido](https://envcp.fentz.dev/docs/quick-start)
-- [Referencia CLI](https://envcp.fentz.dev/docs/cli-reference)
+- [Documentación completa](https://envcp.org/docs)
+- [Guía de inicio rápido](https://envcp.org/docs/quick-start)
+- [Referencia CLI](https://envcp.org/docs/cli-reference)
 
 ---
 

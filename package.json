@@ -3,7 +3,7 @@
   "version": "1.1.0",
   "mcpName": "dev.fentz.envcp/envcp",
   "description": "MCP server for secure environment variable management - Keep your secrets safe from AI agents",
-  "homepage": "https://envcp.fentz.dev",
+  "homepage": "https://envcp.org",
   "repository": {
     "type": "git",
     "url": "https://github.com/fentz26/EnvCP.git"

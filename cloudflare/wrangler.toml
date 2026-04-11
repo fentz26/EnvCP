@@ -6,5 +6,5 @@ compatibility_date = "2024-01-01"
 ENVIRONMENT = "production"
 
 [[routes]]
-pattern = "envcp.fentz.dev/*"
+pattern = "envcp.org/*"
 zone_name = "fentz.dev"

@@ -35,7 +35,7 @@ All code examples use:
 
 ### Installation
 ```bash
-curl -fsSL https://envcp.fentz.dev/install.sh | bash
+curl -fsSL https://envcp.org/install.sh | bash
 ```
 
 ### Basic Usage
@@ -61,4 +61,4 @@ envcp serve --mode auto
 
 - GitHub Issues: https://github.com/fentz26/EnvCP/issues
 - Email: contact@fentz.dev
-- Docs: https://envcp.fentz.dev/docs/
+- Docs: https://envcp.org/docs/

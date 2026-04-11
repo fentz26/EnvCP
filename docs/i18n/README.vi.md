@@ -1,7 +1,7 @@
 # EnvCP
 
 <p align="center">
-  <a href="https://envcp.fentz.dev/docs"><img src="../../assets/logo-ascii.png" alt="EnvCP" width="100%"></a>
+  <a href="https://envcp.org/docs"><img src="../../assets/logo-ascii.png" alt="EnvCP" width="100%"></a>
 </p>
 
 <p align="center">
@@ -98,9 +98,9 @@ envcp export [--format env|json|yaml]
 
 ## Tài liệu
 
-- [Tài liệu đầy đủ](https://envcp.fentz.dev/docs)
-- [Hướng dẫn bắt đầu nhanh](https://envcp.fentz.dev/docs/quick-start)
-- [Tham khảo CLI](https://envcp.fentz.dev/docs/cli-reference)
+- [Tài liệu đầy đủ](https://envcp.org/docs)
+- [Hướng dẫn bắt đầu nhanh](https://envcp.org/docs/quick-start)
+- [Tham khảo CLI](https://envcp.org/docs/cli-reference)
 
 ---
 

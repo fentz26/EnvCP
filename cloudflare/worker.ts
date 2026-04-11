@@ -27,7 +27,7 @@ app.all('/docs/*', async (c) => {
   });
   
   proxyRequest.headers.set('Host', DOCS_URL);
-  proxyRequest.headers.set('X-Forwarded-Host', 'envcp.fentz.dev');
+  proxyRequest.headers.set('X-Forwarded-Host', 'envcp.org');
   proxyRequest.headers.set('X-Forwarded-Proto', 'https');
   
   try {
@@ -49,7 +49,7 @@ app.all('/mintlify-assets/*', async (c) => {
   });
   
   proxyRequest.headers.set('Host', DOCS_URL);
-  proxyRequest.headers.set('X-Forwarded-Host', 'envcp.fentz.dev');
+  proxyRequest.headers.set('X-Forwarded-Host', 'envcp.org');
   proxyRequest.headers.set('X-Forwarded-Proto', 'https');
   
   try {
@@ -71,7 +71,7 @@ app.all('/_mintlify/*', async (c) => {
   });
   
   proxyRequest.headers.set('Host', DOCS_URL);
-  proxyRequest.headers.set('X-Forwarded-Host', 'envcp.fentz.dev');
+  proxyRequest.headers.set('X-Forwarded-Host', 'envcp.org');
   proxyRequest.headers.set('X-Forwarded-Proto', 'https');
   
   try {
@@ -108,7 +108,7 @@ app.get('/', (c) => {
       install: '/install.sh'
     },
     github: 'https://github.com/fentz26/EnvCP',
-    install: 'curl -fsSL https://envcp.fentz.dev/install.sh | bash'
+    install: 'curl -fsSL https://envcp.org/install.sh | bash'
   });
 });
 
@@ -135,7 +135,7 @@ app.get('/api/docs', (c) => {
       'GET /install.sh': 'Installation script',
       'GET /docs/*': 'Documentation (proxied from Mintlify)'
     },
-    install: 'curl -fsSL https://envcp.fentz.dev/install.sh | bash'
+    install: 'curl -fsSL https://envcp.org/install.sh | bash'
   });
 });
 
