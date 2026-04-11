@@ -275,3 +275,93 @@ describe('envcp_run require_command_whitelist', () => {
     expect(result.stdout.trim()).toBe('hi');
   });
 });
+
+describe('envcp_run disallow_root_delete — path normalization', () => {
+  let tempDir: string;
+  let adapter: RESTAdapter;
+
+  beforeEach(async () => {
+    tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-rootnorm-'));
+    adapter = new RESTAdapter(
+      makeConfig(undefined, { disallow_root_delete: true, allowed_commands: ['rm'] }),
+      tempDir,
+    );
+    await adapter.init();
+  });
+
+  afterEach(async () => {
+    if (tempDir) await fs.rm(tempDir, { recursive: true, force: true });
+  });
+
+  it('rejects rm -rf with double-slash // (normalizes to /)', async () => {
+    await expect(
+      adapter.callTool('envcp_run', { command: 'rm -rf //', variables: [] }),
+    ).rejects.toThrow(/disallow_root_delete/i);
+  });
+
+  it('rejects rm -rf /. (dot in root)', async () => {
+    await expect(
+      adapter.callTool('envcp_run', { command: 'rm -rf /.', variables: [] }),
+    ).rejects.toThrow(/disallow_root_delete/i);
+  });
+});
+
+describe('envcp_run disallow_path_manipulation', () => {
+  let tempDir: string;
+
+  afterEach(async () => {
+    if (tempDir) await fs.rm(tempDir, { recursive: true, force: true });
+  });
+
+  it('rejects when an injected vault variable overrides HOME to /', async () => {
+    tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-pathman-'));
+    const adapter = new RESTAdapter(
+      makeConfig(undefined, {
+        disallow_path_manipulation: true,
+        allowed_commands: ['env'],
+      }),
+      tempDir,
+    );
+    await adapter.init();
+    // Store a variable named HOME with a dangerous value
+    await adapter.callTool('envcp_set', { name: 'HOME', value: '/' });
+
+    await expect(
+      adapter.callTool('envcp_run', { command: 'env', variables: ['HOME'] }),
+    ).rejects.toThrow(/disallow_path_manipulation/i);
+  });
+
+  it('rejects when an injected vault variable sets PATH with directory traversal', async () => {
+    tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-pathman2-'));
+    const adapter = new RESTAdapter(
+      makeConfig(undefined, {
+        disallow_path_manipulation: true,
+        allowed_commands: ['env'],
+      }),
+      tempDir,
+    );
+    await adapter.init();
+    await adapter.callTool('envcp_set', { name: 'PATH', value: '/usr/bin:../../bin' });
+
+    await expect(
+      adapter.callTool('envcp_run', { command: 'env', variables: ['PATH'] }),
+    ).rejects.toThrow(/disallow_path_manipulation/i);
+  });
+
+  it('allows safe PATH values', async () => {
+    tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-pathman3-'));
+    const adapter = new RESTAdapter(
+      makeConfig(undefined, {
+        disallow_path_manipulation: true,
+        allowed_commands: ['env'],
+      }),
+      tempDir,
+    );
+    await adapter.init();
+    await adapter.callTool('envcp_set', { name: 'APP_PATH', value: '/usr/local/bin:/usr/bin' });
+
+    // APP_PATH is not a critical key — should inject fine
+    const result = await adapter.callTool('envcp_run', { command: 'env', variables: ['APP_PATH'] }) as { stdout: string };
+    expect(result.stdout).toContain('APP_PATH=/usr/local/bin:/usr/bin');
+  });
+});
