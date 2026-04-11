@@ -392,32 +392,31 @@ storage:
 
 session:
   enabled: true
-  timeout: 1800 # 30 minutes
+  timeout_minutes: 30
+  max_extensions: 5
 
 access:
   allow_ai_read: true
   allow_ai_write: false
   allow_ai_active_check: false # Prevent AI from proactively listing
-  require_variable_password: false # Require password for all new variables
+  require_variable_password: false # Require password for all protected variables
   require_confirmation: true
-  blacklist:
-  - "*_SECRET"
-  - "*_PRIVATE"
-  - "ADMIN_*"
+  blacklist_patterns:
+    - "*_SECRET"
+    - "*_PRIVATE"
+    - "ADMIN_*"
 
 password:
-  min_length: 1 # No requirements by default
-  require_uppercase: false
-  require_lowercase: false
-  require_numbers: false
-  require_special: false
+  min_length: 8 # Default minimum
+  require_complexity: false
+  allow_numeric_only: false
 
 sync:
   enabled: true
   target: .env
   exclude:
-  - "*_PRIVATE"
-  - "*_SECRET"
+    - "*_PRIVATE"
+    - "*_SECRET"
 ```
 
 ## AI Access Control
@@ -437,7 +436,7 @@ Block AI from accessing sensitive variables:
 
 ```yaml
 access:
-  blacklist:
+  blacklist_patterns:
     - "*_SECRET"
     - "*_PRIVATE"
     - "ADMIN_*"
