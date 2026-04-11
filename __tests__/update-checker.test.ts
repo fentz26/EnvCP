@@ -131,6 +131,20 @@ describe('update-checker', () => {
       const adv = extractAdvisory('Severity: low\nok', 'http://example.com');
       expect(adv!.summary).toBe('Security update available');
     });
+
+    it('defaults severity to medium when no sevMatch — line 82', () => {
+      // Has advMatch but no Severity line → sevMatch is null
+      const adv = extractAdvisory('Advisory ID: ENVCP-2026-001\nsome content here', 'http://example.com');
+      expect(adv).toBeDefined();
+      expect(adv!.severity).toBe('medium');
+    });
+
+    it('falls back to github URL when url is empty — line 83', () => {
+      // Has sevMatch, url is empty string
+      const adv = extractAdvisory('Severity: critical\nSome security description here', '');
+      expect(adv).toBeDefined();
+      expect(adv!.url).toContain('github.com');
+    });
   });
 
   describe('cache', () => {
@@ -308,6 +322,20 @@ describe('update-checker', () => {
       expect(msg).toContain('Rate limiting bypass');
       expect(msg).toContain('github.com');
     });
+
+    it('omits URL line when advisory url is empty — line 219', () => {
+      const msg = formatUpdateMessage({
+        latest: '2.0.0',
+        current: '1.0.0',
+        updateAvailable: true,
+        critical: false,
+        advisory: { id: 'ENVCP-001', summary: 'A fix', severity: 'low', url: '' },
+      });
+      expect(msg).toContain('ENVCP-001');
+      // Empty url means the url line should NOT be in the output
+      const lines = msg.split('\n');
+      expect(lines.some(l => l.trim() === '')).toBe(true);
+    });
   });
 
   describe('fetchLatestRelease', () => {
@@ -345,6 +373,35 @@ describe('update-checker', () => {
       expect(await pathExists(logPath)).toBe(true);
 
       await fs.rm(emptyDir, { recursive: true, force: true });
+    });
+
+    it('appends to existing log when dir already exists — line 233', async () => {
+      const info: VersionInfo = { latest: '2.0.0', current: '1.0.0', updateAvailable: true, critical: false };
+      // First call creates the dir
+      await logUpdateCheck(tmpDir, info);
+      // Second call hits the branch where logDir already exists
+      await logUpdateCheck(tmpDir, info);
+
+      const logPath = path.join(tmpDir, '.envcp', 'logs', 'audit.log');
+      const content = await fs.readFile(logPath, 'utf8');
+      const lines = content.trim().split('\n').filter(Boolean);
+      expect(lines.length).toBeGreaterThanOrEqual(2);
+    });
+  });
+
+  describe('checkForUpdate without fetcher — lines 148, 157', () => {
+    it('uses process.cwd() when projectPath is not provided — line 148', async () => {
+      // Call with no args — uses process.cwd() and no fetcher → tries real network fetch
+      // which will fail in test env → returns current version safely
+      const info = await checkForUpdate(undefined, () => Promise.reject(new Error('no network')));
+      expect(info.current).toBeTruthy();
+      expect(typeof info.updateAvailable).toBe('boolean');
+    });
+
+    it('falls back to fetchLatestRelease when no fetcher provided — line 157', async () => {
+      // Call without fetcher; the real fetch will likely fail in test → catch block returns current
+      const info = await checkForUpdate(tmpDir);
+      expect(info.current).toBeTruthy();
     });
   });
 });

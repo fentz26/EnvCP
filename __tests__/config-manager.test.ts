@@ -310,6 +310,79 @@ describe('registerMcpConfig', () => {
     const result = await registerMcpConfig(tmpDir);
     expect(result.registered).not.toContain('Google AntiGravity');
   });
+
+  it('registers to OpenCode config (mcp_key format) when file exists', async () => {
+    const opencodePath = path.join(tmpDir, '.config', 'opencode', 'opencode.json');
+    await ensureDir(path.dirname(opencodePath));
+    await fs.writeFile(opencodePath, JSON.stringify({}));
+    const result = await registerMcpConfig(tmpDir);
+    expect(result.registered).toContain('OpenCode');
+    const content = JSON.parse(await fs.readFile(opencodePath, 'utf8'));
+    expect(content.mcp.envcp.type).toBe('local');
+  });
+
+  it('marks OpenCode as already configured when envcp key exists', async () => {
+    const opencodePath = path.join(tmpDir, '.config', 'opencode', 'opencode.json');
+    await ensureDir(path.dirname(opencodePath));
+    await fs.writeFile(opencodePath, JSON.stringify({ mcp: { envcp: { type: 'local' } } }));
+    const result = await registerMcpConfig(tmpDir);
+    expect(result.alreadyConfigured).toContain('OpenCode');
+  });
+
+  it('registers to GitHub Copilot CLI config (mcp_servers_array format) when file exists', async () => {
+    const copilotPath = path.join(tmpDir, '.copilot', 'mcp-config.json');
+    await ensureDir(path.dirname(copilotPath));
+    await fs.writeFile(copilotPath, JSON.stringify({}));
+    const result = await registerMcpConfig(tmpDir);
+    expect(result.registered).toContain('GitHub Copilot CLI');
+    const content = JSON.parse(await fs.readFile(copilotPath, 'utf8'));
+    expect(content.mcp_servers.some((s: { name: string }) => s.name === 'envcp')).toBe(true);
+  });
+
+  it('marks GitHub Copilot CLI as already configured when envcp entry exists', async () => {
+    const copilotPath = path.join(tmpDir, '.copilot', 'mcp-config.json');
+    await ensureDir(path.dirname(copilotPath));
+    await fs.writeFile(copilotPath, JSON.stringify({ mcp_servers: [{ name: 'envcp' }] }));
+    const result = await registerMcpConfig(tmpDir);
+    expect(result.alreadyConfigured).toContain('GitHub Copilot CLI');
+  });
+
+  it('registers Claude Code (mcpServers format) when ~/.claude/mcp.json exists', async () => {
+    const claudePath = path.join(tmpDir, '.claude', 'mcp.json');
+    await ensureDir(path.dirname(claudePath));
+    await fs.writeFile(claudePath, JSON.stringify({}));
+    const result = await registerMcpConfig(tmpDir);
+    expect(result.registered).toContain('Claude Code');
+    const content = JSON.parse(await fs.readFile(claudePath, 'utf8'));
+    expect(content.mcpServers.envcp).toBeDefined();
+  });
+
+  it('registers Zed (context_servers format) when ~/.config/zed/settings.json exists', async () => {
+    const zedPath = path.join(tmpDir, '.config', 'zed', 'settings.json');
+    await ensureDir(path.dirname(zedPath));
+    await fs.writeFile(zedPath, JSON.stringify({}));
+    const result = await registerMcpConfig(tmpDir);
+    expect(result.registered).toContain('Zed');
+    const content = JSON.parse(await fs.readFile(zedPath, 'utf8'));
+    expect((content.context_servers as Record<string, unknown>).envcp).toBeDefined();
+  });
+
+  it('marks Zed as already configured when context_servers.envcp exists', async () => {
+    const zedPath = path.join(tmpDir, '.config', 'zed', 'settings.json');
+    await ensureDir(path.dirname(zedPath));
+    await fs.writeFile(zedPath, JSON.stringify({ context_servers: { envcp: {} } }));
+    const result = await registerMcpConfig(tmpDir);
+    expect(result.alreadyConfigured).toContain('Zed');
+  });
+
+  it('global config (~/.envcp/config.yaml) is merged into loadConfig', async () => {
+    const globalDir = path.join(tmpDir, '.envcp');
+    await ensureDir(globalDir);
+    await fs.writeFile(path.join(globalDir, 'config.yaml'), 'access:\n  allow_ai_read: true\n');
+    const { loadConfig } = await import('../src/config/manager.js');
+    const config = await loadConfig(path.join(tmpDir, 'no-project'));
+    expect(config.access.allow_ai_read).toBe(true);
+  });
 });
 
 describe('canAIActiveCheck / requiresUserReference', () => {
@@ -331,6 +404,113 @@ describe('canAIActiveCheck / requiresUserReference', () => {
   it('returns false when require_user_reference is false', () => {
     const config = EnvCPConfigSchema.parse({ access: { require_user_reference: false } });
     expect(requiresUserReference(config)).toBe(false);
+  });
+});
+
+describe('loadConfig — non-object YAML edge cases', () => {
+  let tmpDir: string;
+  let origHome: string | undefined;
+
+  beforeEach(async () => {
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-nonobj-'));
+    origHome = process.env.HOME;
+    process.env.HOME = tmpDir;
+  });
+
+  afterEach(async () => {
+    process.env.HOME = origHome;
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  });
+
+  it('ignores global config when YAML parses to non-object (e.g. a number)', async () => {
+    const globalDir = path.join(tmpDir, '.envcp');
+    await ensureDir(globalDir);
+    await fs.writeFile(path.join(globalDir, 'config.yaml'), '42\n');
+    // Should not throw; falls back to defaults
+    const config = await loadConfig(tmpDir);
+    expect(config.version).toBe('1.0');
+  });
+
+  it('ignores project config when YAML parses to non-object (e.g. a string)', async () => {
+    await fs.writeFile(path.join(tmpDir, 'envcp.yaml'), '"just a string"\n');
+    // Should not throw; falls back to defaults
+    const config = await loadConfig(tmpDir);
+    expect(config.version).toBe('1.0');
+  });
+});
+
+describe('registerMcpConfig — platform-specific paths', () => {
+  let tmpDir: string;
+  let origHome: string | undefined;
+  let origPlatform: PropertyDescriptor | undefined;
+
+  beforeEach(async () => {
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-platform-'));
+    origHome = process.env.HOME;
+    process.env.HOME = tmpDir;
+    origPlatform = Object.getOwnPropertyDescriptor(process, 'platform');
+  });
+
+  afterEach(async () => {
+    process.env.HOME = origHome;
+    if (origPlatform) Object.defineProperty(process, 'platform', origPlatform);
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  });
+
+  it('uses darwin-specific paths — line 166', async () => {
+    Object.defineProperty(process, 'platform', { value: 'darwin', writable: true, configurable: true });
+    // Files don't exist on darwin paths, so nothing registers — but the darwin branch is evaluated
+    const result = await registerMcpConfig(tmpDir);
+    expect(Array.isArray(result.registered)).toBe(true);
+  });
+
+  it('uses win32-specific paths — lines 167, 190', async () => {
+    Object.defineProperty(process, 'platform', { value: 'win32', writable: true, configurable: true });
+    // Files don't exist on win32 paths, so nothing registers — but the win32 branches are evaluated
+    const result = await registerMcpConfig(tmpDir);
+    expect(Array.isArray(result.registered)).toBe(true);
+  });
+
+  it('uses USERPROFILE in registerMcpConfig when HOME is unset — line 289', async () => {
+    delete process.env.HOME;
+    process.env.USERPROFILE = tmpDir;
+    try {
+      const result = await registerMcpConfig(tmpDir);
+      expect(Array.isArray(result.registered)).toBe(true);
+    } finally {
+      if (origHome !== undefined) process.env.HOME = origHome;
+      delete process.env.USERPROFILE;
+    }
+  });
+});
+
+describe('loadConfig — USERPROFILE fallback', () => {
+  let tmpDir: string;
+  let origHome: string | undefined;
+  let origUserProfile: string | undefined;
+
+  beforeEach(async () => {
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-userprofile-'));
+    origHome = process.env.HOME;
+    origUserProfile = process.env.USERPROFILE;
+    delete process.env.HOME;
+    process.env.USERPROFILE = tmpDir;
+  });
+
+  afterEach(async () => {
+    if (origHome !== undefined) process.env.HOME = origHome;
+    else delete process.env.HOME;
+    if (origUserProfile !== undefined) process.env.USERPROFILE = origUserProfile;
+    else delete process.env.USERPROFILE;
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  });
+
+  it('uses USERPROFILE when HOME is unset', async () => {
+    const globalDir = path.join(tmpDir, '.envcp');
+    await ensureDir(globalDir);
+    await fs.writeFile(path.join(globalDir, 'config.yaml'), 'access:\n  allow_ai_read: true\n');
+    const config = await loadConfig(tmpDir);
+    expect(config.access.allow_ai_read).toBe(true);
   });
 });
 

@@ -49,6 +49,15 @@ describe('RateLimiter', () => {
   });
 });
 
+describe('RateLimiter default constructor — line 102', () => {
+  it('uses default maxRequests=60 and windowMs=60000', () => {
+    const limiter = new RateLimiter();
+    expect(limiter.isAllowed('ip1')).toBe(true);
+    expect(limiter.getRemainingRequests('ip1')).toBe(59);
+    limiter.destroy();
+  });
+});
+
 describe('rateLimitMiddleware', () => {
   it('strips ::ffff: prefix from IP', () => {
     const limiter = new RateLimiter(5, 60000);
@@ -64,5 +73,18 @@ describe('rateLimitMiddleware', () => {
     const res = new http.ServerResponse(req);
     const result = rateLimitMiddleware(limiter, req, res, ['10.0.0.1']);
     expect(result).toBe(true);
+  });
+
+  it('uses unknown when remoteAddress is undefined — line 155', () => {
+    const limiter = new RateLimiter(1, 60000);
+    const req = { socket: {} } as http.IncomingMessage;
+    const res = new http.ServerResponse(req);
+    // First request should be allowed ('unknown' key)
+    const r1 = rateLimitMiddleware(limiter, req, res);
+    expect(r1).toBe(true);
+    // Second should be blocked (same 'unknown' key, limit=1)
+    const r2 = rateLimitMiddleware(limiter, req, res);
+    expect(r2).toBe(false);
+    limiter.destroy();
   });
 });

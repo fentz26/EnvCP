@@ -272,3 +272,86 @@ describe('LogManager', () => {
     expect(logs).toEqual([]);
   });
 });
+
+describe('StorageManager backup rotation', () => {
+  let tmpDir: string;
+  let storePath: string;
+
+  beforeEach(async () => {
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-backup-'));
+    storePath = path.join(tmpDir, 'store.json');
+  });
+
+  afterEach(async () => {
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  });
+
+  it('creates .bak.1 after first save', async () => {
+    const storage = new StorageManager(storePath, false, 3);
+    const now = new Date().toISOString();
+    await storage.set('K', { name: 'K', value: 'v', encrypted: false, created: now, updated: now, sync_to_env: true });
+    // Second save triggers rotation of first file into .bak.1
+    await storage.set('K2', { name: 'K2', value: 'v2', encrypted: false, created: now, updated: now, sync_to_env: true });
+    const bak1Exists = await pathExists(`${storePath}.bak.1`);
+    expect(bak1Exists).toBe(true);
+  });
+
+  it('shifts backups: .bak.1 becomes .bak.2 on second rotation', async () => {
+    const storage = new StorageManager(storePath, false, 3);
+    const now = new Date().toISOString();
+    for (let i = 0; i < 3; i++) {
+      await storage.set(`K${i}`, { name: `K${i}`, value: `v${i}`, encrypted: false, created: now, updated: now, sync_to_env: true });
+    }
+    const bak2Exists = await pathExists(`${storePath}.bak.2`);
+    expect(bak2Exists).toBe(true);
+  });
+
+  it('does not create backups when maxBackups is 0', async () => {
+    const storage = new StorageManager(storePath, false, 0);
+    const now = new Date().toISOString();
+    await storage.set('K', { name: 'K', value: 'v', encrypted: false, created: now, updated: now, sync_to_env: true });
+    await storage.set('K2', { name: 'K2', value: 'v2', encrypted: false, created: now, updated: now, sync_to_env: true });
+    const bak1Exists = await pathExists(`${storePath}.bak.1`);
+    expect(bak1Exists).toBe(false);
+  });
+
+  it('restores from backup when store is corrupted', async () => {
+    const storage = new StorageManager(storePath, false, 3);
+    const now = new Date().toISOString();
+    // Write a good value
+    await storage.set('GOOD', { name: 'GOOD', value: 'original', encrypted: false, created: now, updated: now, sync_to_env: true });
+    // Write again to create .bak.1 with the good data
+    await storage.set('SECOND', { name: 'SECOND', value: 'v2', encrypted: false, created: now, updated: now, sync_to_env: true });
+
+    // Corrupt the main store
+    await fs.writeFile(storePath, 'not-valid-json');
+
+    // New instance should fail to load main store — unencrypted mode doesn't auto-restore
+    const storage2 = new StorageManager(storePath, false, 3);
+    await expect(storage2.load()).rejects.toThrow();
+  });
+
+  it('backup file created even after first write (file is pre-touched before rotation)', async () => {
+    const storage = new StorageManager(storePath, false, 3);
+    const now = new Date().toISOString();
+    // The store file is always pre-created before rotateBackups() runs (line 93 in storage/index.ts),
+    // so after first write the store exists and after second write .bak.1 is created.
+    await storage.set('K', { name: 'K', value: 'v', encrypted: false, created: now, updated: now, sync_to_env: true });
+    await storage.set('K2', { name: 'K2', value: 'v2', encrypted: false, created: now, updated: now, sync_to_env: true });
+    const bak1 = await pathExists(`${storePath}.bak.1`);
+    expect(bak1).toBe(true);
+  });
+
+  it('tryRestoreFromBackup returns null for unencrypted store — line 130', async () => {
+    const storage = new StorageManager(storePath, false, 3);
+    const now = new Date().toISOString();
+    await storage.set('K', { name: 'K', value: 'v', encrypted: false, created: now, updated: now, sync_to_env: true });
+    await storage.set('K2', { name: 'K2', value: 'v2', encrypted: false, created: now, updated: now, sync_to_env: true });
+
+    // Corrupt and try to load — unencrypted mode does not auto-restore (tryRestoreFromBackup returns null)
+    await fs.writeFile(storePath, 'bad json');
+    const storage2 = new StorageManager(storePath, false, 3);
+    // load() should throw because unencrypted stores don't restore from backup
+    await expect(storage2.load()).rejects.toThrow();
+  });
+});

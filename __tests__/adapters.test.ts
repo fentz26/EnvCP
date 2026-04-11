@@ -379,6 +379,15 @@ describe('RESTAdapter sync and error routes', () => {
     expect(status).toBe(200);
     expect((data as any).data.accessible).toBe(true);
   });
+
+  it('maps generic errors to 500 status — line 250', async () => {
+    // Make callTool throw an error that doesn't contain 'locked', 'not found', or 'disabled'
+    const orig = (adapter as any).callTool.bind(adapter);
+    (adapter as any).callTool = async () => { throw new Error('unexpected internal failure xyz'); };
+    const { status } = await fetch(port, 'GET', '/api/variables');
+    expect(status).toBe(500);
+    (adapter as any).callTool = orig;
+  });
 });
 
 describe('OpenAIAdapter with API key', () => {
@@ -646,5 +655,143 @@ describe('GeminiAdapter with API key', () => {
   it('accepts with x-goog-api-key header', async () => {
     const { status } = await fetch(port, 'GET', '/v1/models', undefined, { 'x-goog-api-key': 'gem-secret' });
     expect(status).toBe(200);
+  });
+});
+
+describe('Adapter rateLimitEnabled=false branch', () => {
+  it('REST adapter allows requests when rate limit disabled — rest.ts:103', async () => {
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-rest-norate-'));
+    const adapter = new RESTAdapter(makeConfig(), tmpDir);
+    const port = 30000 + Math.floor(Math.random() * 10000);
+    await adapter.startServer(port, '127.0.0.1', undefined, { enabled: false, requests_per_minute: 1 });
+    const { status } = await fetch(port, 'GET', '/api/health');
+    expect(status).toBe(200);
+    adapter.stopServer();
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  });
+
+  it('OpenAI adapter allows requests when rate limit disabled — openai.ts:62', async () => {
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-oai-norate-'));
+    const adapter = new OpenAIAdapter(makeConfig(), tmpDir);
+    const port = 30000 + Math.floor(Math.random() * 10000);
+    await adapter.startServer(port, '127.0.0.1', undefined, { enabled: false, requests_per_minute: 1 });
+    const { status } = await fetch(port, 'GET', '/v1/models');
+    expect(status).toBe(200);
+    adapter.stopServer();
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  });
+
+  it('Gemini adapter allows requests when rate limit disabled — gemini.ts:59', async () => {
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-gem-norate-'));
+    const adapter = new GeminiAdapter(makeConfig(), tmpDir);
+    const port = 30000 + Math.floor(Math.random() * 10000);
+    await adapter.startServer(port, '127.0.0.1', undefined, { enabled: false, requests_per_minute: 1 });
+    const { status } = await fetch(port, 'GET', '/v1/models');
+    expect(status).toBe(200);
+    adapter.stopServer();
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  });
+});
+
+describe('RESTAdapter non-api path and edge-case routes', () => {
+  let tmpDir: string;
+  let adapter: RESTAdapter;
+  let port: number;
+
+  beforeAll(async () => {
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-rest-edge-'));
+    adapter = new RESTAdapter(makeConfig(), tmpDir);
+    port = 30000 + Math.floor(Math.random() * 10000);
+    await adapter.startServer(port, '127.0.0.1');
+    await adapter.callTool('envcp_set', { name: 'EDGE_VAR', value: 'edgeval' });
+  });
+
+  afterAll(async () => {
+    adapter.stopServer();
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  });
+
+  it('GET / returns 404 (non-api path — rest.ts:147 false branch)', async () => {
+    const { status } = await fetch(port, 'GET', '/');
+    expect(status).toBe(404);
+  });
+
+  it('GET /api/variables?tags=foo filters by tag (rest.ts:186 true branch)', async () => {
+    const { status } = await fetch(port, 'GET', '/api/variables?tags=foo');
+    expect(status).toBe(200);
+  });
+
+  it('DELETE /api/variables/ without name returns 404 (rest.ts:213 false branch)', async () => {
+    const { status } = await fetch(port, 'DELETE', '/api/variables/');
+    expect(status).toBe(404);
+  });
+});
+
+describe('OpenAI adapter edge cases', () => {
+  let tmpDir: string;
+  let adapter: OpenAIAdapter;
+  let port: number;
+
+  beforeAll(async () => {
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-oai-edge-'));
+    adapter = new OpenAIAdapter(makeConfig(), tmpDir);
+    port = 30000 + Math.floor(Math.random() * 10000);
+    await adapter.startServer(port, '127.0.0.1');
+  });
+
+  afterAll(async () => {
+    adapter.stopServer();
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  });
+
+  it('processToolCalls handles non-Error throw (openai.ts:45 false branch)', async () => {
+    const orig = (adapter as any).callTool.bind(adapter);
+    (adapter as any).callTool = async () => { throw 'string error'; };
+    const results = await adapter.processToolCalls([{
+      id: 'call_str',
+      type: 'function',
+      function: { name: 'envcp_list', arguments: '{}' },
+    }]);
+    expect(results[0].content).toContain('error');
+    (adapter as any).callTool = orig;
+  });
+
+  it('POST /v1/functions/call without arguments uses empty object (openai.ts:129)', async () => {
+    const { status } = await fetch(port, 'POST', '/v1/functions/call', { name: 'envcp_list' });
+    expect(status).toBe(200);
+  });
+
+  it('non-Error thrown in HTTP handler returns 500 (openai.ts:227 false branch)', async () => {
+    const orig = (adapter as any).callTool.bind(adapter);
+    (adapter as any).callTool = async () => { throw 'non-error-string'; };
+    const { status } = await fetch(port, 'POST', '/v1/functions/call', { name: 'envcp_list', arguments: {} });
+    expect(status).toBe(500);
+    (adapter as any).callTool = orig;
+  });
+});
+
+describe('GeminiAdapter edge cases', () => {
+  let tmpDir: string;
+  let adapter: GeminiAdapter;
+  let port: number;
+
+  beforeAll(async () => {
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-gem-edge-'));
+    adapter = new GeminiAdapter(makeConfig(), tmpDir);
+    port = 30000 + Math.floor(Math.random() * 10000);
+    await adapter.startServer(port, '127.0.0.1');
+  });
+
+  afterAll(async () => {
+    adapter.stopServer();
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  });
+
+  it('processFunctionCalls handles non-Error throw (gemini.ts:43 false branch)', async () => {
+    const orig = (adapter as any).callTool.bind(adapter);
+    (adapter as any).callTool = async () => { throw 'gemini string error'; };
+    const results = await adapter.processFunctionCalls([{ name: 'envcp_list', args: {} }]);
+    expect(results[0].response).toHaveProperty('error');
+    (adapter as any).callTool = orig;
   });
 });

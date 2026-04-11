@@ -18,12 +18,13 @@ class TestAdapter extends BaseAdapter {
   // Expose protected methods for testing
   runListVariables(args: { tags?: string[] }) { return this.listVariables(args); }
   runGetVariable(args: { name: string; show_value?: boolean }) { return this.getVariable(args); }
-  runSetVariable(args: { name: string; value: string; tags?: string[]; description?: string }) { return this.setVariable(args); }
+  runSetVariable(args: any) { return this.setVariable(args); }
   runDeleteVariable(args: { name: string }) { return this.deleteVariable(args); }
   runAddToEnv(args: { name: string; env_file?: string }) { return this.addToEnv(args); }
   runCheckAccess(args: { name: string }) { return this.checkAccess(args); }
   runSyncToEnv() { return this.syncToEnv(); }
   runRunCommand(args: { command: string; variables: string[] }) { return this.runCommand(args); }
+  runParseCommand(cmd: string) { return (this as any).parseCommand(cmd); }
 }
 
 const now = new Date().toISOString();
@@ -483,5 +484,130 @@ describe('parseEnv', () => {
   it('strips double-quoted values', () => {
     const result = parseEnv('KEY="hello world"');
     expect(result.KEY).toBe('hello world');
+  });
+
+  it('skips lines without = sign — line 25 (eqIndex === -1 branch)', () => {
+    const result = parseEnv('VALID=value\nno-equals-here\nOTHER=ok');
+    expect(result.VALID).toBe('value');
+    expect(result.OTHER).toBe('ok');
+    expect(Object.keys(result)).not.toContain('no-equals-here');
+  });
+});
+
+describe('BaseAdapter parseCommand edge cases', () => {
+  let tmpDir: string;
+  let adapter: TestAdapter;
+
+  beforeEach(async () => {
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-parse-'));
+    adapter = new TestAdapter(makeConfig({ allowed_commands: ['echo', 'env'] }), tmpDir);
+    await adapter.init();
+  });
+
+  afterEach(async () => {
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  });
+
+  it('handles double space (empty token skipped) — line 647', () => {
+    const result = adapter.runParseCommand('echo  hello');
+    expect(result.program).toBe('echo');
+    expect(result.args).toEqual(['hello']);
+  });
+
+  it('handles trailing space (no trailing empty token) — line 655', () => {
+    const result = adapter.runParseCommand('echo hello ');
+    expect(result.program).toBe('echo');
+    expect(result.args).toEqual(['hello']);
+  });
+
+  it('throws on mismatched single quote — line 658', () => {
+    expect(() => adapter.runParseCommand("echo 'hello")).toThrow('Mismatched quotes');
+  });
+
+  it('throws on mismatched double quote — line 658', () => {
+    expect(() => adapter.runParseCommand('echo "hello')).toThrow('Mismatched quotes');
+  });
+
+  it('handles single-quoted token with spaces', () => {
+    const result = adapter.runParseCommand("echo 'hello world'");
+    expect(result.args).toEqual(['hello world']);
+  });
+
+  it('handles double-quoted token', () => {
+    const result = adapter.runParseCommand('echo "hello world"');
+    expect(result.args).toEqual(['hello world']);
+  });
+});
+
+describe('BaseAdapter syncToEnv value quoting — line 530', () => {
+  let tmpDir: string;
+  let adapter: TestAdapter;
+
+  beforeEach(async () => {
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-syncquote-'));
+    adapter = new TestAdapter(makeConfig(), tmpDir);
+    await adapter.init();
+  });
+
+  afterEach(async () => {
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  });
+
+  it('quotes values containing spaces', async () => {
+    await adapter.seedVariable({ name: 'SPACE_VAR', value: 'hello world', encrypted: false, created: now, updated: now, sync_to_env: true });
+    await adapter.runSyncToEnv();
+    const content = await fs.readFile(path.join(tmpDir, '.env'), 'utf8');
+    expect(content).toContain('SPACE_VAR="hello world"');
+  });
+
+  it('quotes values containing hash character', async () => {
+    await adapter.seedVariable({ name: 'HASH_VAR', value: 'val#ue', encrypted: false, created: now, updated: now, sync_to_env: true });
+    await adapter.runSyncToEnv();
+    const content = await fs.readFile(path.join(tmpDir, '.env'), 'utf8');
+    expect(content).toContain('HASH_VAR="val#ue"');
+  });
+});
+
+describe('BaseAdapter runCommand variable not in storage — line 786', () => {
+  let tmpDir: string;
+  let adapter: TestAdapter;
+
+  beforeEach(async () => {
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-missingvar-'));
+    adapter = new TestAdapter(makeConfig({ allowed_commands: ['env'] }), tmpDir);
+    await adapter.init();
+  });
+
+  afterEach(async () => {
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  });
+
+  it('runs command without injecting missing variable', async () => {
+    const result = await adapter.runRunCommand({ command: 'env', variables: ['NONEXISTENT_XYZ_VAR'] });
+    expect(result.stdout).not.toContain('NONEXISTENT_XYZ_VAR=');
+  });
+});
+
+describe('BaseAdapter checkRootDelete -recursive variant — line 688', () => {
+  let tmpDir: string;
+  let adapter: TestAdapter;
+
+  beforeEach(async () => {
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-recursive-'));
+    adapter = new TestAdapter(makeConfig({
+      allowed_commands: ['rm'],
+      run_safety: { disallow_root_delete: true, disallow_path_manipulation: false, require_command_whitelist: false },
+    }), tmpDir);
+    await adapter.init();
+  });
+
+  afterEach(async () => {
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  });
+
+  it('rejects rm with -recursive (single-dash long form) targeting /', async () => {
+    await expect(
+      adapter.runRunCommand({ command: 'rm -recursive /', variables: [] }),
+    ).rejects.toThrow(/disallow_root_delete/i);
   });
 });

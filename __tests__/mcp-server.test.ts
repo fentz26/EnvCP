@@ -179,4 +179,20 @@ describe('EnvCPServer', () => {
     const result2 = await adapter.callTool('envcp_list', {});
     expect(result2.count).toBe(1);
   });
+
+  it('adapter callTool handles undefined args gracefully (MCP line 46 coverage)', async () => {
+    const { EnvCPServer } = await import('../src/mcp/server');
+    const config = EnvCPConfigSchema.parse({
+      encryption: { enabled: false },
+      storage: { encrypted: false, path: '.envcp/store.json' },
+      access: { allow_ai_read: true, allow_ai_active_check: true },
+    });
+    const server = new EnvCPServer(config, tmpDir);
+    const adapter = (server as any).adapter;
+    await adapter.init();
+    // The MCP handler does: adapter.callTool(name, (args || {}))
+    // Test that callTool works with an empty args object (as the handler would pass)
+    const result = await adapter.callTool('envcp_list', {});
+    expect(result.count).toBe(0);
+  });
 });

@@ -1,8 +1,10 @@
+import { jest } from '@jest/globals';
 import * as fs from 'fs/promises';
 import { ensureDir, pathExists } from '../src/utils/fs.js';
 import * as os from 'os';
 import * as path from 'path';
 import * as http from 'http';
+import { EventEmitter } from 'events';
 import { UnifiedServer } from '../src/server/unified';
 import { EnvCPConfigSchema, ServerConfig } from '../src/types';
 
@@ -665,5 +667,244 @@ describe('UnifiedServer vault-aware startup', () => {
     const { status } = await fetch(port, 'GET', '/api/health');
     expect(status).toBe(200);
     srv.stop();
+  });
+});
+
+describe('UnifiedServer auto_detect=false in all mode', () => {
+  let tmpDir: string;
+  let server: UnifiedServer;
+  let port: number;
+
+  beforeAll(async () => {
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-noauto-'));
+    port = 30000 + Math.floor(Math.random() * 10000);
+    const serverConfig: ServerConfig = {
+      mode: 'all',
+      port,
+      host: '127.0.0.1',
+      cors: true,
+      auto_detect: false,
+    };
+    server = new UnifiedServer(makeConfig(), serverConfig, tmpDir);
+    await server.start();
+  });
+
+  afterAll(async () => {
+    server.stop();
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  });
+
+  it('GET / with auto_detect=false returns detected_client=unknown', async () => {
+    const { status, data } = await fetch(port, 'GET', '/');
+    expect(status).toBe(200);
+    expect((data as any).detected_client).toBe('unknown');
+  });
+
+  it('routes /api/* to REST when auto_detect=false', async () => {
+    const { status } = await fetch(port, 'GET', '/api/health');
+    expect(status).toBe(200);
+  });
+
+  it('routes OpenAI path via explicit path match when auto_detect=false', async () => {
+    const { status } = await fetch(port, 'GET', '/v1/models');
+    expect(status).toBe(200);
+  });
+});
+
+describe('UnifiedServer rate_limit disabled', () => {
+  let tmpDir: string;
+
+  beforeAll(async () => {
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-norate-'));
+  });
+
+  afterAll(async () => {
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  });
+
+  it('skips rate-limiter setup when rate_limit.enabled=false', async () => {
+    const port = 30000 + Math.floor(Math.random() * 10000);
+    const serverConfig: ServerConfig = {
+      mode: 'all',
+      port,
+      host: '127.0.0.1',
+      cors: true,
+      auto_detect: true,
+      rate_limit: { enabled: false, requests_per_minute: 1 },
+    };
+    const srv = new UnifiedServer(makeConfig(), serverConfig, tmpDir);
+    await srv.start();
+    const { status } = await fetch(port, 'GET', '/api/health');
+    expect(status).toBe(200);
+    srv.stop();
+  });
+});
+
+describe('UnifiedServer non-Error throws in catch blocks', () => {
+  let tmpDir: string;
+  let server: UnifiedServer;
+  let port: number;
+
+  beforeAll(async () => {
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-nonerr-'));
+    port = 30000 + Math.floor(Math.random() * 10000);
+    const serverConfig: ServerConfig = { mode: 'all', port, host: '127.0.0.1', cors: true, auto_detect: true };
+    server = new UnifiedServer(makeConfig(), serverConfig, tmpDir);
+    await server.start();
+  });
+
+  afterAll(async () => {
+    server.stop();
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  });
+
+  it('REST handler catches non-Error throw (string)', async () => {
+    const orig = (server as any).restAdapter.callTool;
+    (server as any).restAdapter.callTool = async () => { throw 'string-error'; };
+    const { status, data } = await fetch(port, 'GET', '/api/variables');
+    expect(status).toBe(500);
+    expect((data as any).error).toBe('string-error');
+    (server as any).restAdapter.callTool = orig;
+  });
+
+  it('outer request handler catches non-Error throw (string)', async () => {
+    const orig = (server as any).handleRESTRequest;
+    (server as any).handleRESTRequest = async () => { throw 'outer-string-error'; };
+    const { status, data } = await fetch(port, 'GET', '/api/health');
+    expect(status).toBe(500);
+    expect((data as any).error).toBe('outer-string-error');
+    (server as any).handleRESTRequest = orig;
+  });
+
+  it('OpenAI handler catches non-Error throw (string)', async () => {
+    const orig = (server as any).openaiAdapter.callTool;
+    (server as any).openaiAdapter.callTool = async () => { throw 'openai-string-error'; };
+    const { status, data } = await fetch(port, 'POST', '/v1/functions/call', { name: 'envcp_list', arguments: {} });
+    expect(status).toBe(500);
+    expect((data as any).error.message).toBe('openai-string-error');
+    (server as any).openaiAdapter.callTool = orig;
+  });
+
+  it('Gemini handler catches non-Error throw (string)', async () => {
+    const orig = (server as any).geminiAdapter.processFunctionCalls;
+    (server as any).geminiAdapter.processFunctionCalls = async () => { throw 'gemini-string-error'; };
+    const { status, data } = await fetch(port, 'POST', '/v1/function_calls', { functionCalls: [{ name: 'envcp_list', args: {} }] });
+    expect(status).toBe(500);
+    expect((data as any).error.message).toBe('gemini-string-error');
+    (server as any).geminiAdapter.processFunctionCalls = orig;
+  });
+});
+
+describe('UnifiedServer direct handler calls with null/edge-case urls', () => {
+  let tmpDir: string;
+  let server: UnifiedServer;
+
+  function makeMockRes() {
+    const chunks: Buffer[] = [];
+    const res = {
+      writeHead: jest.fn(),
+      end: jest.fn((data: any) => { if (data) chunks.push(Buffer.from(data)); }),
+      setHeader: jest.fn(),
+      getHeader: jest.fn(),
+    } as any;
+    return { res, chunks };
+  }
+
+  function makeMockReq(url: string | null, method: string) {
+    const req = new EventEmitter() as any;
+    req.url = url;
+    req.method = method;
+    req.headers = { host: 'localhost', 'content-type': 'application/json' };
+    return req;
+  }
+
+  beforeAll(async () => {
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-nullurl-'));
+    const port = 30000 + Math.floor(Math.random() * 10000);
+    const sc: ServerConfig = { mode: 'all', port, host: '127.0.0.1', cors: true, auto_detect: true };
+    server = new UnifiedServer(makeConfig(), sc, tmpDir);
+    await server.start();
+    server.stop();
+  });
+
+  afterAll(async () => {
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  });
+
+  it('handleRESTRequest handles null req.url', async () => {
+    const handle = (server as any).handleRESTRequest.bind(server);
+    const req = makeMockReq(null, 'GET');
+    const { res } = makeMockRes();
+    await handle(req, res);
+    expect(res.end).toHaveBeenCalled();
+  });
+
+  it('handleRESTRequest with non-api path returns 404', async () => {
+    const handle = (server as any).handleRESTRequest.bind(server);
+    const req = makeMockReq('/not-api/something', 'GET');
+    const { res, chunks } = makeMockRes();
+    await handle(req, res);
+    expect(res.end).toHaveBeenCalled();
+    const data = JSON.parse(chunks[0]?.toString() ?? '{}');
+    expect(data.success).toBe(false);
+  });
+
+  it('handleOpenAIRequest handles null req.url', async () => {
+    const handle = (server as any).handleOpenAIRequest.bind(server);
+    const req = makeMockReq(null, 'GET');
+    const { res } = makeMockRes();
+    await handle(req, res);
+    expect(res.end).toHaveBeenCalled();
+  });
+
+  it('handleGeminiRequest handles null req.url', async () => {
+    const handle = (server as any).handleGeminiRequest.bind(server);
+    const req = makeMockReq(null, 'GET');
+    const { res } = makeMockRes();
+    await handle(req, res);
+    expect(res.end).toHaveBeenCalled();
+  });
+
+  it('handleGeminiRequest with generateContent and no contents field', async () => {
+    const handle = (server as any).handleGeminiRequest.bind(server);
+    const bodyStr = JSON.stringify({});
+    const req = makeMockReq('/v1/models/envcp:generateContent', 'POST');
+    const { res } = makeMockRes();
+    const p = handle(req, res);
+    process.nextTick(() => { req.emit('data', Buffer.from(bodyStr)); req.emit('end'); });
+    await p;
+    expect(res.end).toHaveBeenCalled();
+  });
+
+  it('handleGeminiRequest with content missing parts array', async () => {
+    const handle = (server as any).handleGeminiRequest.bind(server);
+    const bodyStr = JSON.stringify({ contents: [{}] });
+    const req = makeMockReq('/v1/models/envcp:generateContent', 'POST');
+    const { res } = makeMockRes();
+    const p = handle(req, res);
+    process.nextTick(() => { req.emit('data', Buffer.from(bodyStr)); req.emit('end'); });
+    await p;
+    expect(res.end).toHaveBeenCalled();
+  });
+
+  it('handleGeminiRequest /v1/functions/call without args uses {} — unified.ts:417', async () => {
+    const handle = (server as any).handleGeminiRequest.bind(server);
+    // Omit args to hit the `args || {}` false branch
+    const bodyStr = JSON.stringify({ name: 'envcp_list' });
+    const req = makeMockReq('/v1/functions/call', 'POST');
+    const { res } = makeMockRes();
+    const p = handle(req, res);
+    process.nextTick(() => { req.emit('data', Buffer.from(bodyStr)); req.emit('end'); });
+    await p;
+    expect(res.end).toHaveBeenCalled();
+  });
+
+  it('handleRESTRequest DELETE /api/variables/ with no name returns 404 — unified.ts:297', async () => {
+    const handle = (server as any).handleRESTRequest.bind(server);
+    // DELETE with no variable name — varName = segments[2] = undefined → false branch
+    const req = makeMockReq('/api/variables/', 'DELETE');
+    const { res } = makeMockRes();
+    await handle(req, res);
+    expect(res.end).toHaveBeenCalled();
   });
 });

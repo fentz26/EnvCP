@@ -509,6 +509,60 @@ describe('ConfigGuard', () => {
       expect(() => guard.markInternalWrite()).not.toThrow();
       guard.destroy();
     });
+
+    it('handleChange returns early when called within 500ms of internal write — line 183', async () => {
+      await fs.writeFile(path.join(tmpDir, 'envcp.yaml'), 'version: "1.0"\n');
+      const guard = new ConfigGuard(tmpDir, { debounceMs: 50 });
+      await guard.loadAndLock();
+
+      // Mark an internal write, then immediately trigger a file change
+      guard.markInternalWrite();
+      await fs.writeFile(path.join(tmpDir, 'envcp.yaml'), 'version: "2.0"\n');
+
+      // Wait longer than debounce but the guard should NOT detect tampering
+      // because handleChange returns early after markInternalWrite
+      await new Promise(resolve => setTimeout(resolve, 200));
+      expect(guard.isTampered()).toBe(false);
+
+      guard.destroy();
+    });
+  });
+
+  describe('hashConfigFile and startWatching USERPROFILE fallback — lines 129, 155', () => {
+    let origHome: string | undefined;
+    let origUserProfile: string | undefined;
+
+    beforeEach(() => {
+      origHome = process.env.HOME;
+      origUserProfile = process.env.USERPROFILE;
+    });
+
+    afterEach(() => {
+      if (origHome !== undefined) process.env.HOME = origHome;
+      else delete process.env.HOME;
+      if (origUserProfile !== undefined) process.env.USERPROFILE = origUserProfile;
+      else delete process.env.USERPROFILE;
+    });
+
+    it('uses USERPROFILE when HOME is unset (covers lines 129 and 155)', async () => {
+      delete process.env.HOME;
+      process.env.USERPROFILE = tmpDir;
+      const guard = new ConfigGuard(tmpDir);
+      const config = await guard.loadAndLock();
+      expect(config).toBeDefined();
+      const hash = guard.getHash();
+      expect(hash).toBeTruthy();
+      guard.destroy();
+    });
+
+    it('uses empty string when both HOME and USERPROFILE are unset', async () => {
+      delete process.env.HOME;
+      delete process.env.USERPROFILE;
+      const guard = new ConfigGuard(tmpDir);
+      const config = await guard.loadAndLock();
+      expect(config).toBeDefined();
+      guard.destroy();
+    });
   });
 
   describe('global vault store watching', () => {
