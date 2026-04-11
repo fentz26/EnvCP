@@ -3,6 +3,7 @@ import { EnvCPConfig, Variable, ToolDefinition } from '../types.js';
 import { maskValue } from '../utils/crypto.js';
 import { canAccess, isBlacklisted, canAIActiveCheck, validateVariableName, matchesPattern } from '../config/manager.js';
 import { SessionManager } from '../utils/session.js';
+import { resolveVaultPath } from '../vault/index.js';
 import * as fs from 'fs/promises';
 import { pathExists, parseEnv } from '../utils/fs.js';
 import * as path from 'path';
@@ -15,15 +16,13 @@ export abstract class BaseAdapter {
   protected projectPath: string;
   protected tools: Map<string, ToolDefinition>;
 
-  constructor(config: EnvCPConfig, projectPath: string, password?: string) {
+  constructor(config: EnvCPConfig, projectPath: string, password?: string, vaultPath?: string) {
     this.config = config;
     this.projectPath = projectPath;
 
     const encrypted = config.encryption?.enabled !== false && config.storage.encrypted;
-    this.storage = new StorageManager(
-      path.join(projectPath, config.storage.path),
-      encrypted
-    );
+    const storePath = vaultPath || path.join(projectPath, config.storage.path);
+    this.storage = new StorageManager(storePath, encrypted);
 
     this.sessionManager = new SessionManager(
       path.join(projectPath, config.session?.path || '.envcp/.session'),

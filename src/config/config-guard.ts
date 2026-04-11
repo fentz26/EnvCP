@@ -4,6 +4,7 @@ import * as path from 'path';
 import { watch, type FSWatcher } from 'fs';
 import { EnvCPConfig } from '../types.js';
 import { loadConfig } from './manager.js';
+import { getGlobalVaultPath } from '../vault/index.js';
 
 const DEBOUNCE_MS = 1000;
 const PERIODIC_CHECK_MS = 60_000;
@@ -129,8 +130,15 @@ export class ConfigGuard {
       '.envcp', 'config.yaml'
     );
 
+    const pathsToHash = [globalPath, configPath];
+
+    // Include global vault store in integrity hash if config is loaded
+    if (this.config) {
+      pathsToHash.push(getGlobalVaultPath(this.config));
+    }
+
     const hashes: string[] = [];
-    for (const p of [globalPath, configPath]) {
+    for (const p of pathsToHash) {
       try {
         const content = await fs.promises.readFile(p, 'utf8');
         hashes.push(crypto.createHash('sha256').update(content).digest('hex'));
@@ -148,7 +156,14 @@ export class ConfigGuard {
       '.envcp', 'config.yaml'
     );
 
-    for (const filePath of [globalPath, configPath]) {
+    const filesToWatch = [globalPath, configPath];
+
+    // Watch global vault store file for tampering
+    if (this.config) {
+      filesToWatch.push(getGlobalVaultPath(this.config));
+    }
+
+    for (const filePath of filesToWatch) {
       try {
         const dir = path.dirname(filePath);
         if (!fs.existsSync(dir)) continue;

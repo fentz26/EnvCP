@@ -3,6 +3,7 @@ import { RESTAdapter } from '../adapters/rest.js';
 import { OpenAIAdapter } from '../adapters/openai.js';
 import { GeminiAdapter } from '../adapters/gemini.js';
 import { EnvCPServer } from '../mcp/server.js';
+import { resolveVaultPath } from '../vault/index.js';
 import { setCorsHeaders, sendJson, parseBody, validateApiKey, RateLimiter, rateLimitMiddleware } from '../utils/http.js';
 import * as http from 'http';
 
@@ -69,26 +70,29 @@ export class UnifiedServer {
   async start(): Promise<void> {
     const { mode, port, host, api_key } = this.serverConfig;
 
+    // Resolve vault path once before creating any adapters
+    const vaultPath = await resolveVaultPath(this.projectPath, this.config);
+
     // MCP mode uses stdio, not HTTP
     if (mode === 'mcp') {
-      this.mcpServer = new EnvCPServer(this.config, this.projectPath, this.password);
+      this.mcpServer = new EnvCPServer(this.config, this.projectPath, this.password, vaultPath);
       await this.mcpServer.start();
       return;
     }
 
     // Initialize adapters based on mode
     if (mode === 'rest' || mode === 'all' || mode === 'auto') {
-      this.restAdapter = new RESTAdapter(this.config, this.projectPath, this.password);
+      this.restAdapter = new RESTAdapter(this.config, this.projectPath, this.password, vaultPath);
       await this.restAdapter.init();
     }
 
     if (mode === 'openai' || mode === 'all' || mode === 'auto') {
-      this.openaiAdapter = new OpenAIAdapter(this.config, this.projectPath, this.password);
+      this.openaiAdapter = new OpenAIAdapter(this.config, this.projectPath, this.password, vaultPath);
       await this.openaiAdapter.init();
     }
 
     if (mode === 'gemini' || mode === 'all' || mode === 'auto') {
-      this.geminiAdapter = new GeminiAdapter(this.config, this.projectPath, this.password);
+      this.geminiAdapter = new GeminiAdapter(this.config, this.projectPath, this.password, vaultPath);
       await this.geminiAdapter.init();
     }
 

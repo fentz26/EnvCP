@@ -13,9 +13,17 @@ export const RateLimitConfigSchema = z.object({
 
 export type RateLimitConfig = z.infer<typeof RateLimitConfigSchema>;
 
+export const VaultModeSchema = z.enum(['project', 'global']);
+export type VaultMode = z.infer<typeof VaultModeSchema>;
+
 export const EnvCPConfigSchema = z.object({
   version: z.string().default('1.0'),
   project: z.string().optional(),
+
+  vault: z.object({
+    default: VaultModeSchema.default('project'),
+    global_path: z.string().default('.envcp/store.enc'),
+  }).default({}),
 
   storage: z.object({
     path: z.string().default('.envcp/store.enc'),

@@ -622,3 +622,48 @@ describe('UnifiedServer.detectClientType', () => {
     srv.stop();
   });
 });
+
+describe('UnifiedServer vault-aware startup', () => {
+  let tmpDir: string;
+
+  beforeAll(async () => {
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-vault-srv-'));
+  });
+
+  afterAll(async () => {
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  });
+
+  it('resolves vault path and starts in rest mode', async () => {
+    const port = 30000 + Math.floor(Math.random() * 10000);
+    const config = EnvCPConfigSchema.parse({
+      access: { allow_ai_read: true, allow_ai_active_check: true },
+      encryption: { enabled: false },
+      storage: { encrypted: false, path: '.envcp/store.json' },
+      vault: { default: 'project' },
+    });
+    const serverConfig: ServerConfig = { mode: 'rest', port, host: '127.0.0.1', cors: true, auto_detect: false };
+    const srv = new UnifiedServer(config, serverConfig, tmpDir);
+    await srv.start();
+    const { status, data } = await fetch(port, 'GET', '/api/health');
+    expect(status).toBe(200);
+    expect((data as any).success).toBe(true);
+    srv.stop();
+  });
+
+  it('resolves global vault path when default is global', async () => {
+    const port = 30000 + Math.floor(Math.random() * 10000);
+    const config = EnvCPConfigSchema.parse({
+      access: { allow_ai_read: true, allow_ai_active_check: true },
+      encryption: { enabled: false },
+      storage: { encrypted: false, path: '.envcp/store.json' },
+      vault: { default: 'global', global_path: '.envcp/store.enc' },
+    });
+    const serverConfig: ServerConfig = { mode: 'rest', port, host: '127.0.0.1', cors: true, auto_detect: false };
+    const srv = new UnifiedServer(config, serverConfig, tmpDir);
+    await srv.start();
+    const { status } = await fetch(port, 'GET', '/api/health');
+    expect(status).toBe(200);
+    srv.stop();
+  });
+});

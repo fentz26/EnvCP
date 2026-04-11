@@ -6,6 +6,10 @@ import { EnvCPConfig, EnvCPConfigSchema } from '../types.js';
 
 const DEFAULT_CONFIG: Partial<EnvCPConfig> = {
   version: '1.0',
+  vault: {
+    default: 'project',
+    global_path: '.envcp/store.enc',
+  },
   storage: {
     path: '.envcp/store.enc',
     encrypted: true,

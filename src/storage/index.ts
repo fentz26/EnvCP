@@ -15,7 +15,7 @@ import { encrypt, decrypt } from '../utils/crypto.js';
  */
 export class StorageManager {
   private storePath: string;
-  private encrypted: boolean;
+  public readonly encrypted: boolean;
   private password?: string;
   private cache: Record<string, Variable> | null = null;
   private maxBackups: number;
