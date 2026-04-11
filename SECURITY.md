@@ -15,7 +15,7 @@ We release patches for security vulnerabilities. Currently supported versions:
 
 If you discover a security vulnerability in EnvCP, please report it by emailing:
 
-**contact@fentz.dev**
+**contact@envcp.org**
 
 Please include:
 - Type of vulnerability
@@ -126,7 +126,7 @@ EnvCP is designed for local development use. For production or compliance-critic
 
 ## Contact
 
-For security concerns: **contact@fentz.dev**
+For security concerns: **contact@envcp.org**
 
 For general issues: https://github.com/fentz26/EnvCP/issues
 
