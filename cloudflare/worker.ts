@@ -98,18 +98,7 @@ app.get('/install.sh', async (c) => {
 
 // Route: /
 app.get('/', (c) => {
-  return c.json({
-    name: 'EnvCP Cloud',
-    version: '1.0.0',
-    description: 'Secure Environment Variable Management',
-    endpoints: {
-      health: '/api/health',
-      docs: '/docs/',
-      install: '/install.sh'
-    },
-    github: 'https://github.com/fentz26/EnvCP',
-    install: 'curl -fsSL https://envcp.org/install.sh | bash'
-  });
+  return c.redirect('/docs/');
 });
 
 // Route: /api/health
