@@ -58,7 +58,6 @@ export class GpgBackend implements HsmBackend {
         '--armor',
         '--batch',
         '--yes',
-        '--trust-model', 'always',
         '--recipient', this.keyId!,
       ];
       const proc = execFile('gpg', args, { encoding: 'buffer' }, (err, stdout) => {
@@ -174,10 +173,14 @@ export class YubiKeyPivBackend implements HsmBackend {
   }
 
   private async _pivDecrypt(encryptedKey: Buffer): Promise<Buffer> {
+    // ykman 5.1+ positional syntax: ykman [--device SERIAL] piv keys decrypt SLOT INPUT OUTPUT
+    // Dash ('-') means stdin/stdout.
     return new Promise((resolve, reject) => {
-      const args = this.ykmanArgs(['piv', 'keys', 'decrypt', YUBIKEY_PIV_SLOT, '--input', '-', '--output', '-']);
+      const args = this.ykmanArgs(['piv', 'keys', 'decrypt', YUBIKEY_PIV_SLOT, '-', '-']);
       const proc = execFile('ykman', args, { encoding: 'buffer' }, (err, stdout) => {
-        if (err) return reject(new Error(`ykman PIV decrypt failed: ${err.message}`));
+        if (err) return reject(new Error(
+          `ykman PIV decrypt failed (requires ykman 5.1+): ${err.message}`
+        ));
         resolve(stdout as Buffer);
       });
       proc.stdin!.write(encryptedKey);
@@ -221,16 +224,18 @@ export class Pkcs11Backend implements HsmBackend {
   }
 
   async isAvailable(): Promise<boolean> {
+    let pkcs11: InstanceType<Pkcs11Lib['PKCS11']> | null = null;
     try {
       const pkcs11js = await this._loadPkcs11();
-      const pkcs11 = new pkcs11js.PKCS11();
+      pkcs11 = new pkcs11js.PKCS11();
       pkcs11.load(this.libPath);
       pkcs11.C_Initialize();
       const slots = pkcs11.C_GetSlotList(true);
-      pkcs11.C_Finalize();
       return slots.length > this.slotIndex;
     } catch {
       return false;
+    } finally {
+      try { pkcs11?.C_Finalize(); } catch { /* ignore */ }
     }
   }
 
@@ -245,15 +250,16 @@ export class Pkcs11Backend implements HsmBackend {
       const slot = slots[this.slotIndex];
       const session = pkcs11.C_OpenSession(slot, pkcs11js.CKF_SERIAL_SESSION);
 
-      const publicKey = this._findKey(pkcs11, pkcs11js, session, pkcs11js.CKO_PUBLIC_KEY);
-
-      pkcs11.C_EncryptInit(session, { mechanism: pkcs11js.CKM_RSA_PKCS_OAEP }, publicKey);
-      const encrypted = pkcs11.C_Encrypt(session, plaintext, Buffer.alloc(512));
-
-      pkcs11.C_CloseSession(session);
-      return (encrypted as Buffer).toString('base64');
+      try {
+        const publicKey = this._findKey(pkcs11, pkcs11js, session, pkcs11js.CKO_PUBLIC_KEY);
+        pkcs11.C_EncryptInit(session, { mechanism: pkcs11js.CKM_RSA_PKCS_OAEP }, publicKey);
+        const encrypted = pkcs11.C_Encrypt(session, plaintext, Buffer.alloc(512));
+        return (encrypted as Buffer).toString('base64');
+      } finally {
+        try { pkcs11.C_CloseSession(session); } catch { /* ignore */ }
+      }
     } finally {
-      pkcs11.C_Finalize();
+      try { pkcs11.C_Finalize(); } catch { /* ignore */ }
     }
   }
 
@@ -268,16 +274,17 @@ export class Pkcs11Backend implements HsmBackend {
       const slot = slots[this.slotIndex];
       const session = pkcs11.C_OpenSession(slot, pkcs11js.CKF_SERIAL_SESSION);
 
-      const privateKey = this._findKey(pkcs11, pkcs11js, session, pkcs11js.CKO_PRIVATE_KEY);
-      const ciphertext = Buffer.from(blob, 'base64');
-
-      pkcs11.C_DecryptInit(session, { mechanism: pkcs11js.CKM_RSA_PKCS_OAEP }, privateKey);
-      const decrypted = pkcs11.C_Decrypt(session, ciphertext, Buffer.alloc(512));
-
-      pkcs11.C_CloseSession(session);
-      return decrypted as Buffer;
+      try {
+        const privateKey = this._findKey(pkcs11, pkcs11js, session, pkcs11js.CKO_PRIVATE_KEY);
+        const ciphertext = Buffer.from(blob, 'base64');
+        pkcs11.C_DecryptInit(session, { mechanism: pkcs11js.CKM_RSA_PKCS_OAEP }, privateKey);
+        const decrypted = pkcs11.C_Decrypt(session, ciphertext, Buffer.alloc(512));
+        return decrypted as Buffer;
+      } finally {
+        try { pkcs11.C_CloseSession(session); } catch { /* ignore */ }
+      }
     } finally {
-      pkcs11.C_Finalize();
+      try { pkcs11.C_Finalize(); } catch { /* ignore */ }
     }
   }
 
@@ -365,7 +372,19 @@ export class HsmManager {
   async protectVaultPassword(vaultPassword: string): Promise<void> {
     const plaintext = Buffer.from(vaultPassword, 'utf8');
     const blob = await this.backend.encryptData(plaintext);
-    await ensureDir(path.dirname(this.protectedKeyPath));
+    const dir = path.dirname(this.protectedKeyPath);
+    await ensureDir(dir);
+
+    // Reject symlink attacks: verify the target path is not (or does not exist as) a symlink.
+    try {
+      const lstat = await fs.lstat(this.protectedKeyPath);
+      if (!lstat.isFile()) {
+        throw new Error(`HSM key path ${this.protectedKeyPath} exists but is not a regular file`);
+      }
+    } catch (err: unknown) {
+      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
+    }
+
     await fs.writeFile(this.protectedKeyPath, blob, { encoding: 'utf8', mode: 0o600 });
   }
 
