@@ -409,16 +409,17 @@ export class HsmManager {
     return decrypted.toString('utf8');
   }
 
-  /** Derive a combined key from an HSM-provided secret and a user password. */
+  /**
+   * Derive a combined vault key from an HSM-provided random secret and a user
+   * password using HKDF-SHA256.  The HSM random supplies high-entropy keying
+   * material (IKM); the user password is mixed in via the info field so both
+   * factors are cryptographically required.  The 32-byte output is then
+   * further processed by Argon2id inside encrypt().
+   */
   static combineSecrets(hsmSecret: string, userPassword: string): string {
-    const combined = Buffer.concat([
-      Buffer.from(hsmSecret, 'utf8'),
-      Buffer.from(':', 'utf8'),
-      Buffer.from(userPassword, 'utf8'),
-    ]);
-    return crypto
-      .createHmac('sha256', 'envcp-multi-factor')
-      .update(combined)
-      .digest('hex');
+    const ikm = Buffer.from(hsmSecret, 'utf8');
+    const info = Buffer.from(userPassword, 'utf8');
+    const derived = crypto.hkdfSync('sha256', ikm, Buffer.alloc(0), info, 32);
+    return Buffer.from(derived).toString('hex');
   }
 }
