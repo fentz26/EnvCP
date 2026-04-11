@@ -19,8 +19,8 @@ export class EnvCPServer {
   private server: Server;
   private adapter: McpAdapter;
 
-  constructor(config: EnvCPConfig, projectPath: string, password?: string) {
-    this.adapter = new McpAdapter(config, projectPath, password);
+  constructor(config: EnvCPConfig, projectPath: string, password?: string, vaultPath?: string) {
+    this.adapter = new McpAdapter(config, projectPath, password, vaultPath);
 
     this.server = new Server(
       { name: 'envcp', version: '1.0.0' },

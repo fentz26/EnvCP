@@ -510,4 +510,59 @@ describe('ConfigGuard', () => {
       guard.destroy();
     });
   });
+
+  describe('global vault store watching', () => {
+    it('includes global vault store in integrity hash', async () => {
+      // Set up global vault store in the fake HOME
+      const vaultDir = path.join(tmpDir, '.envcp');
+      await ensureDir(vaultDir);
+      await fs.writeFile(path.join(vaultDir, 'store.enc'), 'vault-data-v1');
+
+      const guard = new ConfigGuard(tmpDir);
+      await guard.loadAndLock();
+      const hash1 = guard.getHash();
+
+      // Modify the global vault store — hash should change
+      await fs.writeFile(path.join(vaultDir, 'store.enc'), 'vault-data-v2');
+
+      const intact = await guard.checkIntegrity();
+      expect(intact).toBe(false);
+
+      guard.destroy();
+    });
+
+    it('hash is stable when vault store does not exist', async () => {
+      const guard1 = new ConfigGuard(tmpDir);
+      await guard1.loadAndLock();
+      const hash1 = guard1.getHash();
+      guard1.destroy();
+
+      const guard2 = new ConfigGuard(tmpDir);
+      await guard2.loadAndLock();
+      const hash2 = guard2.getHash();
+      guard2.destroy();
+
+      expect(hash1).toBe(hash2);
+    });
+
+    it('detects vault store tampering via file watcher', async () => {
+      const vaultDir = path.join(tmpDir, '.envcp');
+      await ensureDir(vaultDir);
+      await fs.writeFile(path.join(vaultDir, 'store.enc'), 'original');
+
+      const guard = new ConfigGuard(tmpDir, { debounceMs: 50 });
+      await guard.loadAndLock();
+
+      expect(guard.isTampered()).toBe(false);
+
+      // Modify vault store file
+      await fs.writeFile(path.join(vaultDir, 'store.enc'), 'tampered');
+
+      await new Promise(resolve => setTimeout(resolve, 400));
+
+      expect(guard.isTampered()).toBe(true);
+
+      guard.destroy();
+    });
+  });
 });

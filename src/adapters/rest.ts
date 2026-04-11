@@ -7,8 +7,8 @@ export class RESTAdapter extends BaseAdapter {
   private server: http.Server | null = null;
   private rateLimiter = new RateLimiter(60, 60000);
 
-  constructor(config: EnvCPConfig, projectPath: string, password?: string) {
-    super(config, projectPath, password);
+  constructor(config: EnvCPConfig, projectPath: string, password?: string, vaultPath?: string) {
+    super(config, projectPath, password, vaultPath);
   }
 
   protected registerTools(): void {
