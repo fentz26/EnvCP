@@ -156,11 +156,22 @@ describe('SessionManager', () => {
   });
 
   it('extend returns null when session is expired', async () => {
-    const m = new SessionManager(sessionPath, 0, 5); // 0 minute timeout
+    const m = new SessionManager(sessionPath, 0, 5);
     await m.init();
     await m.create('password123');
-    // Session is immediately expired, extend should return null
     const result = await m.extend();
     expect(result).toBeNull();
+  });
+
+  it('uses default constructor params', async () => {
+    const m = new SessionManager(sessionPath);
+    await m.init();
+    const session = await m.create('password123');
+    expect(new Date(session.expires).getTime() - new Date(session.created).getTime()).toBe(30 * 60 * 1000);
+  });
+
+  it('destroy re-throws non-ENOENT errors', async () => {
+    const m = new SessionManager('/proc/1/mem');
+    await expect(m.destroy()).rejects.toThrow();
   });
 });

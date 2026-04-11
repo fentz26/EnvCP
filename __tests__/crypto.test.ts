@@ -84,6 +84,12 @@ describe('validatePassword', () => {
     expect(validatePassword('Abc123!x', { require_complexity: true }).valid).toBe(true);
   });
 
+  it('rejects non-weak password with only 2 char types when complexity required', () => {
+    const result = validatePassword('Randomwordsonly', { require_complexity: true, min_length: 1 });
+    expect(result.valid).toBe(false);
+    expect(result.error).toContain('3 of');
+  });
+
   it('returns warning for short-but-valid passwords', () => {
     const result = validatePassword('MyP@ss99', {});
     expect(result.valid).toBe(true);
