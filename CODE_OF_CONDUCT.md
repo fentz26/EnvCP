@@ -34,7 +34,7 @@ This Code of Conduct applies within all project spaces — GitHub issues, pull r
 
 ## Enforcement
 
-Instances of abusive, harassing, or otherwise unacceptable behavior may be reported by contacting the maintainer at **contact@fentz.dev**. All complaints will be reviewed and investigated promptly and fairly. The maintainer is obligated to maintain confidentiality with regard to the reporter of an incident.
+Instances of abusive, harassing, or otherwise unacceptable behavior may be reported by contacting the maintainer at **contact@envcp.org**. All complaints will be reviewed and investigated promptly and fairly. The maintainer is obligated to maintain confidentiality with regard to the reporter of an incident.
 
 **Enforcement actions:**
 
