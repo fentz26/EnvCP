@@ -664,6 +664,54 @@ export abstract class BaseAdapter {
     if (shellMetachars.test(command)) {
       throw new Error('Command contains disallowed shell metacharacters: ; & | ` $ ( ) { } ! > < \\');
     }
+
+    // Check user-configured command blacklist (substring match, case-insensitive)
+    const blacklist = this.config.access.command_blacklist ?? [];
+    const lowerCommand = command.toLowerCase();
+    for (const pattern of blacklist) {
+      if (lowerCommand.includes(pattern.toLowerCase())) {
+        throw new Error(`Command rejected: matches blacklisted pattern "${pattern}"`);
+      }
+    }
+  }
+
+  /**
+   * Detects destructive rm invocations targeting the root filesystem.
+   * Checks for recursive (-r/--recursive) + any arg that is /, /*, or /. .
+   */
+  private checkRootDelete(prog: string, cmdArgs: string[]): void {
+    const basename = prog.split('/').pop() ?? prog;
+    if (basename !== 'rm') return;
+
+    const hasRecursive = cmdArgs.some(a =>
+      /^-[^-]*[rR]/.test(a) || a === '--recursive' || a === '-recursive'
+    );
+    const hasRootTarget = cmdArgs.some(a => a === '/' || a === '/*' || a === '/.' || a === '/\\*');
+
+    if (hasRecursive && hasRootTarget) {
+      throw new Error('Command rejected: recursive delete targeting root filesystem is not allowed (disallow_root_delete)');
+    }
+  }
+
+  /**
+   * Validates that critical inherited environment variable values are safe.
+   * Rejects PATH values containing directory traversal and HOME set to /.
+   */
+  private validateEnvVarValue(key: string, value: string): void {
+    if (key === 'HOME' && (value === '/' || value === '\\')) {
+      throw new Error(`Environment variable HOME cannot be set to root "/" (disallow_path_manipulation)`);
+    }
+    if (key === 'PATH') {
+      const segments = value.split(':');
+      for (const seg of segments) {
+        if (seg.includes('..')) {
+          throw new Error(`Environment variable PATH contains directory traversal ".." (disallow_path_manipulation)`);
+        }
+      }
+    }
+    if ((key === 'TMPDIR' || key === 'TMP' || key === 'TEMP') && value === '/') {
+      throw new Error(`Environment variable ${key} cannot be set to root "/" (disallow_path_manipulation)`);
+    }
   }
 
   protected async runCommand(args: { command: string; variables: string[] }): Promise<{
@@ -680,16 +728,36 @@ export abstract class BaseAdapter {
     const { spawn } = await import('child_process');
     const { program: prog, args: cmdArgs } = this.parseCommand(args.command);
 
-    if (this.config.access.allowed_commands && this.config.access.allowed_commands.length > 0) {
+    // Enforce require_command_whitelist: allowed_commands must exist and contain the program
+    if (this.config.access.run_safety?.require_command_whitelist) {
+      if (!this.config.access.allowed_commands || !this.config.access.allowed_commands.includes(prog)) {
+        throw new Error(`Command '${prog}' is not in the allowed commands list (require_command_whitelist is enabled)`);
+      }
+    } else if (this.config.access.allowed_commands && this.config.access.allowed_commands.length > 0) {
       if (!this.config.access.allowed_commands.includes(prog)) {
         throw new Error(`Command '${prog}' is not in the allowed commands list`);
       }
     }
+
+    // Destructive command check (post-parse, uses structured tokens)
+    if (this.config.access.run_safety?.disallow_root_delete) {
+      this.checkRootDelete(prog, cmdArgs);
+    }
+
     // Build a minimal env: only inherit safe system vars + requested secrets
     const SAFE_INHERIT = ['PATH', 'HOME', 'USER', 'SHELL', 'LANG', 'TERM', 'NODE_ENV', 'TMPDIR', 'TMP', 'TEMP'];
     const env: Record<string, string> = {};
     for (const key of SAFE_INHERIT) {
       if (process.env[key]) env[key] = process.env[key]!;
+    }
+
+    // Validate inherited critical env var values
+    if (this.config.access.run_safety?.disallow_path_manipulation) {
+      for (const key of SAFE_INHERIT) {
+        if (env[key]) {
+          this.validateEnvVarValue(key, env[key]);
+        }
+      }
     }
 
     const excludedVariables: string[] = [];

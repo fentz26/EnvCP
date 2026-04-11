@@ -46,6 +46,12 @@ export const EnvCPConfigSchema = z.object({
     denied_patterns: z.array(z.string()).optional(),
     blacklist_patterns: z.array(z.string()).default([]),
     require_variable_password: z.boolean().default(false),
+    command_blacklist: z.array(z.string()).default([]),
+    run_safety: z.object({
+      disallow_root_delete: z.boolean().default(true),
+      disallow_path_manipulation: z.boolean().default(true),
+      require_command_whitelist: z.boolean().default(false),
+    }).default({}),
   }).default({}),
 
   sync: z.object({

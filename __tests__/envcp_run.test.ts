@@ -5,7 +5,16 @@ import path from 'path';
 import { RESTAdapter } from '../src/adapters/rest';
 import { EnvCPConfig } from '../src/types';
 
-const makeConfig = (patterns?: { allowed?: string[]; denied?: string[]; blacklist?: string[] }): EnvCPConfig => ({
+const makeConfig = (
+  patterns?: { allowed?: string[]; denied?: string[]; blacklist?: string[] },
+  safety?: {
+    command_blacklist?: string[];
+    disallow_root_delete?: boolean;
+    disallow_path_manipulation?: boolean;
+    require_command_whitelist?: boolean;
+    allowed_commands?: string[];
+  },
+): EnvCPConfig => ({
   version: '1.0',
   storage: {
     path: '.envcp/store.json',
@@ -19,13 +28,19 @@ const makeConfig = (patterns?: { allowed?: string[]; denied?: string[]; blacklis
     allow_ai_execute: true,
     allow_ai_active_check: true,
     require_user_reference: false,
-    allowed_commands: ['env'],
+    allowed_commands: safety?.allowed_commands ?? ['env'],
     require_confirmation: false,
     mask_values: false,
     audit_log: true,
     allowed_patterns: patterns?.allowed,
     denied_patterns: patterns?.denied,
     blacklist_patterns: patterns?.blacklist || [],
+    command_blacklist: safety?.command_blacklist ?? [],
+    run_safety: {
+      disallow_root_delete: safety?.disallow_root_delete ?? false,
+      disallow_path_manipulation: safety?.disallow_path_manipulation ?? false,
+      require_command_whitelist: safety?.require_command_whitelist ?? false,
+    },
   },
   sync: {
     enabled: false,
@@ -128,5 +143,135 @@ describe('envcp_run policy filtering', () => {
     expect(content).toContain('Excluded from envcp_run due to policy');
     expect(content).toContain('DENY_SECRET');
     expect(content).toContain('SECRET_API_KEY');
+  });
+});
+
+describe('envcp_run command_blacklist', () => {
+  let tempDir: string;
+  let adapter: RESTAdapter;
+
+  beforeEach(async () => {
+    tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-blacklist-'));
+    adapter = new RESTAdapter(
+      makeConfig(undefined, { command_blacklist: ['mkfs', 'shred'], allowed_commands: ['env', 'echo'] }),
+      tempDir,
+    );
+    await adapter.init();
+  });
+
+  afterEach(async () => {
+    if (tempDir) await fs.rm(tempDir, { recursive: true, force: true });
+  });
+
+  it('rejects a command matching the blacklist', async () => {
+    await expect(
+      adapter.callTool('envcp_run', { command: 'mkfs.ext4 /dev/sda', variables: [] }),
+    ).rejects.toThrow(/blacklisted pattern/i);
+  });
+
+  it('rejects a blacklisted program regardless of args', async () => {
+    await expect(
+      adapter.callTool('envcp_run', { command: 'shred -u myfile', variables: [] }),
+    ).rejects.toThrow(/blacklisted pattern/i);
+  });
+
+  it('allows commands not on the blacklist', async () => {
+    const result = await adapter.callTool('envcp_run', { command: 'echo hello', variables: [] }) as { stdout: string };
+    expect(result.stdout.trim()).toBe('hello');
+  });
+
+  it('blacklist check is case-insensitive', async () => {
+    await expect(
+      adapter.callTool('envcp_run', { command: 'MKFS.ext4 /dev/sda', variables: [] }),
+    ).rejects.toThrow(/blacklisted pattern/i);
+  });
+});
+
+describe('envcp_run disallow_root_delete', () => {
+  let tempDir: string;
+  let adapter: RESTAdapter;
+
+  beforeEach(async () => {
+    tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-rootdel-'));
+    adapter = new RESTAdapter(
+      makeConfig(undefined, { disallow_root_delete: true, allowed_commands: ['rm', 'env'] }),
+      tempDir,
+    );
+    await adapter.init();
+  });
+
+  afterEach(async () => {
+    if (tempDir) await fs.rm(tempDir, { recursive: true, force: true });
+  });
+
+  it('rejects rm -rf /', async () => {
+    await expect(
+      adapter.callTool('envcp_run', { command: 'rm -rf /', variables: [] }),
+    ).rejects.toThrow(/disallow_root_delete/i);
+  });
+
+  it('rejects rm -r /', async () => {
+    await expect(
+      adapter.callTool('envcp_run', { command: 'rm -r /', variables: [] }),
+    ).rejects.toThrow(/disallow_root_delete/i);
+  });
+
+  it('rejects rm --recursive /', async () => {
+    await expect(
+      adapter.callTool('envcp_run', { command: 'rm --recursive /', variables: [] }),
+    ).rejects.toThrow(/disallow_root_delete/i);
+  });
+
+  it('rejects rm -rf /*', async () => {
+    await expect(
+      adapter.callTool('envcp_run', { command: 'rm -rf /*', variables: [] }),
+    ).rejects.toThrow(/disallow_root_delete/i);
+  });
+
+  it('allows rm -rf targeting non-root path', async () => {
+    // Should not throw — the safety check only blocks root targets
+    // (the actual rm will fail because the temp path is not a real target, but that is OK)
+    await expect(
+      adapter.callTool('envcp_run', { command: 'rm -rf /tmp/does-not-exist-envcp-test', variables: [] }),
+    ).resolves.toBeDefined();
+  });
+});
+
+describe('envcp_run require_command_whitelist', () => {
+  let tempDir: string;
+
+  afterEach(async () => {
+    if (tempDir) await fs.rm(tempDir, { recursive: true, force: true });
+  });
+
+  it('rejects command not in allowed_commands when whitelist is required', async () => {
+    tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-wl-'));
+    const adapter = new RESTAdapter(
+      makeConfig(undefined, {
+        require_command_whitelist: true,
+        allowed_commands: ['env'],
+      }),
+      tempDir,
+    );
+    await adapter.init();
+
+    await expect(
+      adapter.callTool('envcp_run', { command: 'echo hello', variables: [] }),
+    ).rejects.toThrow(/require_command_whitelist/i);
+  });
+
+  it('allows command in allowed_commands when whitelist is required', async () => {
+    tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-wl2-'));
+    const adapter = new RESTAdapter(
+      makeConfig(undefined, {
+        require_command_whitelist: true,
+        allowed_commands: ['env', 'echo'],
+      }),
+      tempDir,
+    );
+    await adapter.init();
+
+    const result = await adapter.callTool('envcp_run', { command: 'echo hi', variables: [] }) as { stdout: string };
+    expect(result.stdout.trim()).toBe('hi');
   });
 });
