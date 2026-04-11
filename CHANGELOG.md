@@ -6,6 +6,66 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [1.1.0] - 2026-04-11
+
+### Added
+
+- **Global Vault with Switch Command** ([#124](https://github.com/fentz26/EnvCP/issues/124))
+  - New `vault` configuration section with `default` (project/global) and `global_path` settings
+  - Global vault stored at `~/.envcp/store.enc` for sharing secrets across all projects
+  - Named vaults support for managing multiple secret contexts
+  - CLI commands for vault management:
+    - `envcp vault --global init|add|list|get|delete` — operate on global vault
+    - `envcp vault --project init|add|list|get|delete` — operate on project vault
+    - `envcp vault --name <name> init|add|list|get|delete` — manage named vaults
+    - `envcp vault-switch <name>` — switch active vault context
+    - `envcp vault-list` — list all available vaults
+  - ConfigGuard now watches global vault store for tampering
+  - Server-side vault path resolution for all adapters
+
+- **Per-Variable Password Protection** ([#125](https://github.com/fentz26/EnvCP/issues/125))
+  - Optional additional password layer for individual variables using Argon2id + AES-256-GCM
+  - New Variable schema fields: `protected`, `password_hash`, `protected_value`
+  - New configuration option: `access.require_variable_password`
+  - Tool parameter updates:
+    - `envcp_get`: `variable_password` parameter required for protected variables
+    - `envcp_set`: `protect`, `unprotect`, `variable_password` parameters for protection management
+    - `envcp_list`: Returns `{name, protected}` objects when any protected variable exists
+  - Wrong password attempts are logged for audit trail
+
+- **Test Coverage Improvements** ([#123](https://github.com/fentz26/EnvCP/issues/123))
+  - Achieved 100% line coverage (493 tests, 99.93% lines)
+  - Added 5 new test files for previously uncovered code paths:
+    - `lock.test.ts` — file lock retry logic
+    - `base-timeout.test.ts` — runCommand timeout kill paths
+    - `mcp-start.test.ts` — MCP stdio transport startup
+    - `unified-extra.test.ts` — MCP mode, SIGTERM handler, Gemini routes
+    - `update-checker-fetch.test.ts` — HTTPS error path mocking
+  - Fixed config-manager test isolation for CI environments
+
+- **Documentation**
+  - Updated README with vault commands and per-variable protection
+  - Updated wiki with new features and SAL v1.0 license
+  - Added SonarCloud configuration for proper TypeScript analysis
+
+### Changed
+
+- **StorageManager** — Made `encrypted` property public for CLI access
+- **SonarCloud** — Added `sonar-project.properties` for TypeScript language detection
+
+### Fixed
+
+- **Config Manager Test Isolation** — Tests now properly isolate HOME environment
+- **SonarCloud Python Warning** — Fixed false positive language detection
+
+### Security
+
+- ConfigGuard now monitors global vault store file integrity
+- Per-variable protection uses Argon2id (64 MB memory, 3 passes) for password hashing
+- Protected values encrypted with AES-256-GCM using password-derived keys
+
+---
+
 ## [1.0.92] - 2026-04-10
 
 ### Added
