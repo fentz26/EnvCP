@@ -490,4 +490,4 @@ SAL v1.0 — See LICENSE file for details.
 ## Support
 - Email: contact@envcp.org
 - GitHub Issues: https://github.com/fentz26/EnvCP/issues
-- Documentation: https://envcp.fentz.dev/docs
+- Documentation: https://envcp.org/docs
