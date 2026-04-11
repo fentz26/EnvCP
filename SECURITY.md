@@ -56,7 +56,7 @@ When using EnvCP:
 
 3. **Access Control**
    - Enable `allow_ai_active_check: false` to prevent AI from proactively listing variables
-   - Use blacklist patterns to protect sensitive variables
+   - Use `blacklist_patterns` to block sensitive variables from AI access
    - Review access logs regularly in `.envcp/logs/`
 
 4. **Session Management**
@@ -83,9 +83,10 @@ When using EnvCP:
 ## Known Security Considerations
 
 ### 1. Encryption Strength
-- EnvCP uses AES-256-GCM with PBKDF2-SHA512 (100,000 iterations)
+- EnvCP uses AES-256-GCM with Argon2id key derivation (64 MB memory, 3 passes)
+- New stores are encrypted with v2 format (Argon2id); legacy v1 stores (PBKDF2-SHA512) are read-compatible
 - Security depends on password strength
-- Weak passwords can be brute-forced
+- Weak passwords can be brute-forced; EnvCP rejects known common passwords
 
 ### 2. Memory Exposure
 - Decrypted values are temporarily in memory

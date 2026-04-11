@@ -41,14 +41,16 @@ We welcome feature suggestions! Please open an issue with:
 
 4. **Commit your changes**:
    ```bash
-   git commit -m "Add: brief description of your changes"
+   git commit -m "feat: brief description of your changes"
    ```
    Use conventional commit messages:
-   - `Add:` for new features
-   - `Fix:` for bug fixes
-   - `Update:` for improvements
-   - `Refactor:` for code refactoring
-   - `Docs:` for documentation changes
+   - `feat:` for new features
+   - `fix:` for bug fixes
+   - `chore:` for maintenance/tooling changes
+   - `refactor:` for code refactoring
+   - `docs:` for documentation changes
+   - `test:` for adding or fixing tests
+   - `ci:` for CI/CD changes
 
 5. **Push and create a pull request**:
    ```bash
@@ -97,16 +99,17 @@ We welcome feature suggestions! Please open an issue with:
 ```
 EnvCP/
 ├── src/
-│   ├── adapters/      # Protocol adapters (REST, OpenAI, Gemini)
-│   ├── cli/           # CLI commands
-│   ├── config/        # Configuration management
+│   ├── adapters/      # Protocol adapters (REST, OpenAI, Gemini, MCP base)
+│   ├── cli/           # CLI command implementations
+│   ├── config/        # Configuration loading and config-guard
 │   ├── mcp/           # MCP server implementation
-│   ├── server/        # Unified server
-│   ├── storage/       # Storage and logging
-│   ├── utils/         # Utilities (crypto, session)
-│   └── types.ts       # Type definitions
-├── assets/            # Assets (logo, etc.)
-└── dist/              # Compiled JavaScript
+│   ├── server/        # Unified multi-protocol server
+│   ├── storage/       # Encrypted storage and audit logging
+│   ├── utils/         # Utilities (crypto, session, keychain, update-checker)
+│   ├── vault/         # Global vault and vault management
+│   └── types.ts       # Zod schemas and TypeScript types
+├── __tests__/         # Jest test suite
+└── dist/              # Compiled JavaScript (generated)
 ```
 
 ## Testing
