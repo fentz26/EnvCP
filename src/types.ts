@@ -77,6 +77,23 @@ export const EnvCPConfigSchema = z.object({
     service: z.string().default('envcp'),
   }).default({}),
 
+  hsm: z.object({
+    enabled: z.boolean().default(false),
+    type: z.enum(['yubikey', 'gpg', 'pkcs11']).default('yubikey'),
+    serial: z.string().optional(),
+    require_touch: z.boolean().default(true),
+    key_id: z.string().optional(),
+    pkcs11_lib: z.string().optional(),
+    slot: z.number().optional(),
+    protected_key_path: z.string().default('.envcp/.hsm-key'),
+  }).default({}),
+
+  auth: z.object({
+    method: z.enum(['password', 'keychain', 'hsm', 'multi']).default('password'),
+    multi_factors: z.array(z.enum(['password', 'keychain', 'hsm'])).default(['password', 'hsm']),
+    fallback: z.enum(['recovery_key', 'password', 'none']).default('password'),
+  }).default({}),
+
   security: z.object({
     mode: z.enum(['hard-lock', 'recoverable']).default('recoverable'),
     recovery_file: z.string().default('.envcp/.recovery'),
