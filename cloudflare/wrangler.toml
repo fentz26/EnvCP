@@ -7,4 +7,4 @@ ENVIRONMENT = "production"
 
 [[routes]]
 pattern = "envcp.org/*"
-zone_name = "fentz.dev"
+zone_name = "envcp.org"
