@@ -34,3 +34,9 @@ jobs:
       - name: Coverage report
         if: matrix.node-version == 20
         run: npm test -- --coverage
+
+      - name: Upload coverage reports to Codecov
+        if: matrix.node-version == 20
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
