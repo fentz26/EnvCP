@@ -488,6 +488,6 @@ Authorization: Bearer your-secret-key
 SAL v1.0 — See LICENSE file for details.
 
 ## Support
-- Email: contact@fentz.dev
+- Email: contact@envcp.org
 - GitHub Issues: https://github.com/fentz26/EnvCP/issues
 - Documentation: https://envcp.fentz.dev/docs
