@@ -172,6 +172,8 @@ function enableAIAccess() {
   // mask_values and require_confirmation both suppress show_value — disable them
   config = config.replace(/mask_values:\s*true/g, 'mask_values: false');
   config = config.replace(/require_confirmation:\s*true/g, 'require_confirmation: false');
+  // allow_ai_active_check gates list — enable it so GET /api/variables works
+  config = config.replace(/allow_ai_active_check:\s*false/g, 'allow_ai_active_check: true');
   fs.writeFileSync(configPath, config, 'utf8');
 }
 
