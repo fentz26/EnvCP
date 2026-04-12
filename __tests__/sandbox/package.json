@@ -6,7 +6,7 @@
   "main": "sandbox-runner.js",
   "scripts": {
     "start": "node sandbox-runner.js",
-    "test": "node sandbox-runner.js --providers=openai,gemini --scenarios=all"
+    "test": "node sandbox-runner.js --providers=openai,gemini,deepseek --scenarios=all"
   },
   "dependencies": {
     "openai": "^4.91.0",
