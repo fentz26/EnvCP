@@ -25,8 +25,8 @@ services:
     # CIS 4.5: Disable privileged mode
     privileged: false
     
-    # CIS 4.11: Run as non-root user (set in Dockerfile)
-    user: "1000:1000"
+    # CIS 4.11: Run as non-root user (must match UID/GID set in Dockerfile)
+    user: "10001:10001"
     
     # CIS 4.7-4.10: Resource limits
     deploy:
