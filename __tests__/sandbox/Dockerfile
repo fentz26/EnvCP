@@ -41,6 +41,7 @@ COPY --from=builder --chown=envcp:envcp /app/package-lock.json ./
 # Copy sandbox runner and install its dependencies
 COPY --from=builder --chown=envcp:envcp /app/__tests__/sandbox/sandbox-runner.js ./sandbox/
 COPY --from=builder --chown=envcp:envcp /app/__tests__/sandbox/package.json ./sandbox/
+COPY --from=builder --chown=envcp:envcp /app/__tests__/sandbox/package-lock.json ./sandbox/
 RUN cd sandbox && npm ci
 
 # CIS 4.2: Set proper permissions
