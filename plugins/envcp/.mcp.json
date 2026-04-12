@@ -1,8 +1,8 @@
 {
   "mcpServers": {
     "envcp": {
-      "command": "npx",
-      "args": ["-y", "@fentz26/envcp", "serve", "--mode", "mcp"]
+      "command": "node",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/server.js"]
     }
   }
 }
