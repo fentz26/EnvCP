@@ -9,7 +9,7 @@ WORKDIR /app
 COPY . .
 
 # Install dependencies and build
-RUN npm ci --omit=dev && \
+RUN npm ci && \
     npm run build && \
     npm prune --production
 
@@ -40,7 +40,7 @@ COPY --from=builder --chown=envcp:envcp /app/package-lock.json ./
 
 # Install sandbox test dependencies
 COPY --chown=envcp:envcp __tests__/sandbox/package.json ./sandbox/
-RUN cd sandbox && npm ci --omit=dev
+RUN cd sandbox && npm ci
 
 # CIS 4.2: Set proper permissions
 RUN chmod -R 755 /app && \
