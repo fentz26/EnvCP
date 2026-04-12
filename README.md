@@ -126,8 +126,11 @@ Every release ships with a signed SLSA 3 provenance attestation. Three ways to v
 
 **Option 1 — npm (easiest, no extra tools):**
 ```bash
-npm audit signatures @fentz26/envcp
+# In a project that has @fentz26/envcp installed:
+npm install @fentz26/envcp
+npm audit signatures
 ```
+> Available from releases published with provenance (v1.2.0+).
 
 **Option 2 — GitHub CLI:**
 ```bash
