@@ -46,6 +46,8 @@ const DEFAULT_CONFIG: Partial<EnvCPConfig> = {
     timeout_minutes: 30,
     max_extensions: 5,
     path: '.envcp/.session',
+    lockout_threshold: 5,
+    lockout_base_seconds: 30,
   },
   encryption: {
     enabled: true,
