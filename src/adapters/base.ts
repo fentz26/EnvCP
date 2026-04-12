@@ -33,7 +33,7 @@ export abstract class BaseAdapter {
       this.storage.setPassword(password);
     }
 
-    this.logs = new LogManager(path.join(projectPath, '.envcp', 'logs'));
+    this.logs = new LogManager(path.join(projectPath, '.envcp', 'logs'), config.audit);
     this.tools = new Map();
     this.registerTools();
   }

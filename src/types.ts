@@ -16,6 +16,29 @@ export type RateLimitConfig = z.infer<typeof RateLimitConfigSchema>;
 export const VaultModeSchema = z.enum(['project', 'global']);
 export type VaultMode = z.infer<typeof VaultModeSchema>;
 
+// Audit schemas (defined before EnvCPConfigSchema which references AuditConfigSchema)
+export const AuditFieldsSchema = z.object({
+  session_id: z.boolean().default(true),
+  client_id: z.boolean().default(true),
+  client_type: z.boolean().default(true),
+  ip: z.boolean().default(true),
+  user_agent: z.boolean().default(false),
+  purpose: z.boolean().default(false),
+  duration_ms: z.boolean().default(true),
+  variable: z.boolean().default(true),
+  message: z.boolean().default(true),
+}).default({});
+
+export const AuditConfigSchema = z.object({
+  enabled: z.boolean().default(true),
+  retain_days: z.number().int().min(1).default(30),
+  fields: AuditFieldsSchema,
+  hmac: z.boolean().default(false),
+  hmac_key_path: z.string().default('.envcp/.audit-hmac-key'),
+}).default({});
+
+export type AuditConfig = z.infer<typeof AuditConfigSchema>;
+
 export const EnvCPConfigSchema = z.object({
   version: z.string().default('1.0'),
   project: z.string().optional(),
@@ -125,6 +148,8 @@ export const EnvCPConfigSchema = z.object({
     sync_to_env: z.boolean().default(true),
   })).optional(),
 
+  audit: AuditConfigSchema,
+
   server: z.object({
     mode: ServerModeSchema.optional(),
     port: z.number().optional(),
@@ -162,6 +187,15 @@ export const OperationLogSchema = z.object({
   source: z.enum(['cli', 'mcp', 'api']),
   success: z.boolean(),
   message: z.string().optional(),
+  // Enhanced audit fields
+  session_id: z.string().optional(),
+  client_id: z.string().optional(),
+  client_type: z.string().optional(),
+  ip: z.string().optional(),
+  user_agent: z.string().optional(),
+  purpose: z.string().optional(),
+  duration_ms: z.number().optional(),
+  hmac: z.string().optional(),
 });
 
 export type OperationLog = z.infer<typeof OperationLogSchema>;
