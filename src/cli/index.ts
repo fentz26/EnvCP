@@ -7,7 +7,7 @@ import * as fs from 'fs/promises';
 import { ensureDir, pathExists } from '../utils/fs.js';
 import { loadConfig, initConfig, saveConfig, parseEnvFile, registerMcpConfig, isBlacklisted, canAccess } from '../config/manager.js';
 import { ConfigGuard } from '../config/config-guard.js';
-import { StorageManager } from '../storage/index.js';
+import { StorageManager, LogManager } from '../storage/index.js';
 import { SessionManager } from '../utils/session.js';
 import { maskValue, validatePassword, encrypt, decrypt, generateRecoveryKey, createRecoveryData, recoverPassword } from '../utils/crypto.js';
 import { KeychainManager } from '../utils/keychain.js';
@@ -1805,5 +1805,79 @@ if (!await pathExists(firstRunMarker)) {
    Docs: https://github.com/fentz26/EnvCP
 `);
 }
+
+program
+  .command('logs')
+  .description('View audit logs')
+  .option('--date <date>', 'Log date (YYYY-MM-DD, default: today)')
+  .option('--operation <op>', 'Filter by operation (add, get, update, delete, list, sync, export, unlock, lock, check_access, run, auth_failure)')
+  .option('--variable <name>', 'Filter by variable name')
+  .option('--source <source>', 'Filter by source (cli, mcp, api)')
+  .option('--success', 'Show only successful operations')
+  .option('--failure', 'Show only failed operations')
+  .option('--tail <n>', 'Show last N entries', parseInt)
+  .option('--dates', 'List all available log dates')
+  .option('--verify', 'Verify HMAC integrity of log entries')
+  .action(async (options) => {
+    const projectPath = process.cwd();
+    const config = await loadConfig(projectPath);
+    const logDir = path.join(projectPath, '.envcp', 'logs');
+    const logs = new LogManager(logDir, config.audit);
+    await logs.init();
+
+    if (options.dates) {
+      const dates = await logs.getLogDates();
+      if (dates.length === 0) {
+        console.log(chalk.gray('No log files found.'));
+      } else {
+        console.log(chalk.bold('Available log dates:'));
+        dates.forEach(d => console.log(chalk.gray(`  ${d}`)));
+      }
+      return;
+    }
+
+    const filter: Record<string, unknown> = {};
+    if (options.date) filter.date = options.date;
+    if (options.operation) filter.operation = options.operation;
+    if (options.variable) filter.variable = options.variable;
+    if (options.source) filter.source = options.source;
+    if (options.success) filter.success = true;
+    if (options.failure) filter.success = false;
+    if (options.tail) filter.tail = options.tail;
+
+    const entries = await logs.getLogs(filter as Parameters<typeof logs.getLogs>[0]);
+
+    if (entries.length === 0) {
+      console.log(chalk.gray('No log entries found.'));
+      return;
+    }
+
+    let failed = 0;
+    entries.forEach(entry => {
+      const ts = chalk.gray(entry.timestamp);
+      const op = entry.success ? chalk.green(entry.operation) : chalk.red(entry.operation);
+      const src = chalk.blue(entry.source);
+      const varName = entry.variable ? chalk.yellow(` [${entry.variable}]`) : '';
+      const msg = entry.message ? chalk.gray(` — ${entry.message}`) : '';
+
+      if (options.verify && entry.hmac !== undefined) {
+        const valid = logs.verifyEntry(entry);
+        if (!valid) {
+          failed++;
+          console.log(`${ts} ${chalk.red('[TAMPERED]')} ${op} ${src}${varName}${msg}`);
+          return;
+        }
+      }
+      console.log(`${ts} ${op} ${src}${varName}${msg}`);
+    });
+
+    if (options.verify) {
+      if (failed === 0) {
+        console.log(chalk.green(`\nAll ${entries.length} entries verified OK.`));
+      } else {
+        console.log(chalk.red(`\n${failed}/${entries.length} entries failed HMAC verification.`));
+      }
+    }
+  });
 
 program.parse();

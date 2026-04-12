@@ -3,7 +3,7 @@ import { ensureDir, pathExists } from '../src/utils/fs.js';
 import * as nativeFs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import { StorageManager, LogManager } from '../src/storage/index';
+import { StorageManager, LogManager, LogFilter } from '../src/storage/index';
 
 describe('StorageManager advanced', () => {
   let tmpDir: string;
@@ -268,7 +268,7 @@ describe('LogManager', () => {
   it('returns empty array for missing date', async () => {
     const logger = new LogManager(logDir);
     await logger.init();
-    const logs = await logger.getLogs('2000-01-01');
+    const logs = await logger.getLogs({ date: '2000-01-01' });
     expect(logs).toEqual([]);
   });
 
@@ -309,6 +309,165 @@ describe('LogManager', () => {
 
     // Non-log file is untouched
     expect(await pathExists(otherFile)).toBe(true);
+  });
+});
+
+describe('LogManager enhanced audit features', () => {
+  let tmpDir: string;
+  let logDir: string;
+
+  beforeEach(async () => {
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-audit-'));
+    logDir = path.join(tmpDir, 'logs');
+  });
+
+  afterEach(async () => {
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  });
+
+  it('skips logging when audit is disabled', async () => {
+    const logger = new LogManager(logDir, { enabled: false, retain_days: 30, fields: { session_id: true, client_id: true, client_type: true, ip: true, user_agent: false, purpose: false, duration_ms: true, variable: true, message: true }, hmac: false, hmac_key_path: '.envcp/.audit-hmac-key' });
+    await logger.init();
+
+    await logger.log({ timestamp: new Date().toISOString(), operation: 'get', variable: 'X', source: 'api', success: true });
+
+    const date = new Date().toISOString().split('T')[0];
+    const logFile = path.join(logDir, `operations-${date}.log`);
+    expect(await pathExists(logFile)).toBe(false);
+  });
+
+  it('filters fields — omits disabled fields from log entries', async () => {
+    const logger = new LogManager(logDir, {
+      enabled: true,
+      retain_days: 30,
+      fields: { session_id: false, client_id: false, client_type: false, ip: false, user_agent: false, purpose: false, duration_ms: false, variable: false, message: false },
+      hmac: false,
+      hmac_key_path: '.envcp/.audit-hmac-key',
+    });
+    await logger.init();
+
+    await logger.log({ timestamp: new Date().toISOString(), operation: 'get', variable: 'SECRET', source: 'api', success: true, message: 'revealed', session_id: 'sess-1', ip: '1.2.3.4' });
+
+    const date = new Date().toISOString().split('T')[0];
+    const raw = await fs.readFile(path.join(logDir, `operations-${date}.log`), 'utf8');
+    const entry = JSON.parse(raw.trim());
+    expect(entry.variable).toBeUndefined();
+    expect(entry.message).toBeUndefined();
+    expect(entry.session_id).toBeUndefined();
+    expect(entry.ip).toBeUndefined();
+    expect(entry.operation).toBe('get');
+    expect(entry.success).toBe(true);
+  });
+
+  it('includes enabled optional fields in log entries', async () => {
+    const logger = new LogManager(logDir, {
+      enabled: true,
+      retain_days: 30,
+      fields: { session_id: true, client_id: true, client_type: true, ip: true, user_agent: true, purpose: true, duration_ms: true, variable: true, message: true },
+      hmac: false,
+      hmac_key_path: '.envcp/.audit-hmac-key',
+    });
+    await logger.init();
+
+    await logger.log({ timestamp: new Date().toISOString(), operation: 'list', source: 'mcp', success: true, session_id: 'sid', client_id: 'cid', client_type: 'mcp', ip: '127.0.0.1', user_agent: 'Claude', purpose: 'test', duration_ms: 42, variable: 'VAR', message: 'msg' });
+
+    const date = new Date().toISOString().split('T')[0];
+    const raw = await fs.readFile(path.join(logDir, `operations-${date}.log`), 'utf8');
+    const entry = JSON.parse(raw.trim());
+    expect(entry.session_id).toBe('sid');
+    expect(entry.ip).toBe('127.0.0.1');
+    expect(entry.duration_ms).toBe(42);
+    expect(entry.variable).toBe('VAR');
+  });
+
+  it('signs entries with HMAC and verifyEntry confirms integrity', async () => {
+    const logger = new LogManager(logDir, {
+      enabled: true,
+      retain_days: 30,
+      fields: { session_id: true, client_id: true, client_type: true, ip: true, user_agent: false, purpose: false, duration_ms: true, variable: true, message: true },
+      hmac: true,
+      hmac_key_path: path.join(tmpDir, '.audit-hmac-key'),
+    });
+    await logger.init();
+
+    await logger.log({ timestamp: '2024-01-01T00:00:00.000Z', operation: 'get', variable: 'K', source: 'api', success: true });
+
+    const date = new Date().toISOString().split('T')[0];
+    const raw = await fs.readFile(path.join(logDir, `operations-${date}.log`), 'utf8');
+    const entry = JSON.parse(raw.trim());
+    expect(entry.hmac).toBeDefined();
+    expect(logger.verifyEntry(entry)).toBe(true);
+  });
+
+  it('verifyEntry detects tampered entries', async () => {
+    const logger = new LogManager(logDir, {
+      enabled: true,
+      retain_days: 30,
+      fields: { session_id: true, client_id: true, client_type: true, ip: true, user_agent: false, purpose: false, duration_ms: true, variable: true, message: true },
+      hmac: true,
+      hmac_key_path: path.join(tmpDir, '.audit-hmac-key'),
+    });
+    await logger.init();
+
+    await logger.log({ timestamp: '2024-01-01T00:00:00.000Z', operation: 'get', variable: 'K', source: 'api', success: true });
+
+    const date = new Date().toISOString().split('T')[0];
+    const raw = await fs.readFile(path.join(logDir, `operations-${date}.log`), 'utf8');
+    const entry = JSON.parse(raw.trim());
+    entry.success = false; // tamper
+    expect(logger.verifyEntry(entry)).toBe(false);
+  });
+
+  it('getLogs filters by operation', async () => {
+    const logger = new LogManager(logDir);
+    await logger.init();
+
+    const ts = new Date().toISOString();
+    await logger.log({ timestamp: ts, operation: 'get', variable: 'A', source: 'api', success: true });
+    await logger.log({ timestamp: ts, operation: 'list', source: 'api', success: true });
+
+    const results = await logger.getLogs({ operation: 'get' });
+    expect(results).toHaveLength(1);
+    expect(results[0].operation).toBe('get');
+  });
+
+  it('getLogs filters by success', async () => {
+    const logger = new LogManager(logDir);
+    await logger.init();
+
+    const ts = new Date().toISOString();
+    await logger.log({ timestamp: ts, operation: 'get', variable: 'A', source: 'api', success: true });
+    await logger.log({ timestamp: ts, operation: 'get', variable: 'B', source: 'api', success: false });
+
+    const failed = await logger.getLogs({ success: false });
+    expect(failed).toHaveLength(1);
+    expect(failed[0].variable).toBe('B');
+  });
+
+  it('getLogs filters by tail', async () => {
+    const logger = new LogManager(logDir);
+    await logger.init();
+
+    const ts = new Date().toISOString();
+    for (let i = 0; i < 5; i++) {
+      await logger.log({ timestamp: ts, operation: 'list', source: 'cli', success: true, message: `entry-${i}` });
+    }
+
+    const results = await logger.getLogs({ tail: 2 });
+    expect(results).toHaveLength(2);
+    expect(results[1].message).toBe('entry-4');
+  });
+
+  it('getLogDates returns sorted list of available log dates', async () => {
+    const logger = new LogManager(logDir);
+    await logger.init();
+
+    // Create a couple of fake log files
+    await fs.writeFile(path.join(logDir, 'operations-2024-01-01.log'), '{"test":1}\n', 'utf8');
+    await fs.writeFile(path.join(logDir, 'operations-2024-01-02.log'), '{"test":2}\n', 'utf8');
+
+    const dates = await logger.getLogDates();
+    expect(dates).toEqual(['2024-01-01', '2024-01-02']);
   });
 });
 
