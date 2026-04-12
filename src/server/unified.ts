@@ -67,6 +67,35 @@ export class UnifiedServer {
   }
 
 
+  private checkApiKeySecurity(): void {
+    const { api_key } = this.serverConfig;
+    if (api_key) return;
+
+    const access = this.config.access;
+    const activeFlags = ([
+      'allow_ai_read',
+      'allow_ai_write',
+      'allow_ai_delete',
+      'allow_ai_export',
+      'allow_ai_execute',
+      'allow_ai_active_check',
+    ] as const).filter(flag => access[flag]);
+
+    if (activeFlags.length === 0) return;
+
+    const severity = access.allow_ai_execute ? 'CRITICAL' : 'WARNING';
+    process.stderr.write(
+      `\n[EnvCP] ${severity}: Server starting with no API key configured.\n` +
+      '[EnvCP]   AI access is enabled — anyone who can reach this port can access your vault.\n' +
+      `[EnvCP]   Active AI flags: ${activeFlags.join(', ')}\n` +
+      '[EnvCP]   Set server.api_key in your config to require authentication.\n' +
+      (access.allow_ai_execute
+        ? '[EnvCP]   allow_ai_execute is ON — unauthenticated callers can run arbitrary commands.\n'
+        : '') +
+      '\n'
+    );
+  }
+
   async start(): Promise<void> {
     const { mode, port, host, api_key } = this.serverConfig;
 
@@ -79,6 +108,9 @@ export class UnifiedServer {
       await this.mcpServer.start();
       return;
     }
+
+    // Warn (or refuse) if AI access is enabled without an API key
+    this.checkApiKeySecurity();
 
     // Initialize adapters based on mode
     if (mode === 'rest' || mode === 'all' || mode === 'auto') {
