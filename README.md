@@ -122,23 +122,36 @@ EnvCP is built with security-first principles:
 
 ### Verifying Releases
 
-You can verify the integrity and provenance of EnvCP releases using `slsa-verifier`:
+Every release ships with a signed SLSA 3 provenance attestation. Three ways to verify:
 
+**Option 1 — npm (easiest, no extra tools):**
 ```bash
-# Download the release tarball and provenance
-gh release download v1.0.9 --pattern '*.tgz' --pattern 'multiple.intoto.jsonl'
-
-# Verify the release
-slsa-verifier verify-artifact \
-  --provenance-path multiple.intoto.jsonl \
-  --source-uri github.com/fentz26/EnvCP \
-  fentz26-envcp-1.0.9.tgz
+npm audit signatures @fentz26/envcp
 ```
 
-This confirms:
-- The release was built from the official source
-- The build process was tamper-resistant
-- The artifact hasn't been modified after the build
+**Option 2 — GitHub CLI:**
+```bash
+# Download the release tarball
+gh release download v<version> --repo fentz26/EnvCP --pattern '*.tgz'
+
+# Verify against GitHub's Sigstore-backed attestation store
+gh attestation verify fentz26-envcp-<version>.tgz \
+  --repo fentz26/EnvCP
+```
+
+**Option 3 — slsa-verifier (offline, full provenance inspection):**
+```bash
+# Download tarball + provenance bundle
+gh release download v<version> --repo fentz26/EnvCP \
+  --pattern '*.tgz' --pattern '*.intoto.jsonl'
+
+# Verify
+slsa-verifier verify-artifact fentz26-envcp-<version>.tgz \
+  --provenance-path fentz26-envcp-<version>.tgz.intoto.jsonl \
+  --source-uri github.com/fentz26/EnvCP
+```
+
+All three confirm the package was built from the official source by GitHub Actions, was not tampered with after the build, and the build pipeline itself used pinned dependencies.
 
 ---
 
