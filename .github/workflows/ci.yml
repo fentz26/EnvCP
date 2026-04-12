@@ -25,6 +25,10 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Dependency audit
+        if: matrix.node-version == 20
+        run: npm audit --audit-level=high
+
       - name: Build
         run: npm run build
 
