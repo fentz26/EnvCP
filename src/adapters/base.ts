@@ -562,7 +562,8 @@ export abstract class BaseAdapter {
     }
 
     const envPath = path.resolve(this.projectPath, args.env_file || '.env');
-    if (!envPath.startsWith(path.resolve(this.projectPath))) {
+    const projectRoot = path.resolve(this.projectPath);
+    if (!envPath.startsWith(`${projectRoot}${path.sep}`)) {
       throw new Error('env_file must be within the project directory');
     }
 
