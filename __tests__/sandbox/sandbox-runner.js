@@ -181,19 +181,25 @@ async function testMCPStdio() {
  */
 async function testAccessControl() {
   return runScenario('access-control', async () => {
-    // Add a variable (vault is already unlocked/no-encrypt from cli-lifecycle)
-    const addResult = execCLI(['add', 'ADMIN_SECRET', '--value', 'secret-123'], { cwd: SANDBOX_DIR });
+    // Use a variable that doesn't match default blacklist patterns
+    // (default blacklist: *_SECRET, *_PRIVATE, ADMIN_*, ROOT_*)
+    const addResult = execCLI(['add', 'SANDBOX_CTRL_VAR', '--value', 'ctrl-value-456'], { cwd: SANDBOX_DIR });
     if (!addResult.success) throw new Error(`add failed: ${addResult.stderr}`);
 
-    // Verify it exists — output is "  Value: secret-123"
-    const getResult = execCLI(['get', 'ADMIN_SECRET', '--show-value'], { cwd: SANDBOX_DIR });
+    // Verify it exists — output is "<NAME>\n  Value: <val>"
+    const getResult = execCLI(['get', 'SANDBOX_CTRL_VAR', '--show-value'], { cwd: SANDBOX_DIR });
     if (!getResult.success) throw new Error(`get failed: ${getResult.stderr}`);
-    if (!getResult.stdout.includes('Value: secret-123')) throw new Error('value mismatch');
+    if (!getResult.stdout.includes('Value: ctrl-value-456')) throw new Error('value mismatch');
+
+    // Verify blacklist works — ADMIN_SECRET matches ADMIN_* pattern
+    execCLI(['add', 'ADMIN_SECRET', '--value', 'blocked'], { cwd: SANDBOX_DIR });
+    const blockedGet = execCLI(['get', 'ADMIN_SECRET', '--show-value'], { cwd: SANDBOX_DIR });
+    if (blockedGet.stdout.includes('Value: blocked')) throw new Error('blacklisted variable should not be readable');
 
     // Clean up
-    execCLI(['delete', 'ADMIN_SECRET'], { cwd: SANDBOX_DIR });
+    execCLI(['remove', 'SANDBOX_CTRL_VAR'], { cwd: SANDBOX_DIR });
 
-    log('info', 'Access control test — basic add/get/delete verified');
+    log('info', 'Access control test — add/get verified, blacklist enforced');
   });
 }
 
