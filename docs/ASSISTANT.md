@@ -35,7 +35,7 @@ All code examples use:
 
 ### Installation
 ```bash
-curl -fsSL https://envcp.org/install.sh | bash
+npm install -g @fentz26/envcp
 ```
 
 ### Basic Usage

@@ -30,6 +30,12 @@ Thumbs.db
 *.swp
 *.swo
 
+# Claude Code local settings
+.claude/
+
+# Cloudflare Wrangler
+.wrangler/
+
 # Testing
 coverage/
 .nyc_output/

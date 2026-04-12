@@ -1,0 +1,34 @@
+coverage:
+  status:
+    project:
+      default:
+        target: 95%        # match jest coverageThreshold
+        threshold: 1%      # allow up to 1% drop before failing
+    patch:
+      default:
+        target: 90%        # new code on PRs must be 90% covered
+        threshold: 2%
+
+  ignore:
+    - "src/cli/index.ts"
+    - "src/index.ts"
+    - "src/utils/keychain.ts"
+    - "dist/**"
+
+parsers:
+  javascript:
+    enable_partials: yes
+
+comment:
+  layout: "reach,diff,flags,files"
+  behavior: default
+  require_changes: true   # only comment on PRs when coverage changes
+
+flags:
+  unit:
+    paths:
+      - src/
+    carryforward: true
+
+github_checks:
+  annotations: true

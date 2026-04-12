@@ -104,7 +104,7 @@
     "links": [
       {
         "label": "Install",
-        "href": "https://envcp.org/install.sh"
+        "href": "/installation"
       }
     ],
     "primary": {
