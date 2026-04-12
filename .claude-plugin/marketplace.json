@@ -1,0 +1,11 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "envcp-plugins",
+  "version": "1.0.0",
+  "description": "EnvCP — secure environment variable management for AI agents",
+  "owner": {
+    "name": "fentz26",
+    "url": "https://github.com/fentz26/EnvCP"
+  },
+  "plugins": []
+}
