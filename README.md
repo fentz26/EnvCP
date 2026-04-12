@@ -5,6 +5,17 @@
 </p>
 
 <p align="center">
+<a href="https://www.npmjs.com/package/@fentz26/envcp"><img src="https://img.shields.io/npm/v/%40fentz26%2Fenvcp?style=flat-square&color=000000&labelColor=000000&label=version" alt="npm version"></a>
+<a href="https://www.npmjs.com/package/@fentz26/envcp"><img src="https://img.shields.io/npm/dt/%40fentz26%2Fenvcp?style=flat-square&color=000000&labelColor=000000&label=downloads" alt="npm downloads"></a>
+<a href="https://www.npmjs.com/package/@fentz26/envcp"><img src="https://img.shields.io/npm/unpacked-size/%40fentz26%2Fenvcp?style=flat-square&color=000000&labelColor=000000&label=size" alt="npm size"></a>
+<a href="https://github.com/fentz26/EnvCP/actions"><img src="https://img.shields.io/github/actions/workflow/status/fentz26/EnvCP/ci.yml?style=flat-square&color=000000&labelColor=000000&label=ci" alt="CI"></a>
+<a href="https://codecov.io/github/fentz26/EnvCP"><img src="https://img.shields.io/codecov/c/github/fentz26/EnvCP?style=flat-square&color=000000&labelColor=000000&label=coverage&token=FKMIN74O9C" alt="codecov"></a>
+<a href="https://github.com/fentz26/EnvCP/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-SAL%20v1.0-000000?style=flat-square&labelColor=000000" alt="license"></a>
+<a href="https://github.com/fentz26/EnvCP/releases"><img src="https://img.shields.io/badge/SLSA-3-000000?style=flat-square&labelColor=000000" alt="SLSA Level 3"></a>
+<a href="https://nodejs.org"><img src="https://img.shields.io/node/v/%40fentz26%2Fenvcp?style=flat-square&color=000000&labelColor=000000&label=node" alt="node version"></a>
+</p>
+
+<p align="center">
 <strong>Secure secrets for AI agents — local, encrypted, reference-only.</strong>
 </p>
 
@@ -17,17 +28,6 @@
 <a href="docs/i18n/README.vi.md">Tiếng Việt</a> |
 <a href="docs/i18n/README.ja.md">日本語</a>
 </sup>
-</p>
-
-<p align="center">
-<a href="https://www.npmjs.com/package/@fentz26/envcp"><img src="https://img.shields.io/npm/v/%40fentz26%2Fenvcp?style=flat-square&color=000000&labelColor=000000&label=version" alt="npm version"></a>
-<a href="https://www.npmjs.com/package/@fentz26/envcp"><img src="https://img.shields.io/npm/dt/%40fentz26%2Fenvcp?style=flat-square&color=000000&labelColor=000000&label=downloads" alt="npm downloads"></a>
-<a href="https://www.npmjs.com/package/@fentz26/envcp"><img src="https://img.shields.io/npm/unpacked-size/%40fentz26%2Fenvcp?style=flat-square&color=000000&labelColor=000000&label=size" alt="npm size"></a>
-<a href="https://github.com/fentz26/EnvCP/actions"><img src="https://img.shields.io/github/actions/workflow/status/fentz26/EnvCP/ci.yml?style=flat-square&color=000000&labelColor=000000&label=ci" alt="CI"></a>
-<a href="https://codecov.io/github/fentz26/EnvCP"><img src="https://img.shields.io/codecov/c/github/fentz26/EnvCP?style=flat-square&color=000000&labelColor=000000&label=coverage&token=FKMIN74O9C" alt="codecov"></a>
-<a href="https://github.com/fentz26/EnvCP/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-SAL%20v1.0-000000?style=flat-square&labelColor=000000" alt="license"></a>
-<a href="https://github.com/fentz26/EnvCP/releases"><img src="https://img.shields.io/badge/SLSA-3-000000?style=flat-square&labelColor=000000" alt="SLSA Level 3"></a>
-<a href="https://nodejs.org"><img src="https://img.shields.io/node/v/%40fentz26%2Fenvcp?style=flat-square&color=000000&labelColor=000000&label=node" alt="node version"></a>
 </p>
 
 <p align="center">
