@@ -14,7 +14,6 @@ const makeConfig = () => EnvCPConfigSchema.parse({
     allow_ai_write: true,
     allow_ai_delete: true,
     allow_ai_export: true,
-    allow_ai_execute: true,
     allow_ai_active_check: true,
     require_user_reference: false,
     require_confirmation: false,
@@ -906,5 +905,105 @@ describe('UnifiedServer direct handler calls with null/edge-case urls', () => {
     const { res } = makeMockRes();
     await handle(req, res);
     expect(res.end).toHaveBeenCalled();
+  });
+});
+
+describe('UnifiedServer checkApiKeySecurity (#148)', () => {
+  it('emits warning to stderr when AI flags are enabled with no api_key', async () => {
+    const stderrSpy = jest.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-sec-warn-'));
+    const port = 30000 + Math.floor(Math.random() * 10000);
+    const config = EnvCPConfigSchema.parse({
+      access: { allow_ai_read: true, allow_ai_write: true },
+      encryption: { enabled: false },
+      storage: { encrypted: false, path: '.envcp/store.json' },
+    });
+    const serverConfig: ServerConfig = { mode: 'auto', port, host: '127.0.0.1', cors: true, auto_detect: true };
+    const srv = new UnifiedServer(config, serverConfig, tmpDir);
+    await srv.start();
+    expect(stderrSpy).toHaveBeenCalledWith(expect.stringContaining('WARNING: Server starting with no API key'));
+    expect(stderrSpy).toHaveBeenCalledWith(expect.stringContaining('allow_ai_read'));
+    srv.stop();
+    await fs.rm(tmpDir, { recursive: true, force: true });
+    stderrSpy.mockRestore();
+  });
+
+  it('warning includes all active allow_ai_* flag names', async () => {
+    const stderrSpy = jest.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-sec-flags-'));
+    const port = 30000 + Math.floor(Math.random() * 10000);
+    const config = EnvCPConfigSchema.parse({
+      access: { allow_ai_read: true, allow_ai_write: true, allow_ai_delete: true },
+      encryption: { enabled: false },
+      storage: { encrypted: false, path: '.envcp/store.json' },
+    });
+    const serverConfig: ServerConfig = { mode: 'auto', port, host: '127.0.0.1', cors: true, auto_detect: true };
+    const srv = new UnifiedServer(config, serverConfig, tmpDir);
+    await srv.start();
+    const calls = stderrSpy.mock.calls.map(c => String(c[0])).join('');
+    expect(calls).toContain('allow_ai_read');
+    expect(calls).toContain('allow_ai_write');
+    expect(calls).toContain('allow_ai_delete');
+    srv.stop();
+    await fs.rm(tmpDir, { recursive: true, force: true });
+    stderrSpy.mockRestore();
+  });
+
+  it('emits CRITICAL warning when allow_ai_execute is enabled with no api_key', async () => {
+    const stderrSpy = jest.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-sec-err-'));
+    const port = 30000 + Math.floor(Math.random() * 10000);
+    const config = EnvCPConfigSchema.parse({
+      access: { allow_ai_execute: true },
+      encryption: { enabled: false },
+      storage: { encrypted: false, path: '.envcp/store.json' },
+    });
+    const serverConfig: ServerConfig = { mode: 'auto', port, host: '127.0.0.1', cors: true, auto_detect: true };
+    const srv = new UnifiedServer(config, serverConfig, tmpDir);
+    await srv.start();
+    const calls = stderrSpy.mock.calls.map(c => String(c[0])).join('');
+    expect(calls).toContain('CRITICAL');
+    expect(calls).toContain('allow_ai_execute is ON');
+    srv.stop();
+    await fs.rm(tmpDir, { recursive: true, force: true });
+    stderrSpy.mockRestore();
+  });
+
+  it('does not warn when no AI flags are enabled', async () => {
+    const stderrSpy = jest.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-sec-noflags-'));
+    const port = 30000 + Math.floor(Math.random() * 10000);
+    const config = EnvCPConfigSchema.parse({
+      encryption: { enabled: false },
+      storage: { encrypted: false, path: '.envcp/store.json' },
+    });
+    const serverConfig: ServerConfig = { mode: 'auto', port, host: '127.0.0.1', cors: true, auto_detect: true };
+    const srv = new UnifiedServer(config, serverConfig, tmpDir);
+    await srv.start();
+    expect(stderrSpy).not.toHaveBeenCalled();
+    srv.stop();
+    await fs.rm(tmpDir, { recursive: true, force: true });
+    stderrSpy.mockRestore();
+  });
+
+  it('does not warn when api_key is configured', async () => {
+    const stderrSpy = jest.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-sec-key-'));
+    const port = 30000 + Math.floor(Math.random() * 10000);
+    const config = EnvCPConfigSchema.parse({
+      access: { allow_ai_read: true, allow_ai_execute: true },
+      encryption: { enabled: false },
+      storage: { encrypted: false, path: '.envcp/store.json' },
+    });
+    const serverConfig: ServerConfig = {
+      mode: 'auto', port, host: '127.0.0.1', cors: true, auto_detect: true,
+      api_key: 'secret-key',
+    };
+    const srv = new UnifiedServer(config, serverConfig, tmpDir);
+    await srv.start();
+    expect(stderrSpy).not.toHaveBeenCalled();
+    srv.stop();
+    await fs.rm(tmpDir, { recursive: true, force: true });
+    stderrSpy.mockRestore();
   });
 });
