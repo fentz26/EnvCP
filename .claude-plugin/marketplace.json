@@ -1,7 +1,7 @@
 {
   "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
   "name": "envcp-plugins",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "EnvCP — secure environment variable management for AI agents",
   "owner": {
     "name": "fentz26",
@@ -19,7 +19,15 @@
       },
       "homepage": "https://github.com/fentz26/EnvCP",
       "repository": "https://github.com/fentz26/EnvCP",
-      "keywords": ["secrets", "environment", "vault", "mcp", "security", "encryption", "ai-safety"]
+      "keywords": [
+        "secrets",
+        "environment",
+        "vault",
+        "mcp",
+        "security",
+        "encryption",
+        "ai-safety"
+      ]
     }
   ]
 }

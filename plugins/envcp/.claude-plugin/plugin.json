@@ -6,5 +6,12 @@
     "name": "fentz26",
     "url": "https://github.com/fentz26/EnvCP"
   },
-  "keywords": ["secrets", "environment", "vault", "mcp", "security", "encryption"]
+  "keywords": [
+    "secrets",
+    "environment",
+    "vault",
+    "mcp",
+    "security",
+    "encryption"
+  ]
 }

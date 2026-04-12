@@ -8,6 +8,7 @@ import { ensureDir, pathExists } from '../utils/fs.js';
 import { loadConfig, initConfig, saveConfig, parseEnvFile, registerMcpConfig, isBlacklisted, canAccess } from '../config/manager.js';
 import { ConfigGuard } from '../config/config-guard.js';
 import { StorageManager, LogManager } from '../storage/index.js';
+import { VERSION } from '../version.js';
 import { SessionManager } from '../utils/session.js';
 import { maskValue, validatePassword, encrypt, decrypt, generateRecoveryKey, createRecoveryData, recoverPassword } from '../utils/crypto.js';
 import { KeychainManager } from '../utils/keychain.js';
@@ -147,7 +148,7 @@ const program = new Command();
 program
   .name('envcp')
   .description('Secure environment variable management for AI-assisted coding')
-  .version('1.0.0');
+  .version(VERSION);
 
 program
   .command('init')
