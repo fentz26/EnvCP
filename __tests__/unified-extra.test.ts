@@ -24,7 +24,6 @@ const makeConfig = () => EnvCPConfigSchema.parse({
     allow_ai_write: true,
     allow_ai_delete: true,
     allow_ai_export: true,
-    allow_ai_execute: true,
     allow_ai_active_check: true,
     require_user_reference: false,
     require_confirmation: false,

@@ -43,7 +43,10 @@ export class SessionManager {
 
   const encrypted = await encrypt(sessionData, password);
   await withLock(this.sessionPath, async () => {
-    await nodefs.writeFile(this.sessionPath, encrypted, { encoding: 'utf8', mode: 0o600 });
+    const wh = await nodefs.open(this.sessionPath,
+      fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_TRUNC | fs.constants.O_NOFOLLOW,
+      0o600);
+    try { await wh.writeFile(encrypted, 'utf8'); } finally { await wh.close(); }
   });
 
     return this.session;
@@ -125,7 +128,10 @@ export class SessionManager {
 
   const encrypted = await encrypt(sessionData, this.password);
   await withLock(this.sessionPath, async () => {
-    await nodefs.writeFile(this.sessionPath, encrypted, { encoding: 'utf8', mode: 0o600 });
+    const wh = await nodefs.open(this.sessionPath,
+      fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_TRUNC | fs.constants.O_NOFOLLOW,
+      0o600);
+    try { await wh.writeFile(encrypted, 'utf8'); } finally { await wh.close(); }
   });
 
     return this.session;

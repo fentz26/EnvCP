@@ -33,10 +33,10 @@ describe('setSecurityHeaders', () => {
 });
 
 describe('setCorsHeaders', () => {
-  it('defaults to * when no origin specified', () => {
+  it('defaults to empty string (no CORS) when no origin specified', () => {
     const res = createMockRes();
     setCorsHeaders(res);
-    expect((res as any)._headers['access-control-allow-origin']).toBe('*');
+    expect((res as any)._headers['access-control-allow-origin']).toBe('');
   });
 
   it('uses allowed origin when specified', () => {

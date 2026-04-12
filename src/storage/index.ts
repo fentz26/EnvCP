@@ -194,7 +194,8 @@ export class StorageManager {
   async verify(): Promise<{ valid: boolean; error?: string; count?: number; backups?: number }> {
     let data: string;
     try {
-      data = await nodefs.readFile(this.storePath, 'utf8');
+      const rh = await nodefs.open(this.storePath, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW);
+      try { data = await rh.readFile({ encoding: 'utf8' }); } finally { await rh.close(); }
     } catch {
       return { valid: false, error: 'Store file does not exist or cannot be read' };
     }
@@ -245,6 +246,21 @@ export class LogManager {
 
   async init(): Promise<void> {
     await ensureDir(this.logDir);
+    await this.pruneOldLogs();
+  }
+
+  async pruneOldLogs(retainDays: number = 30): Promise<void> {
+    const cutoff = Date.now() - retainDays * 24 * 60 * 60 * 1000;
+    let entries: string[];
+    try { entries = await nodefs.readdir(this.logDir); } catch { return; }
+    for (const entry of entries) {
+      if (!entry.startsWith('operations-') || !entry.endsWith('.log')) continue;
+      const filePath = path.join(this.logDir, entry);
+      try {
+        const stat = await nodefs.stat(filePath);
+        if (stat.mtimeMs < cutoff) await nodefs.unlink(filePath);
+      } catch { /* ignore missing/inaccessible files */ }
+    }
   }
 
   async log(entry: OperationLog): Promise<void> {

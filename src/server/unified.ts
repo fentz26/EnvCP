@@ -5,6 +5,8 @@ import { GeminiAdapter } from '../adapters/gemini.js';
 import { EnvCPServer } from '../mcp/server.js';
 import { resolveVaultPath } from '../vault/index.js';
 import { setCorsHeaders, sendJson, parseBody, validateApiKey, RateLimiter, rateLimitMiddleware } from '../utils/http.js';
+import { LogManager } from '../storage/index.js';
+import * as path from 'path';
 import * as http from 'http';
 
 export class UnifiedServer {
@@ -19,6 +21,7 @@ export class UnifiedServer {
   private mcpServer: EnvCPServer | null = null;
   private httpServer: http.Server | null = null;
   private rateLimiter: RateLimiter = new RateLimiter(60, 60000);
+  private logs: LogManager | null = null;
 
   constructor(config: EnvCPConfig, serverConfig: ServerConfig, projectPath: string, password?: string) {
     this.config = config;
@@ -85,16 +88,19 @@ export class UnifiedServer {
 
     if (activeFlags.length === 0) return;
 
-    const severity = access.allow_ai_execute ? 'CRITICAL' : 'WARNING';
+    if (access.allow_ai_execute) {
+      throw new Error(
+        'Refusing to start: allow_ai_execute is enabled but no api_key is set.\n' +
+        'Unauthenticated callers can execute arbitrary commands.\n' +
+        'Set server.api_key in your config, or disable allow_ai_execute.'
+      );
+    }
+
     process.stderr.write(
-      `\n[EnvCP] ${severity}: Server starting with no API key configured.\n` +
+      `\n[EnvCP] WARNING: Server starting with no API key configured.\n` +
       '[EnvCP]   AI access is enabled — anyone who can reach this port can access your vault.\n' +
       `[EnvCP]   Active AI flags: ${activeFlags.join(', ')}\n` +
-      '[EnvCP]   Set server.api_key in your config to require authentication.\n' +
-      (access.allow_ai_execute
-        ? '[EnvCP]   allow_ai_execute is ON — unauthenticated callers can run arbitrary commands.\n'
-        : '') +
-      '\n'
+      '[EnvCP]   Set server.api_key in your config to require authentication.\n\n'
     );
   }
 
@@ -103,6 +109,10 @@ export class UnifiedServer {
 
     // Resolve vault path once before creating any adapters
     const vaultPath = await resolveVaultPath(this.projectPath, this.config);
+
+    // Initialize audit log for HTTP modes
+    this.logs = new LogManager(path.join(this.projectPath, '.envcp', 'logs'));
+    await this.logs.init();
 
     // MCP mode uses stdio, not HTTP
     if (mode === 'mcp') {
@@ -174,6 +184,7 @@ const whitelist = rl?.whitelist ?? [];
                            req.headers['x-goog-api-key'] ||
                            req.headers['authorization']?.replace('Bearer ', '')) as string | undefined;
         if (!validateApiKey(providedKey, api_key)) {
+          await this.logs?.log({ timestamp: new Date().toISOString(), operation: 'auth_failure', variable: '', source: 'api', success: false, message: `Invalid API key from ${req.socket.remoteAddress ?? 'unknown'}` });
           sendJson(res, 401, { error: 'Invalid API key' });
           return;
         }
@@ -383,21 +394,24 @@ const whitelist = rl?.whitelist ?? [];
       }
 
       if (pathname === '/v1/functions/call' && req.method === 'POST') {
-        const { name, arguments: args } = body as any;
-        const result = await this.openaiAdapter.callTool(name, args || {});
+        const b = body as { name?: unknown; arguments?: unknown };
+        const name = typeof b.name === 'string' ? b.name : '';
+        const args = (b.arguments && typeof b.arguments === 'object') ? b.arguments as Record<string, unknown> : {};
+        const result = await this.openaiAdapter.callTool(name, args);
         sendJson(res, 200, { object: 'function_result', name, result });
         return;
       }
 
       if (pathname === '/v1/tool_calls' && req.method === 'POST') {
-        const { tool_calls } = body as any;
-        const results = await this.openaiAdapter.processToolCalls(tool_calls);
+        const { tool_calls } = body as { tool_calls?: unknown };
+        const results = await this.openaiAdapter.processToolCalls(Array.isArray(tool_calls) ? tool_calls : []);
         sendJson(res, 200, { object: 'list', data: results });
         return;
       }
 
       if (pathname === '/v1/chat/completions' && req.method === 'POST') {
-        const messages = (body as any).messages;
+        const { messages: rawMessages } = body as { messages?: unknown };
+        const messages = Array.isArray(rawMessages) ? rawMessages : [];
         const lastMessage = messages?.[messages.length - 1];
         
         if (lastMessage?.tool_calls) {
@@ -447,27 +461,33 @@ const whitelist = rl?.whitelist ?? [];
       }
 
       if (pathname === '/v1/functions/call' && req.method === 'POST') {
-        const { name, args } = body as any;
-        const result = await this.geminiAdapter.callTool(name, args || {});
+        const bg = body as { name?: unknown; args?: unknown };
+        const name = typeof bg.name === 'string' ? bg.name : '';
+        const args = (bg.args && typeof bg.args === 'object') ? bg.args as Record<string, unknown> : {};
+        const result = await this.geminiAdapter.callTool(name, args);
         sendJson(res, 200, { name, response: { result } });
         return;
       }
 
       if (pathname === '/v1/function_calls' && req.method === 'POST') {
-        const { functionCalls } = body as any;
-        const results = await this.geminiAdapter.processFunctionCalls(functionCalls);
+        const { functionCalls: rawFunctionCalls } = body as { functionCalls?: unknown };
+        const results = await this.geminiAdapter.processFunctionCalls(Array.isArray(rawFunctionCalls) ? rawFunctionCalls : []);
         sendJson(res, 200, { functionResponses: results });
         return;
       }
 
       if (pathname.includes(':generateContent') && req.method === 'POST') {
-        const contents = (body as any).contents;
-        const functionCalls: any[] = [];
+        const { contents } = body as { contents?: unknown };
+        const functionCalls: Array<{ name: string; args: Record<string, unknown> }> = [];
         
-        if (contents) {
+        if (Array.isArray(contents)) {
           for (const content of contents) {
-            for (const part of content.parts || []) {
-              if (part.functionCall) functionCalls.push(part.functionCall);
+            const parts = (content && typeof content === 'object' && Array.isArray((content as Record<string, unknown>).parts))
+              ? (content as Record<string, unknown>).parts as unknown[]
+              : [];
+            for (const part of parts) {
+              const p = part as Record<string, unknown>;
+              if (p.functionCall) functionCalls.push(p.functionCall as { name: string; args: Record<string, unknown> });
             }
           }
         }

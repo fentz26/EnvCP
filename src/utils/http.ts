@@ -27,7 +27,7 @@ export function setCorsHeaders(res: http.ServerResponse, allowedOrigin?: string,
   setSecurityHeaders(res);
   
   const localOrigins = ['http://127.0.0.1', 'http://localhost', 'http://[::1]'];
-  let origin = allowedOrigin || '*';
+  let origin = allowedOrigin ?? '';
   if (!allowedOrigin && requestOrigin) {
     const matches = localOrigins.some(lo => requestOrigin.startsWith(lo));
     origin = matches ? requestOrigin : '';

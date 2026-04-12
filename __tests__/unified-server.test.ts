@@ -431,6 +431,7 @@ describe('UnifiedServer sync/run/error routes', () => {
       host: '127.0.0.1',
       cors: true,
       auto_detect: true,
+      api_key: 'test-key',
     };
     const config = EnvCPConfigSchema.parse({
       access: {
@@ -458,29 +459,31 @@ describe('UnifiedServer sync/run/error routes', () => {
     server.stop();
   });
 
+  const authHeader = { 'x-api-key': 'test-key' };
+
   it('POST /api/sync syncs variables', async () => {
     // First create a variable
-    await fetch(port, 'POST', '/api/variables', { name: 'SYNC_VAR', value: 'synced' });
-    const { status, data } = await fetch(port, 'POST', '/api/sync');
+    await fetch(port, 'POST', '/api/variables', { name: 'SYNC_VAR', value: 'synced' }, authHeader);
+    const { status, data } = await fetch(port, 'POST', '/api/sync', undefined, authHeader);
     expect(status).toBe(200);
     expect((data as any).success).toBe(true);
   });
 
   it('POST /api/run executes a command', async () => {
-    await fetch(port, 'POST', '/api/variables', { name: 'RUN_VAR', value: 'rv' });
-    const { status, data } = await fetch(port, 'POST', '/api/run', { command: 'echo hello', variables: ['RUN_VAR'] });
+    await fetch(port, 'POST', '/api/variables', { name: 'RUN_VAR', value: 'rv' }, authHeader);
+    const { status, data } = await fetch(port, 'POST', '/api/run', { command: 'echo hello', variables: ['RUN_VAR'] }, authHeader);
     expect(status).toBe(200);
     expect((data as any).success).toBe(true);
   });
 
   it('REST handler returns 404 for unknown sub-route', async () => {
-    const { status } = await fetch(port, 'GET', '/api/nonexistent');
+    const { status } = await fetch(port, 'GET', '/api/nonexistent', undefined, authHeader);
     expect(status).toBe(404);
   });
 
   it('REST handler catches errors from callTool', async () => {
     // Trigger an error by trying to get a non-existent variable
-    const { status } = await fetch(port, 'GET', '/api/variables/DEFINITELY_MISSING_XYZZY');
+    const { status } = await fetch(port, 'GET', '/api/variables/DEFINITELY_MISSING_XYZZY', undefined, authHeader);
     // Should be 404 (mapped from "not found" in error message)
     expect([404, 500]).toContain(status);
   });
@@ -949,8 +952,7 @@ describe('UnifiedServer checkApiKeySecurity (#148)', () => {
     stderrSpy.mockRestore();
   });
 
-  it('emits CRITICAL warning when allow_ai_execute is enabled with no api_key', async () => {
-    const stderrSpy = jest.spyOn(process.stderr, 'write').mockImplementation(() => true);
+  it('throws when allow_ai_execute is enabled with no api_key', async () => {
     const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-sec-err-'));
     const port = 30000 + Math.floor(Math.random() * 10000);
     const config = EnvCPConfigSchema.parse({
@@ -960,13 +962,8 @@ describe('UnifiedServer checkApiKeySecurity (#148)', () => {
     });
     const serverConfig: ServerConfig = { mode: 'auto', port, host: '127.0.0.1', cors: true, auto_detect: true };
     const srv = new UnifiedServer(config, serverConfig, tmpDir);
-    await srv.start();
-    const calls = stderrSpy.mock.calls.map(c => String(c[0])).join('');
-    expect(calls).toContain('CRITICAL');
-    expect(calls).toContain('allow_ai_execute is ON');
-    srv.stop();
+    await expect(srv.start()).rejects.toThrow('allow_ai_execute is enabled but no api_key is set');
     await fs.rm(tmpDir, { recursive: true, force: true });
-    stderrSpy.mockRestore();
   });
 
   it('does not warn when no AI flags are enabled', async () => {

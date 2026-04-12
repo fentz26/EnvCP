@@ -123,6 +123,7 @@ async startServer(port: number, host: string, apiKey?: string, rateLimitConfig?:
       if (apiKey) {
         const providedKey = (req.headers['x-api-key'] || req.headers['authorization']?.replace('Bearer ', '')) as string | undefined;
         if (!validateApiKey(providedKey, apiKey)) {
+          await this.logs.log({ timestamp: new Date().toISOString(), operation: 'auth_failure', variable: '', source: 'api', success: false, message: `Invalid API key from ${req.socket.remoteAddress ?? 'unknown'}` });
           sendJson(res, 401, this.createResponse(false, undefined, 'Invalid API key'));
           return;
         }
