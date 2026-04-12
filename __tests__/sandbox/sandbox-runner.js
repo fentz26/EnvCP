@@ -141,21 +141,21 @@ async function testCLILifecycle() {
     // Get variable
     const getResult = execCLI(['get', 'TEST_VAR', '--show-value'], { cwd: SANDBOX_DIR });
     if (!getResult.success) throw new Error(`get failed: ${getResult.stderr}`);
-    if (!getResult.stdout.includes('test-value-123')) throw new Error('value mismatch');
+    if (!getResult.stdout.includes('Value: test-value-123')) throw new Error('value mismatch');
     
     // List variables
     const listResult = execCLI(['list'], { cwd: SANDBOX_DIR });
     if (!listResult.success) throw new Error(`list failed: ${listResult.stderr}`);
     if (!listResult.stdout.includes('TEST_VAR')) throw new Error('variable not in list');
 
-    // Delete variable
-    const delResult = execCLI(['delete', 'TEST_VAR'], { cwd: SANDBOX_DIR });
-    if (!delResult.success) throw new Error(`delete failed: ${delResult.stderr}`);
+    // Remove variable
+    const delResult = execCLI(['remove', 'TEST_VAR'], { cwd: SANDBOX_DIR });
+    if (!delResult.success) throw new Error(`remove failed: ${delResult.stderr}`);
 
-    // Verify deleted
+    // Verify removed — get should print "not found"
     const afterDelete = execCLI(['get', 'TEST_VAR', '--show-value'], { cwd: SANDBOX_DIR });
-    if (afterDelete.success && afterDelete.stdout.includes('test-value-123')) {
-      throw new Error('variable still accessible after delete');
+    if (afterDelete.stdout.includes('test-value-123')) {
+      throw new Error('variable still accessible after remove');
     }
   });
 }
@@ -185,10 +185,10 @@ async function testAccessControl() {
     const addResult = execCLI(['add', 'ADMIN_SECRET', '--value', 'secret-123'], { cwd: SANDBOX_DIR });
     if (!addResult.success) throw new Error(`add failed: ${addResult.stderr}`);
 
-    // Verify it exists
+    // Verify it exists — output is "  Value: secret-123"
     const getResult = execCLI(['get', 'ADMIN_SECRET', '--show-value'], { cwd: SANDBOX_DIR });
     if (!getResult.success) throw new Error(`get failed: ${getResult.stderr}`);
-    if (!getResult.stdout.includes('secret-123')) throw new Error('value mismatch');
+    if (!getResult.stdout.includes('Value: secret-123')) throw new Error('value mismatch');
 
     // Clean up
     execCLI(['delete', 'ADMIN_SECRET'], { cwd: SANDBOX_DIR });
@@ -218,11 +218,12 @@ async function testEncryptionRoundtrip() {
     const exportResult = execCLI(['export', '--format', 'json'], { cwd: SANDBOX_DIR });
     if (!exportResult.success) throw new Error(`export failed: ${exportResult.stderr}`);
     
-    // Verify all values present
+    // Verify all values present — json format returns full Variable objects
     const exported = JSON.parse(exportResult.stdout);
     for (const [name, value] of Object.entries(testVars)) {
-      if (exported[name] !== value) {
-        throw new Error(`roundtrip mismatch for ${name}: expected ${value}, got ${exported[name]}`);
+      const got = exported[name]?.value;
+      if (got !== value) {
+        throw new Error(`roundtrip mismatch for ${name}: expected ${value}, got ${got}`);
       }
     }
     
