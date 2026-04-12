@@ -1,5 +1,7 @@
 # Security Policy
 
+← [README](README.md) · [Setup Guide](SETUP.md) · [Verification](VERIFICATION.md)
+
 ## Supported Versions
 
 We release patches for security vulnerabilities for the latest minor version only.
@@ -147,6 +149,16 @@ EnvCP is designed for local development use. For production or compliance-critic
 For security concerns: **contact@envcp.org**
 
 For general issues: https://github.com/fentz26/EnvCP/issues
+
+## Supply Chain Security
+
+Every release ships with a signed SLSA Level 3 provenance attestation.
+
+- All GitHub Actions are SHA-pinned to immutable commit digests
+- npm releases are signed with `--provenance` (verifiable via `npm audit signatures`)
+- Build provenance is independently verifiable via Sigstore/Rekor
+
+See the [Verification Guide](VERIFICATION.md) for step-by-step instructions.
 
 ## Acknowledgments
 

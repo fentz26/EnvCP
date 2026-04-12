@@ -5,105 +5,67 @@
 </p>
 
 <p align="center">
-  <strong>AIエージェント向けの安全な環境変数管理</strong>
+  <strong>AIエージェントのための安全な環境変数管理</strong>
 </p>
 
 <p align="center">
-  EnvCPを使用すると、秘密を公開せずにAIエージェントを安全に使用できます。<br>
-  APIキーと環境変数はお使いのマシンで暗号化されたままです — AIは名前でのみ参照します。
+  EnvCPを使えば、シークレットを公開せずにAIエージェントを安全に使用できます。<br>
+  APIキーと環境変数はあなたのマシン上で暗号化されたまま保管されます — AIは名前でのみ参照します。
 </p>
 
 ---
-
-## 🌍 言語
 
 [English](../../README.md) | [Français](README.fr.md) | [Español](README.es.md) | [한국어](README.ko.md) | [中文](README.zh.md) | [Tiếng Việt](README.vi.md) | **日本語**
 
 ---
 
-## インストール
+## なぜ EnvCP なのか？
 
-### npm
-
-```bash
-npm install -g @fentz26/envcp
-```
-
-### pip (Python)
-
-```bash
-pip install envcp
-```
-
-> Node.js 18+のインストールが必要です。
-
-
-```bash
-
-### インストールせずに使用
-
-```bash
-npx @fentz26/envcp init
-```
+- **ローカル専用ストレージ** — シークレットがマシンの外に出ることはありません
+- **保存時に暗号化** — Argon2id鍵導出によるAES-256-GCM
+- **参照ベースのアクセス** — AIは実際の値を見ることなく、名前で変数を参照します
+- **自動 .env インジェクション** — .envファイルに値を自動注入できます
+- **AIアクセス制御** — AIがシークレットをリストアップしたり確認するのを防止
+- **ユニバーサル互換性** — MCP、OpenAI、Gemini、またはREST
 
 ---
 
 ## クイックスタート
 
 ```bash
-# 1. プロジェクトで初期化
+npm install -g @fentz26/envcp
 envcp init
-
-# 2. 秘密を追加
-envcp add API_KEY --value "あなたの秘密鍵"
-envcp add DATABASE_URL --value "postgres://..."
-
-# 3. サーバーを起動（クライアントタイプを自動検出）
+envcp add API_KEY --value "your-secret-key"
 envcp serve --mode auto --port 3456
 ```
 
 ---
 
-## 基本的なCLIコマンド
-
-```bash
-# 変数管理
-envcp add <名前> [オプション]       # 変数を追加
-envcp list [--show-values]           # 変数を一覧表示
-envcp get <名前>                     # 変数を取得
-envcp remove <名前>                  # 変数を削除
-
-# セッション管理
-envcp unlock                         # パスワードでロック解除
-envcp lock                           # 即座にロック
-envcp status                         # セッションステータスを確認
-
-# 同期とエクスポート
-envcp sync                           # .envファイルに同期
-envcp export [--format env|json|yaml]
-```
-
----
-
-## なぜEnvCPなのか？
-
-- **ローカルのみのストレージ** — 秘密はマシンから出ることはありません
-- **保存時暗号化** — Argon2id鍵導出付きAES-256-GCM（64 MBメモリ、3パス）
-- **参照ベースのアクセス** — AIは名前で変数を参照し、実際の値を見ることはありません
-- **自動.env注入** — 値は.envファイルに自動的に注入できます
-- **AIアクセス制御** — AIが秘密を積極的にリストまたはチェックすることを防止
-- **ユニバーサル互換性** — MCP、OpenAI、Gemini、またはRESTプロトコルを介して任意のAIツールで動作
-
----
-
 ## ドキュメント
 
-- [完全なドキュメント](https://envcp.org/docs)
-- [クイックスタートガイド](https://envcp.org/docs/quick-start)
-- [CLIリファレンス](https://envcp.org/docs/cli-reference)
+| ガイド | 説明 |
+|--------|------|
+| [セットアップガイド](SETUP.ja.md) | インストール、CLI、統合、設定 |
+| [検証](VERIFICATION.ja.md) | SLSA 3 出典検証 |
+| [セキュリティポリシー](../../SECURITY.md) | 脆弱性報告、暗号化の詳細 |
+
+---
+
+## セキュリティとサプライチェーン
+
+- **SLSA Level 3** — サプライチェーンの整合性のためのビルド出典（[検証 →](VERIFICATION.ja.md)）
+- **保存時に暗号化** — Argon2idによるAES-256-GCM
+- **ローカル専用** — シークレットがマシンの外に出ることはありません
+- **CI SHA固定** — すべてのGitHub Actionsが不変のコミットSHAに固定
 
 ---
 
 ## ライセンス
 
-[Source Available License v1.0](../../LICENSE)
+SAL v1.0 — [LICENSE](../../LICENSE) ファイルを参照。
+
+## サポート
+
+- メール: contact@envcp.org
+- GitHub Issues: https://github.com/fentz26/EnvCP/issues
+- ドキュメント: https://envcp.org/docs

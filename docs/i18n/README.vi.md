@@ -5,105 +5,67 @@
 </p>
 
 <p align="center">
-  <strong>Quản lý biến môi trường an toàn cho tác nhân AI</strong>
+  <strong>Quản lý biến môi trường an toàn cho AI agent</strong>
 </p>
 
 <p align="center">
-  EnvCP cho phép bạn sử dụng tác nhân AI một cách an toàn mà không tiết lộ bí mật của mình.<br>
-  Các khóa API và biến môi trường của bạn được mã hóa trên máy của bạn — AI chỉ tham chiếu chúng bằng tên.
+  EnvCP cho phép bạn sử dụng AI agent an toàn mà không lộ bí mật.<br>
+  Khóa API và biến môi trường của bạn được mã hóa trên máy — AI chỉ tham chiếu chúng theo tên.
 </p>
 
 ---
-
-## 🌍 Ngôn ngữ
 
 [English](../../README.md) | [Français](README.fr.md) | [Español](README.es.md) | [한국어](README.ko.md) | [中文](README.zh.md) | **Tiếng Việt** | [日本語](README.ja.md)
 
 ---
 
-## Cài đặt
+## Tại sao chọn EnvCP?
 
-### npm
-
-```bash
-npm install -g @fentz26/envcp
-```
-
-### pip (Python)
-
-```bash
-pip install envcp
-```
-
-> Yêu cầu Node.js 18+ được cài đặt.
-
-
-```bash
-
-### Sử dụng không cần cài đặt
-
-```bash
-npx @fentz26/envcp init
-```
+- **Chỉ lưu trữ cục bộ** — Bí mật của bạn không bao giờ rời khỏi máy
+- **Mã hóa khi lưu trữ** — AES-256-GCM với Argon2id key derivation
+- **Truy cập dựa trên tham chiếu** — AI tham chiếu biến theo tên, không bao giờ thấy giá trị thực
+- **Tự động inject .env** — Giá trị có thể được inject vào file .env
+- **Kiểm soát truy cập AI** — Ngăn AI chủ động liệt kê hoặc kiểm tra bí mật
+- **Tương thích toàn cầu** — MCP, OpenAI, Gemini hoặc REST
 
 ---
 
 ## Bắt đầu nhanh
 
 ```bash
-# 1. Khởi tạo trong dự án của bạn
+npm install -g @fentz26/envcp
 envcp init
-
-# 2. Thêm bí mật của bạn
-envcp add API_KEY --value "khóa-bí-mật-của-bạn"
-envcp add DATABASE_URL --value "postgres://..."
-
-# 3. Khởi động máy chủ (tự động phát hiện loại client)
+envcp add API_KEY --value "your-secret-key"
 envcp serve --mode auto --port 3456
 ```
 
 ---
 
-## Lệnh CLI cơ bản
-
-```bash
-# Quản lý biến
-envcp add <tên> [tùy chọn]     # Thêm một biến
-envcp list [--show-values]     # Liệt kê biến
-envcp get <tên>                # Lấy một biến
-envcp remove <tên>             # Xóa một biến
-
-# Quản lý phiên
-envcp unlock                   # Mở khóa bằng mật khẩu
-envcp lock                     # Khóa ngay lập tức
-envcp status                   # Kiểm tra trạng thái phiên
-
-# Đồng bộ và xuất
-envcp sync                     # Đồng bộ đến file .env
-envcp export [--format env|json|yaml]
-```
-
----
-
-## Tại sao chọn EnvCP?
-
-- **Chỉ lưu trữ cục bộ** — Bí mật của bạn không bao giờ rời khỏi máy của bạn
-- **Mã hóa khi nghỉ** — AES-256-GCM với dẫn xuất khóa Argon2id (64 MB bộ nhớ, 3 lần chạy)
-- **Truy cập bằng tham chiếu** — AI tham chiếu biến bằng tên, không bao giờ thấy giá trị thực
-- **Tiêm .env tự động** — Giá trị có thể được tự động tiêm vào các file .env của bạn
-- **Kiểm soát truy cập AI** — Ngăn AI chủ động liệt kê hoặc kiểm tra bí mật của bạn
-- **Khả năng tương thích phổ quát** — Hoạt động với mọi công cụ AI thông qua MCP, OpenAI, Gemini hoặc giao thức REST
-
----
-
 ## Tài liệu
 
-- [Tài liệu đầy đủ](https://envcp.org/docs)
-- [Hướng dẫn bắt đầu nhanh](https://envcp.org/docs/quick-start)
-- [Tham khảo CLI](https://envcp.org/docs/cli-reference)
+| Hướng dẫn | Mô tả |
+|-----------|-------|
+| [Hướng dẫn cài đặt](SETUP.vi.md) | Cài đặt, CLI, tích hợp, cấu hình |
+| [Xác minh](VERIFICATION.vi.md) | Xác minh nguồn gốc SLSA 3 |
+| [Chính sách bảo mật](../../SECURITY.md) | Báo cáo lỗ hổng, chi tiết mã hóa |
+
+---
+
+## Bảo mật và chuỗi cung ứng
+
+- **SLSA Level 3** — Xuất xứ build cho toàn vẹn chuỗi cung ứng ([xác minh →](VERIFICATION.vi.md))
+- **Mã hóa khi lưu trữ** — AES-256-GCM với Argon2id
+- **Chỉ cục bộ** — Bí mật không bao giờ rời khỏi máy
+- **CI SHA-pinned** — Tất cả GitHub Actions được ghim vào commit SHA bất biến
 
 ---
 
 ## Giấy phép
 
-[Source Available License v1.0](../../LICENSE)
+SAL v1.0 — Xem file [LICENSE](../../LICENSE).
+
+## Hỗ trợ
+
+- Email: contact@envcp.org
+- GitHub Issues: https://github.com/fentz26/EnvCP/issues
+- Tài liệu: https://envcp.org/docs
