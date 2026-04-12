@@ -167,13 +167,16 @@ async function testCLILifecycle() {
 function enableAIAccess() {
   const configPath = path.join(SANDBOX_DIR, 'envcp.yaml');
   let config = fs.readFileSync(configPath, 'utf8');
+  // Enable all six allow_ai_* flags (all default to false)
   config = config.replace(/allow_ai_read:\s*false/g, 'allow_ai_read: true');
   config = config.replace(/allow_ai_write:\s*false/g, 'allow_ai_write: true');
+  config = config.replace(/allow_ai_delete:\s*false/g, 'allow_ai_delete: true');
+  config = config.replace(/allow_ai_export:\s*false/g, 'allow_ai_export: true');
+  config = config.replace(/allow_ai_execute:\s*false/g, 'allow_ai_execute: true');
+  config = config.replace(/allow_ai_active_check:\s*false/g, 'allow_ai_active_check: true');
   // mask_values and require_confirmation both suppress show_value — disable them
   config = config.replace(/mask_values:\s*true/g, 'mask_values: false');
   config = config.replace(/require_confirmation:\s*true/g, 'require_confirmation: false');
-  // allow_ai_active_check gates list — enable it so GET /api/variables works
-  config = config.replace(/allow_ai_active_check:\s*false/g, 'allow_ai_active_check: true');
   fs.writeFileSync(configPath, config, 'utf8');
 }
 
