@@ -271,6 +271,45 @@ describe('LogManager', () => {
     const logs = await logger.getLogs('2000-01-01');
     expect(logs).toEqual([]);
   });
+
+  it('pruneOldLogs deletes log files older than retainDays', async () => {
+    const logger = new LogManager(logDir);
+    await logger.init();
+
+    // Write two fake log files: one old, one recent
+    const oldDate = new Date(Date.now() - 35 * 24 * 60 * 60 * 1000);
+    const oldName = `operations-${oldDate.toISOString().split('T')[0]}.log`;
+    const recentName = `operations-${new Date().toISOString().split('T')[0]}.log`;
+    const oldPath = path.join(logDir, oldName);
+    const recentPath = path.join(logDir, recentName);
+
+    await fs.writeFile(oldPath, '{"old":true}\n', 'utf8');
+    await fs.writeFile(recentPath, '{"recent":true}\n', 'utf8');
+
+    // Back-date the old file's mtime so pruning treats it as old
+    const oldMtime = new Date(Date.now() - 35 * 24 * 60 * 60 * 1000);
+    await fs.utimes(oldPath, oldMtime, oldMtime);
+
+    await logger.pruneOldLogs(30);
+
+    expect(await pathExists(oldPath)).toBe(false);
+    expect(await pathExists(recentPath)).toBe(true);
+  });
+
+  it('pruneOldLogs ignores non-log files and handles stat errors gracefully', async () => {
+    const logger = new LogManager(logDir);
+    await logger.init();
+
+    // A file with a non-matching name should be left alone
+    const otherFile = path.join(logDir, 'other-file.txt');
+    await fs.writeFile(otherFile, 'irrelevant', 'utf8');
+
+    // Should not throw even with mixed content
+    await expect(logger.pruneOldLogs(0)).resolves.toBeUndefined();
+
+    // Non-log file is untouched
+    expect(await pathExists(otherFile)).toBe(true);
+  });
 });
 
 describe('StorageManager backup rotation', () => {

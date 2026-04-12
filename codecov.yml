@@ -13,6 +13,7 @@ coverage:
     - "src/cli/index.ts"
     - "src/index.ts"
     - "src/utils/keychain.ts"
+    - "src/utils/hsm.ts"
     - "dist/**"
 
 parsers:

@@ -36,12 +36,13 @@ jobs:
         run: npx tsc --noEmit
 
       - name: Run tests
+        if: matrix.node-version != 20
         run: npm test -- --ci --reporters=default --reporters=jest-junit
         env:
           JEST_JUNIT_OUTPUT_DIR: ./coverage
           JEST_JUNIT_OUTPUT_NAME: junit.xml
 
-      - name: Coverage report
+      - name: Run tests with coverage
         if: matrix.node-version == 20
         run: npm test -- --coverage --ci --reporters=default --reporters=jest-junit
         env:

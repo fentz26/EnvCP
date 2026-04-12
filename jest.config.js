@@ -14,11 +14,14 @@ export default {
     '!src/cli/index.ts',
     '!src/index.ts',
     '!src/utils/keychain.ts',
+    '!src/utils/hsm.ts',
   ],
   coverageThreshold: {
     global: {
       lines: 95,
       statements: 95,
+      branches: 90,
+      functions: 95,
     },
   },
   coverageReporters: ['text-summary', 'lcov'],
