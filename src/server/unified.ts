@@ -111,7 +111,7 @@ export class UnifiedServer {
     const vaultPath = await resolveVaultPath(this.projectPath, this.config);
 
     // Initialize audit log for HTTP modes
-    this.logs = new LogManager(path.join(this.projectPath, '.envcp', 'logs'));
+    this.logs = new LogManager(path.join(this.projectPath, '.envcp', 'logs'), this.config.audit);
     await this.logs.init();
 
     // MCP mode uses stdio, not HTTP

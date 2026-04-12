@@ -1,4 +1,4 @@
-import { validateApiKey, RateLimiter, rateLimitMiddleware } from '../src/utils/http';
+import { validateApiKey, RateLimiter, rateLimitMiddleware, setSecurityHeaders } from '../src/utils/http';
 import * as http from 'http';
 
 describe('validateApiKey', () => {
@@ -55,6 +55,20 @@ describe('RateLimiter default constructor — line 102', () => {
     expect(limiter.isAllowed('ip1')).toBe(true);
     expect(limiter.getRemainingRequests('ip1')).toBe(59);
     limiter.destroy();
+  });
+});
+
+describe('setSecurityHeaders', () => {
+  it('sets all required security headers', () => {
+    const req = { socket: {} } as http.IncomingMessage;
+    const res = new http.ServerResponse(req);
+    setSecurityHeaders(res);
+
+    expect(res.getHeader('X-Content-Type-Options')).toBe('nosniff');
+    expect(res.getHeader('X-Frame-Options')).toBe('DENY');
+    expect(res.getHeader('Cache-Control')).toBe('no-store, no-cache, must-revalidate, private');
+    expect(res.getHeader('Referrer-Policy')).toBe('no-referrer');
+    expect(res.getHeader('Content-Security-Policy')).toContain("default-src 'none'");
   });
 });
 
