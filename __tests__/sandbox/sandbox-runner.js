@@ -162,18 +162,179 @@ async function testCLILifecycle() {
 
 /**
  * Scenario 2: REST API
+ * Starts the server, exercises CRUD over HTTP, then shuts it down.
  */
 async function testRestAPI() {
-  log('info', 'REST API test — skipped (requires running server)');
-  results.scenarios_skipped++;
+  return runScenario('rest-api', async () => {
+    const port = 18921;
+    const envcp = findEnvcpCLI();
+
+    const server = spawn('node', ['--no-warnings', envcp, 'serve', '--mode', 'rest', '--port', String(port)], {
+      cwd: SANDBOX_DIR,
+      env: { ...process.env, NO_COLOR: '1' },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+
+    let killed = false;
+    const cleanup = () => {
+      if (!killed) { killed = true; server.kill('SIGTERM'); }
+    };
+
+    try {
+      await waitForServer(port, 15000);
+
+      function httpReq(method, urlPath, body) {
+        return new Promise((resolve, reject) => {
+          const bodyStr = body ? JSON.stringify(body) : null;
+          const req = http.request({
+            hostname: '127.0.0.1',
+            port,
+            path: urlPath,
+            method,
+            headers: {
+              'Content-Type': 'application/json',
+              ...(bodyStr ? { 'Content-Length': Buffer.byteLength(bodyStr) } : {}),
+            },
+          }, (res) => {
+            let data = '';
+            res.on('data', c => data += c);
+            res.on('end', () => {
+              let parsed;
+              try { parsed = JSON.parse(data); } catch { parsed = data; }
+              resolve({ status: res.statusCode, body: parsed });
+            });
+          });
+          req.on('error', reject);
+          req.setTimeout(5000, () => req.destroy());
+          if (bodyStr) req.write(bodyStr);
+          req.end();
+        });
+      }
+
+      // Health
+      const health = await httpReq('GET', '/api/health');
+      if (health.status !== 200) throw new Error(`Health: ${health.status}`);
+
+      // Create variable
+      const create = await httpReq('POST', '/api/variables', { name: 'REST_VAR', value: 'rest-789' });
+      if (create.status !== 201) throw new Error(`POST /api/variables: ${create.status} — ${JSON.stringify(create.body)}`);
+
+      // Get variable with value
+      const get = await httpReq('GET', '/api/variables/REST_VAR?show_value=true');
+      if (get.status !== 200) throw new Error(`GET /api/variables/REST_VAR: ${get.status}`);
+      if (get.body?.data?.value !== 'rest-789') throw new Error(`value mismatch: ${JSON.stringify(get.body?.data)}`);
+
+      // List variables
+      const list = await httpReq('GET', '/api/variables');
+      if (list.status !== 200) throw new Error(`GET /api/variables: ${list.status}`);
+
+      // Delete variable
+      const del = await httpReq('DELETE', '/api/variables/REST_VAR');
+      if (del.status !== 200) throw new Error(`DELETE /api/variables/REST_VAR: ${del.status}`);
+
+      log('info', 'REST API — health, create, get, list, delete verified');
+    } finally {
+      cleanup();
+    }
+  });
 }
 
 /**
  * Scenario 3: MCP Stdio
+ * Spawns the MCP server, performs JSON-RPC handshake, calls tools over stdin/stdout.
  */
 async function testMCPStdio() {
-  log('info', 'MCP stdio test — skipped (requires interactive stdio)');
-  results.scenarios_skipped++;
+  return runScenario('mcp-stdio', async () => {
+    const envcp = findEnvcpCLI();
+
+    const server = spawn('node', ['--no-warnings', envcp, 'serve', '--mode', 'mcp'], {
+      cwd: SANDBOX_DIR,
+      env: { ...process.env, NO_COLOR: '1' },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+
+    let killed = false;
+    const cleanup = () => {
+      if (!killed) { killed = true; server.kill('SIGTERM'); }
+    };
+
+    try {
+      // Wire up newline-delimited JSON-RPC reader
+      let buf = '';
+      const pending = new Map();
+
+      server.stdout.on('data', (chunk) => {
+        buf += chunk.toString();
+        let nl;
+        while ((nl = buf.indexOf('\n')) !== -1) {
+          const line = buf.slice(0, nl).trim();
+          buf = buf.slice(nl + 1);
+          if (!line) continue;
+          let msg;
+          try { msg = JSON.parse(line); } catch { continue; }
+          if (msg.id !== undefined && pending.has(msg.id)) {
+            const { resolve, reject } = pending.get(msg.id);
+            pending.delete(msg.id);
+            if (msg.error) reject(new Error(`MCP error [${msg.error.code}]: ${msg.error.message}`));
+            else resolve(msg.result);
+          }
+        }
+      });
+
+      function rpc(id, method, params) {
+        return new Promise((resolve, reject) => {
+          pending.set(id, { resolve, reject });
+          server.stdin.write(JSON.stringify({ jsonrpc: '2.0', id, method, params }) + '\n');
+          setTimeout(() => {
+            if (pending.has(id)) {
+              pending.delete(id);
+              reject(new Error(`MCP timeout waiting for ${method} (id=${id})`));
+            }
+          }, 10000);
+        });
+      }
+
+      // Initialize handshake
+      const initResult = await rpc(1, 'initialize', {
+        protocolVersion: '2024-11-05',
+        capabilities: {},
+        clientInfo: { name: 'sandbox-test', version: '1.0.0' },
+      });
+      if (!initResult?.protocolVersion) throw new Error(`Invalid initialize response: ${JSON.stringify(initResult)}`);
+
+      // Send initialized notification (no response expected)
+      server.stdin.write(JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' }) + '\n');
+
+      // List tools
+      const toolsResult = await rpc(2, 'tools/list', {});
+      if (!Array.isArray(toolsResult?.tools) || toolsResult.tools.length === 0) {
+        throw new Error(`No tools returned: ${JSON.stringify(toolsResult)}`);
+      }
+      const toolNames = toolsResult.tools.map(t => t.name);
+      if (!toolNames.includes('envcp_set')) throw new Error(`envcp_set missing from tools: ${toolNames.join(', ')}`);
+      if (!toolNames.includes('envcp_get')) throw new Error(`envcp_get missing from tools: ${toolNames.join(', ')}`);
+
+      // Set a variable via MCP
+      const setResult = await rpc(3, 'tools/call', {
+        name: 'envcp_set',
+        arguments: { name: 'MCP_TEST_VAR', value: 'mcp-321' },
+      });
+      if (!setResult?.content) throw new Error(`envcp_set failed: ${JSON.stringify(setResult)}`);
+
+      // Get it back
+      const getResult = await rpc(4, 'tools/call', {
+        name: 'envcp_get',
+        arguments: { name: 'MCP_TEST_VAR', show_value: true },
+      });
+      if (!getResult?.content?.[0]?.text) throw new Error(`envcp_get failed: ${JSON.stringify(getResult)}`);
+      const content = JSON.parse(getResult.content[0].text);
+      if (content?.value !== 'mcp-321') throw new Error(`MCP value mismatch: ${JSON.stringify(content)}`);
+
+      log('info', 'MCP stdio — initialize, tools/list, envcp_set, envcp_get verified');
+    } finally {
+      cleanup();
+    }
+  });
 }
 
 /**
