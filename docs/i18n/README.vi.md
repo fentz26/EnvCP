@@ -19,12 +19,12 @@
 
 ---
 
-## Tại sao chọn EnvCP?
+## Thế tại sao bạn nên tin dùng EnvCP?
 
-- **Chỉ lưu trữ cục bộ** — Bí mật của bạn không bao giờ rời khỏi máy
+- **Chỉ lưu trữ cục bộ** — Bí mật của bạn không bao giờ rời khỏi máy nên ghệ bạn sẽ không biết
 - **Mã hóa khi lưu trữ** — AES-256-GCM với Argon2id key derivation
-- **Truy cập dựa trên tham chiếu** — AI tham chiếu biến theo tên, không bao giờ thấy giá trị thực
-- **Tự động inject .env** — Giá trị có thể được inject vào file .env
+- **Truy cập dựa trên tham chiếu** — AI tham chiếu biến theo tên biến, không bao giờ thấy giá trị thực
+- **Tự động inject .env** — Giá trị có thể được inject vào file .env, vjip chưa
 - **Kiểm soát truy cập AI** — Ngăn AI chủ động liệt kê hoặc kiểm tra bí mật
 - **Tương thích toàn cầu** — MCP, OpenAI, Gemini hoặc REST
 
