@@ -13,6 +13,7 @@ import { maskValue, validatePassword, encrypt, decrypt, generateRecoveryKey, cre
 import { KeychainManager } from '../utils/keychain.js';
 import { HsmManager } from '../utils/hsm.js';
 import { checkForUpdate, formatUpdateMessage, logUpdateCheck } from '../utils/update-checker.js';
+import { LockoutManager } from '../utils/lockout.js';
 import { Variable, EnvCPConfig } from '../types.js';
 import {
   getGlobalVaultPath,
@@ -391,6 +392,11 @@ program
       console.log(chalk.yellow('⚠ Weak password detected'));
     }
 
+    const sessionDir = path.join(projectPath, path.dirname(config.session?.path || '.envcp/.session'));
+    const lockoutManager = new LockoutManager(path.join(sessionDir, '.lockout'));
+    const lockoutThreshold = config.session?.lockout_threshold ?? 5;
+    const lockoutBaseSeconds = config.session?.lockout_base_seconds ?? 60;
+
     const sessionManager = new SessionManager(
       path.join(projectPath, config.session?.path || '.envcp/.session'),
       config.session?.timeout_minutes || 30,
@@ -398,7 +404,7 @@ program
     );
 
     await sessionManager.init();
-    
+
     const storage = new StorageManager(
       path.join(projectPath, config.storage.path),
       config.storage.encrypted
@@ -406,6 +412,15 @@ program
     storage.setPassword(password);
 
     const storeExists = await storage.exists();
+
+    // Check lockout before attempting password verification on existing stores
+    if (storeExists) {
+      const lockoutStatus = await lockoutManager.check();
+      if (lockoutStatus.locked) {
+        console.log(chalk.red(`Too many failed attempts. Try again in ${lockoutStatus.remaining_seconds} second(s).`));
+        return;
+      }
+    }
 
     if (!storeExists) {
       const confirm = await inquirer.prompt([
@@ -437,9 +452,22 @@ program
     try {
       await storage.load();
     } catch (error) {
-      console.log(chalk.red('Invalid password'));
+      if (storeExists) {
+        const status = await lockoutManager.recordFailure(lockoutThreshold, lockoutBaseSeconds);
+        if (status.locked) {
+          console.log(chalk.red(`Invalid password. Too many failed attempts — locked out for ${status.remaining_seconds} second(s).`));
+        } else {
+          const remaining = lockoutThreshold - status.attempts;
+          console.log(chalk.red(`Invalid password. ${remaining} attempt(s) remaining before lockout.`));
+        }
+      } else {
+        console.log(chalk.red('Invalid password'));
+      }
       return;
     }
+
+    // Successful unlock — clear any lockout state
+    await lockoutManager.reset();
 
     const session = await sessionManager.create(password);
 

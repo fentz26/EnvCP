@@ -72,6 +72,8 @@ export const EnvCPConfigSchema = z.object({
     timeout_minutes: z.number().default(30),
     max_extensions: z.number().default(5),
     path: z.string().default('.envcp/.session'),
+    lockout_threshold: z.number().int().min(1).default(5),
+    lockout_base_seconds: z.number().int().min(1).default(60),
   }).default({}),
 
   encryption: z.object({
