@@ -1,5 +1,5 @@
 import { Command } from 'commander';
-import inquirer from 'inquirer';
+import { promptPassword, promptInput, promptConfirm, promptList } from '../utils/prompt.js';
 import chalk from 'chalk';
 import * as path from 'path';
 import * as os from 'os';
@@ -66,10 +66,7 @@ async function withSession(fn: (storage: StorageManager, password: string, confi
             const factors = config.auth?.multi_factors ?? ['password', 'hsm'];
             let userPassword = '';
             if (factors.includes('password')) {
-              const answer = await inquirer.prompt([
-                { type: 'password', name: 'password', message: 'Enter password (multi-factor):', mask: '*' }
-              ]);
-              userPassword = answer.password;
+              userPassword = await promptPassword('Enter password (multi-factor):', );
             } else if (factors.includes('keychain')) {
               const keychain = new KeychainManager(config.keychain?.service || 'envcp');
               const stored = await keychain.retrievePassword(projectPath);
@@ -116,10 +113,7 @@ async function withSession(fn: (storage: StorageManager, password: string, confi
 
     // --- Password prompt fallback ---
     if (!password) {
-      const answer = await inquirer.prompt([
-        { type: 'password', name: 'password', message: 'Enter password:', mask: '*' }
-      ]);
-      password = answer.password;
+      password = await promptPassword('Enter password:');
 
       const { valid: passwordValid, warning: passwordWarning } = validatePassword(password, config.password || {});
       if (!passwordValid) {
@@ -175,20 +169,15 @@ program
     if (options.encrypt === false) {
       securityChoice = 'none';
     } else {
-      const { mode } = await inquirer.prompt([
-        {
-          type: 'list',
-          name: 'mode',
-          message: 'How would you like to secure your variables?',
-          choices: [
-            { name: 'No encryption (fastest setup, for local dev)', value: 'none' },
-            { name: 'Encrypted with recovery key (recommended)', value: 'recoverable' },
-            { name: 'Encrypted hard-lock (max security, no recovery)', value: 'hard-lock' },
-          ],
-          default: 'recoverable',
-        }
-      ]);
-      securityChoice = mode;
+      securityChoice = await promptList(
+        'How would you like to secure your variables?',
+        [
+          { name: 'No encryption (fastest setup, for local dev)', value: 'none' },
+          { name: 'Encrypted with recovery key (recommended)', value: 'recoverable' },
+          { name: 'Encrypted hard-lock (max security, no recovery)', value: 'hard-lock' },
+        ],
+        'recoverable'
+      ) as 'none' | 'recoverable' | 'hard-lock';
     }
 
     // Apply security choice to config
@@ -205,12 +194,8 @@ program
     // For encrypted modes: get password now
     let pwd = '';
     if (securityChoice !== 'none') {
-      const { password } = await inquirer.prompt([
-        { type: 'password', name: 'password', message: 'Set encryption password:', mask: '*' }
-      ]);
-      const { confirm } = await inquirer.prompt([
-        { type: 'password', name: 'confirm', message: 'Confirm password:', mask: '*' }
-      ]);
+      const password = await promptPassword('Set encryption password:');
+      const confirm = await promptPassword('Confirm password:');
 
       if (password !== confirm) {
         console.log(chalk.red('Passwords do not match. Aborting.'));
@@ -372,15 +357,7 @@ program
     let password = options.password;
     
     if (!password) {
-      const answer = await inquirer.prompt([
-        { 
-          type: 'password', 
-          name: 'password', 
-          message: 'Enter password:', 
-          mask: '*' 
-        }
-      ]);
-      password = answer.password;
+      password = await promptPassword('Enter password:');
     }
 
     const { valid: passwordValid, warning: passwordWarning } = validatePassword(password, config.password || {});
@@ -424,10 +401,8 @@ program
     }
 
     if (!storeExists) {
-      const confirm = await inquirer.prompt([
-        { type: 'password', name: 'password', message: 'Confirm password:', mask: '*' }
-      ]);
-      if (confirm.password !== password) {
+      const confirmPwd = await promptPassword('Confirm password:');
+      if (confirmPwd !== password) {
         console.log(chalk.red('Passwords do not match'));
         return;
       }
@@ -564,10 +539,8 @@ program
 
     await sessionManager.init();
 
-    const answer = await inquirer.prompt([
-      { type: 'password', name: 'password', message: 'Enter password:', mask: '*' }
-    ]);
-    const session = await sessionManager.load(answer.password);
+    const sessionPassword = await promptPassword('Enter password:');
+    const session = await sessionManager.load(sessionPassword);
 
     if (!session) {
       console.log(chalk.yellow('No active session (expired, invalid password, or not unlocked)'));
@@ -593,9 +566,7 @@ program
   const projectPath = process.cwd();
   const configGuard = new ConfigGuard(projectPath);
 
-  const { password } = await inquirer.prompt([
-    { type: 'password', name: 'password', message: 'Enter password to reload config:', mask: '*' }
-  ]);
+  const password = await promptPassword('Enter password to reload config:');
 
   const result = await configGuard.reload(password);
 
@@ -622,10 +593,8 @@ program
 
     await sessionManager.init();
 
-    const answer = await inquirer.prompt([
-      { type: 'password', name: 'password', message: 'Enter password:', mask: '*' }
-    ]);
-    const loaded = await sessionManager.load(answer.password);
+    const extendPassword = await promptPassword('Enter password:');
+    const loaded = await sessionManager.load(extendPassword);
 
     if (!loaded) {
       console.log(chalk.red('Cannot extend session. No active session or invalid password.'));
@@ -665,9 +634,7 @@ program
       return;
     }
 
-    const { recoveryKey } = await inquirer.prompt([
-      { type: 'password', name: 'recoveryKey', message: 'Enter your recovery key:', mask: '*' }
-    ]);
+    const recoveryKey = await promptPassword('Enter your recovery key:');
 
     const recoveryData = await fs.readFile(recoveryPath, 'utf8');
 
@@ -697,12 +664,8 @@ program
     console.log(chalk.green('Recovery key verified. Store contains ' + Object.keys(variables).length + ' variables.'));
 
     // Set new password
-    const { newPassword } = await inquirer.prompt([
-      { type: 'password', name: 'newPassword', message: 'Set new password:', mask: '*' }
-    ]);
-    const { confirmPassword } = await inquirer.prompt([
-      { type: 'password', name: 'confirmPassword', message: 'Confirm new password:', mask: '*' }
-    ]);
+    const newPassword = await promptPassword('Set new password:');
+    const confirmPassword = await promptPassword('Confirm new password:');
 
     if (newPassword !== confirmPassword) {
       console.log(chalk.red('Passwords do not match'));
@@ -781,14 +744,10 @@ program
       let description = options.description;
 
       if (!value) {
-        const answers = await inquirer.prompt([
-          { type: 'password', name: 'value', message: 'Enter value:', mask: '*' },
-          { type: 'input', name: 'tags', message: 'Tags (comma-separated):' },
-          { type: 'input', name: 'description', message: 'Description:' },
-        ]);
-        value = answers.value;
-        tags = answers.tags.split(',').map((t: string) => t.trim()).filter(Boolean);
-        description = answers.description;
+        value = await promptPassword('Enter value:');
+        const tagsInput = await promptInput('Tags (comma-separated):');
+        tags = tagsInput.split(',').map((t: string) => t.trim()).filter(Boolean);
+        description = await promptInput('Description:');
       } else if (options.tags) {
         tags = options.tags.split(',').map((t: string) => t.trim()).filter(Boolean);
       }
@@ -1023,10 +982,7 @@ program
           process.exit(1);
         }
 
-        const answer = await inquirer.prompt([
-          { type: 'password', name: 'password', message: 'Enter password:', mask: '*' }
-        ]);
-        password = answer.password;
+        password = await promptPassword('Enter password:');
 
         const { valid: passwordValid, warning: passwordWarning } = validatePassword(password, config.password || {});
         if (!passwordValid) {
@@ -1129,12 +1085,8 @@ program
           return;
         }
 
-        const { exportPassword } = await inquirer.prompt([
-          { type: 'password', name: 'exportPassword', message: 'Set export password:', mask: '*' }
-        ]);
-        const { confirmExport } = await inquirer.prompt([
-          { type: 'password', name: 'confirmExport', message: 'Confirm export password:', mask: '*' }
-        ]);
+        const exportPassword = await promptPassword('Set export password:');
+        const confirmExport = await promptPassword('Confirm export password:');
 
         if (exportPassword !== confirmExport) {
           console.log(chalk.red('Passwords do not match'));
@@ -1190,9 +1142,7 @@ program
         return;
       }
 
-      const { importPassword } = await inquirer.prompt([
-        { type: 'password', name: 'importPassword', message: 'Enter export file password:', mask: '*' }
-      ]);
+      const importPassword = await promptPassword('Enter export file password:');
 
       const fileContent = await fs.readFile(file, 'utf8');
       let importData: Record<string, unknown>;
@@ -1257,9 +1207,7 @@ program
         return;
       }
 
-      const { confirm } = await inquirer.prompt([
-        { type: 'confirm', name: 'confirm', message: options.merge ? 'Merge into current store?' : 'Replace current store?', default: false }
-      ]);
+      const confirm = await promptConfirm(options.merge ? 'Merge into current store?' : 'Replace current store?', false);
 
       if (!confirm) {
         console.log(chalk.yellow('Import cancelled'));
@@ -1352,9 +1300,7 @@ program
         console.log(chalk.gray(`  Variables: ${meta.count || Object.keys(variables).length}`));
       }
 
-      const { confirm } = await inquirer.prompt([
-        { type: 'confirm', name: 'confirm', message: options.merge ? 'Merge backup into current store?' : 'Replace current store with backup?', default: false }
-      ]);
+      const confirm = await promptConfirm(options.merge ? 'Merge backup into current store?' : 'Replace current store with backup?', false);
 
       if (!confirm) {
         console.log(chalk.yellow('Restore cancelled'));
@@ -1560,7 +1506,7 @@ program
         const vaultOverride = parentOpts.global ? 'global' : parentOpts.project ? 'project' : undefined;
         
         await withSession(async (storage) => {
-          const value = options.value || (await inquirer.prompt([{ type: 'input', name: 'value', message: 'Value:' }])).value;
+          const value = options.value || (await promptInput('Value:'));
           const tags = options.tags ? options.tags.split(',').map((t: string) => t.trim()) : [];
           
           const now = new Date().toISOString();
