@@ -3,7 +3,18 @@ import * as fs from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
 import * as http from 'http';
+import * as net from 'net';
 import { EventEmitter } from 'events';
+
+async function getFreePort(): Promise<number> {
+  return new Promise((resolve) => {
+    const srv = net.createServer();
+    srv.listen(0, '127.0.0.1', () => {
+      const port = (srv.address() as net.AddressInfo).port;
+      srv.close(() => resolve(port));
+    });
+  });
+}
 
 // Mock EnvCPServer for the MCP mode test
 const mockMcpStart = jest.fn<() => Promise<void>>().mockResolvedValue(undefined);
@@ -94,7 +105,7 @@ describe('UnifiedServer SIGTERM handler', () => {
   });
 
   it('calls stop() and process.exit(0) on SIGTERM', async () => {
-    const port = 30000 + Math.floor(Math.random() * 10000);
+    const port = await getFreePort();
     const serverConfig: ServerConfig = {
       mode: 'all',
       port,
@@ -130,7 +141,7 @@ describe('UnifiedServer handleGeminiRequest /v1/functions/call', () => {
 
   beforeAll(async () => {
     tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-gemini-fc-'));
-    port = 30000 + Math.floor(Math.random() * 10000);
+    port = await getFreePort();
     const serverConfig: ServerConfig = {
       mode: 'all',
       port,

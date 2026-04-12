@@ -3,6 +3,17 @@ import { ensureDir, pathExists } from '../src/utils/fs.js';
 import * as os from 'os';
 import * as path from 'path';
 import * as http from 'http';
+import * as net from 'net';
+
+async function getFreePort(): Promise<number> {
+  return new Promise((resolve) => {
+    const srv = net.createServer();
+    srv.listen(0, '127.0.0.1', () => {
+      const port = (srv.address() as net.AddressInfo).port;
+      srv.close(() => resolve(port));
+    });
+  });
+}
 import { RESTAdapter } from '../src/adapters/rest';
 import { OpenAIAdapter } from '../src/adapters/openai';
 import { GeminiAdapter } from '../src/adapters/gemini';
@@ -54,7 +65,7 @@ describe('RESTAdapter HTTP server', () => {
   beforeAll(async () => {
     tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-rest-'));
     adapter = new RESTAdapter(makeConfig(), tmpDir);
-    port = 30000 + Math.floor(Math.random() * 10000);
+    port = await getFreePort();
     await adapter.startServer(port, '127.0.0.1');
   });
 
@@ -146,7 +157,7 @@ describe('RESTAdapter with API key', () => {
   beforeAll(async () => {
     tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-rest-auth-'));
     adapter = new RESTAdapter(makeConfig(), tmpDir);
-    port = 30000 + Math.floor(Math.random() * 10000);
+    port = await getFreePort();
     await adapter.startServer(port, '127.0.0.1', 'test-api-key');
   });
 
@@ -179,7 +190,7 @@ describe('OpenAIAdapter', () => {
   beforeAll(async () => {
     tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-openai-'));
     adapter = new OpenAIAdapter(makeConfig(), tmpDir);
-    port = 30000 + Math.floor(Math.random() * 10000);
+    port = await getFreePort();
     await adapter.startServer(port, '127.0.0.1');
 
     // Seed a variable
@@ -331,7 +342,7 @@ describe('RESTAdapter sync and error routes', () => {
       sync: { enabled: true, target: '.env' },
     });
     adapter = new RESTAdapter(config, tmpDir);
-    port = 30000 + Math.floor(Math.random() * 10000);
+    port = await getFreePort();
     await adapter.startServer(port, '127.0.0.1');
   });
 
@@ -398,7 +409,7 @@ describe('OpenAIAdapter with API key', () => {
   beforeAll(async () => {
     tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-oai-auth-'));
     adapter = new OpenAIAdapter(makeConfig(), tmpDir);
-    port = 30000 + Math.floor(Math.random() * 10000);
+    port = await getFreePort();
     await adapter.startServer(port, '127.0.0.1', 'oai-secret');
   });
 
@@ -426,7 +437,7 @@ describe('GeminiAdapter', () => {
   beforeAll(async () => {
     tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-gemini-'));
     adapter = new GeminiAdapter(makeConfig(), tmpDir);
-    port = 30000 + Math.floor(Math.random() * 10000);
+    port = await getFreePort();
     await adapter.startServer(port, '127.0.0.1');
 
     await adapter.callTool('envcp_set', { name: 'GEM_VAR', value: 'gemtest' });
@@ -536,7 +547,7 @@ describe('GeminiAdapter error handling', () => {
   beforeAll(async () => {
     tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-gemini-err-'));
     adapter = new GeminiAdapter(makeConfig(), tmpDir);
-    port = 30000 + Math.floor(Math.random() * 10000);
+    port = await getFreePort();
     await adapter.startServer(port, '127.0.0.1');
   });
 
@@ -563,7 +574,7 @@ describe('OpenAIAdapter error handling', () => {
   beforeAll(async () => {
     tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-oai-err-'));
     adapter = new OpenAIAdapter(makeConfig(), tmpDir);
-    port = 30000 + Math.floor(Math.random() * 10000);
+    port = await getFreePort();
     await adapter.startServer(port, '127.0.0.1');
   });
 
@@ -586,7 +597,7 @@ describe('Adapter rate limiting', () => {
   it('REST adapter rate limits after many requests', async () => {
     const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-rest-rl-'));
     const adapter = new RESTAdapter(makeConfig(), tmpDir);
-    const port = 30000 + Math.floor(Math.random() * 10000);
+    const port = await getFreePort();
     await adapter.startServer(port, '127.0.0.1');
 
     // Send 120 rapid requests to trigger rate limit (default is 100/min)
@@ -602,7 +613,7 @@ describe('Adapter rate limiting', () => {
   it('OpenAI adapter rate limits after many requests', async () => {
     const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-oai-rl-'));
     const adapter = new OpenAIAdapter(makeConfig(), tmpDir);
-    const port = 30000 + Math.floor(Math.random() * 10000);
+    const port = await getFreePort();
     await adapter.startServer(port, '127.0.0.1');
 
     const results = await Promise.all(
@@ -617,7 +628,7 @@ describe('Adapter rate limiting', () => {
   it('Gemini adapter rate limits after many requests', async () => {
     const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-gem-rl-'));
     const adapter = new GeminiAdapter(makeConfig(), tmpDir);
-    const port = 30000 + Math.floor(Math.random() * 10000);
+    const port = await getFreePort();
     await adapter.startServer(port, '127.0.0.1');
 
     const results = await Promise.all(
@@ -638,7 +649,7 @@ describe('GeminiAdapter with API key', () => {
   beforeAll(async () => {
     tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-gem-auth-'));
     adapter = new GeminiAdapter(makeConfig(), tmpDir);
-    port = 30000 + Math.floor(Math.random() * 10000);
+    port = await getFreePort();
     await adapter.startServer(port, '127.0.0.1', 'gem-secret');
   });
 
@@ -662,7 +673,7 @@ describe('Adapter rateLimitEnabled=false branch', () => {
   it('REST adapter allows requests when rate limit disabled — rest.ts:103', async () => {
     const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-rest-norate-'));
     const adapter = new RESTAdapter(makeConfig(), tmpDir);
-    const port = 30000 + Math.floor(Math.random() * 10000);
+    const port = await getFreePort();
     await adapter.startServer(port, '127.0.0.1', undefined, { enabled: false, requests_per_minute: 1 });
     const { status } = await fetch(port, 'GET', '/api/health');
     expect(status).toBe(200);
@@ -673,7 +684,7 @@ describe('Adapter rateLimitEnabled=false branch', () => {
   it('OpenAI adapter allows requests when rate limit disabled — openai.ts:62', async () => {
     const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-oai-norate-'));
     const adapter = new OpenAIAdapter(makeConfig(), tmpDir);
-    const port = 30000 + Math.floor(Math.random() * 10000);
+    const port = await getFreePort();
     await adapter.startServer(port, '127.0.0.1', undefined, { enabled: false, requests_per_minute: 1 });
     const { status } = await fetch(port, 'GET', '/v1/models');
     expect(status).toBe(200);
@@ -684,7 +695,7 @@ describe('Adapter rateLimitEnabled=false branch', () => {
   it('Gemini adapter allows requests when rate limit disabled — gemini.ts:59', async () => {
     const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-gem-norate-'));
     const adapter = new GeminiAdapter(makeConfig(), tmpDir);
-    const port = 30000 + Math.floor(Math.random() * 10000);
+    const port = await getFreePort();
     await adapter.startServer(port, '127.0.0.1', undefined, { enabled: false, requests_per_minute: 1 });
     const { status } = await fetch(port, 'GET', '/v1/models');
     expect(status).toBe(200);
@@ -701,7 +712,7 @@ describe('RESTAdapter non-api path and edge-case routes', () => {
   beforeAll(async () => {
     tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-rest-edge-'));
     adapter = new RESTAdapter(makeConfig(), tmpDir);
-    port = 30000 + Math.floor(Math.random() * 10000);
+    port = await getFreePort();
     await adapter.startServer(port, '127.0.0.1');
     await adapter.callTool('envcp_set', { name: 'EDGE_VAR', value: 'edgeval' });
   });
@@ -735,7 +746,7 @@ describe('OpenAI adapter edge cases', () => {
   beforeAll(async () => {
     tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-oai-edge-'));
     adapter = new OpenAIAdapter(makeConfig(), tmpDir);
-    port = 30000 + Math.floor(Math.random() * 10000);
+    port = await getFreePort();
     await adapter.startServer(port, '127.0.0.1');
   });
 
@@ -778,7 +789,7 @@ describe('GeminiAdapter edge cases', () => {
   beforeAll(async () => {
     tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-gem-edge-'));
     adapter = new GeminiAdapter(makeConfig(), tmpDir);
-    port = 30000 + Math.floor(Math.random() * 10000);
+    port = await getFreePort();
     await adapter.startServer(port, '127.0.0.1');
   });
 
