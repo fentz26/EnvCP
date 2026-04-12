@@ -109,7 +109,7 @@ export class UnifiedServer {
       return;
     }
 
-    // Warn (or refuse) if AI access is enabled without an API key
+    // Warn if AI access is enabled without an API key
     this.checkApiKeySecurity();
 
     // Initialize adapters based on mode

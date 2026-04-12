@@ -980,8 +980,7 @@ describe('UnifiedServer checkApiKeySecurity (#148)', () => {
     const serverConfig: ServerConfig = { mode: 'auto', port, host: '127.0.0.1', cors: true, auto_detect: true };
     const srv = new UnifiedServer(config, serverConfig, tmpDir);
     await srv.start();
-    const calls = stderrSpy.mock.calls.map(c => String(c[0])).join('');
-    expect(calls).not.toContain('WARNING');
+    expect(stderrSpy).not.toHaveBeenCalled();
     srv.stop();
     await fs.rm(tmpDir, { recursive: true, force: true });
     stderrSpy.mockRestore();
@@ -1002,8 +1001,7 @@ describe('UnifiedServer checkApiKeySecurity (#148)', () => {
     };
     const srv = new UnifiedServer(config, serverConfig, tmpDir);
     await srv.start();
-    const calls = stderrSpy.mock.calls.map(c => String(c[0])).join('');
-    expect(calls).not.toContain('WARNING');
+    expect(stderrSpy).not.toHaveBeenCalled();
     srv.stop();
     await fs.rm(tmpDir, { recursive: true, force: true });
     stderrSpy.mockRestore();
