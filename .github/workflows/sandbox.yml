@@ -1,0 +1,85 @@
+name: Sandbox E2E Tests
+
+on:
+  workflow_dispatch:
+    inputs:
+      providers:
+        description: 'AI providers to test (comma-separated: openai,gemini,nvidia,qwen,openrouter)'
+        required: false
+        default: 'openai'
+      scenarios:
+        description: 'Test scenarios to run (comma-separated or "all")'
+        required: false
+        default: 'all'
+      timeout:
+        description: 'Timeout in minutes'
+        required: false
+        default: '10'
+
+jobs:
+  sandbox:
+    runs-on: self-hosted
+    timeout-minutes: ${{ github.event.inputs.timeout || 10 }}
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      - name: Build
+        run: npm run build
+      
+      - name: Build sandbox Docker image
+        run: |
+          docker build \
+            --target runtime \
+            -t envcp-sandbox:${{ github.sha }} \
+            -t envcp-sandbox:latest \
+            -f __tests__/sandbox/Dockerfile \
+            --build-arg BUILDKIT_INLINE_CACHE=1 \
+            .
+      
+      - name: Run sandbox tests
+        run: |
+          docker run --rm \
+            --name envcp-sandbox-run-${{ github.run_id }} \
+            --cap-drop=ALL \
+            --security-opt="no-new-privileges:true" \
+            --pids-limit=256 \
+            --memory="2g" \
+            --memory-swap="2g" \
+            --cpus="2.0" \
+            --network host \
+            --tmpfs /tmp/envcp-sandbox:noexec,nosuid,nodev,size=100m,mode=700 \
+            --tmpfs /tmp/.npm-cache:noexec,nosuid,nodev,size=50m,mode=700 \
+            --tmpfs /tmp/envcp-logs:noexec,nosuid,nodev,size=10m,mode=700 \
+            -e OPENAI_API_KEY="${{ secrets.OPENAI_API_KEY }}" \
+            -e GEMINI_API_KEY="${{ secrets.GEMINI_API_KEY }}" \
+            -e NVIDIA_API_KEY="${{ secrets.NVIDIA_API_KEY }}" \
+            -e QWEN_API_KEY="${{ secrets.QWEN_API_KEY }}" \
+            -e OPENROUTER_API_KEY="${{ secrets.OPENROUTER_API_KEY }}" \
+            -e SANDBOX_PROVIDERS="${{ github.event.inputs.providers }}" \
+            -e SANDBOX_SCENARIOS="${{ github.event.inputs.scenarios }}" \
+            -e GITHUB_SHA="${{ github.sha }}" \
+            -e GITHUB_RUN_ID="${{ github.run_id }}" \
+            envcp-sandbox:${{ github.sha }}
+      
+      - name: Cleanup Docker images
+        if: always()
+        run: |
+          docker rmi envcp-sandbox:${{ github.sha }} 2>/dev/null || true
+          docker rmi envcp-sandbox:latest 2>/dev/null || true
+          docker image prune -f --filter "until=24h"
+      
+      - name: Cleanup orphaned containers
+        if: always()
+        run: |
+          docker ps -a --filter "name=envcp-sandbox-run-${{ github.run_id }}" -q | xargs -r docker rm -f

@@ -1,0 +1,76 @@
+# EnvCP Sandbox Docker Compose
+# CIS Docker Benchmark hardened configuration
+
+services:
+  sandbox:
+    build:
+      context: ../..
+      dockerfile: __tests__/sandbox/Dockerfile
+      target: runtime
+    
+    container_name: envcp-sandbox
+    
+    # CIS 4.12: Use read-only root filesystem where possible
+    # Note: Node.js needs to write to /tmp, so we use tmpfs
+    read_only: false
+    
+    # CIS 4.3: Drop all unnecessary capabilities
+    cap_drop:
+      - ALL
+    
+    # CIS 4.4: Add only required capabilities
+    # None needed for sandbox tests
+    cap_add: []
+    
+    # CIS 4.5: Disable privileged mode
+    privileged: false
+    
+    # CIS 4.11: Run as non-root user (set in Dockerfile)
+    user: "1000:1000"
+    
+    # CIS 4.7-4.10: Resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2048M
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+    
+    # CIS 5.7: Use tmpfs for sensitive data
+    tmpfs:
+      - /tmp/envcp-sandbox:noexec,nosuid,nodev,size=100m,mode=700
+      - /tmp/.npm-cache:noexec,nosuid,nodev,size=50m,mode=700
+      - /tmp/envcp-logs:noexec,nosuid,nodev,size=10m,mode=700
+    
+    # Environment variables (API keys passed at runtime)
+    environment:
+      - SANDBOX_MODE=true
+      - SANDBOX_PROVIDERS=${SANDBOX_PROVIDERS:-openai}
+      - SANDBOX_SCENARIOS=${SANDBOX_SCENARIOS:-all}
+      - SANDBOX_TIMEOUT_MS=600000
+      - NODE_ENV=production
+      - NO_COLOR=1
+    
+    # Network configuration
+    networks:
+      - sandbox-net
+    
+    # Security options
+    security_opt:
+      - no-new-privileges:true
+      - apparmor:docker-default
+    
+    # CIS 5.5: Disable inter-container communication by default
+    # (only needed if multiple containers)
+    ipc: none
+    
+    # Exit immediately when done
+    stop_grace_period: 10s
+    stop_signal: SIGTERM
+
+networks:
+  sandbox-net:
+    driver: bridge
+    internal: false  # Allow outbound to AI APIs

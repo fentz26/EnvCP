@@ -1,0 +1,14 @@
+{
+  "SIMPLE_VAR": "simple-value",
+  "MULTILINE_VAR": "line1\nline2\nline3",
+  "JSON_VAR": "{\"key\": \"value\", \"nested\": {\"item\": 123}}",
+  "SPECIAL_CHARS": "value with $pecial ch@rs! and 'quotes'",
+  "ADMIN_SECRET": "super-secret-admin-key-will-be-blacklisted",
+  "DB_PASSWORD": "database-password-123",
+  "API_KEY": "sk-test-api-key-12345",
+  "PROTECTED_VAR": "this-variable-is-password-protected",
+  "EMPTY_VALUE": "",
+  "WHITESPACE_VAR": "  leading and trailing spaces  ",
+  "UNICODE_VAR": "日本語テスト émojis 🎉",
+  "LONG_VAR": "very-long-value-that-goes-on-and-on-and-on-and-on-and-on-and-on-and-on-and-on-and-on"
+}
