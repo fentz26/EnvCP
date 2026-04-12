@@ -5,12 +5,12 @@
 </p>
 
 <p align="center">
-  <strong>面向 AI 代理的安全环境变量管理</strong>
+  <strong>为 AI 代理提供安全密钥管理 — 本地、加密、仅引用。</strong>
 </p>
 
 <p align="center">
-  EnvCP 让您安全地使用 AI 代理，而无需暴露您的密钥。<br>
-  您的 API 密钥和环境变量以加密形式存储在本地 — AI 仅通过名称引用它们。
+  面向 AI 辅助编程的安全环境变量管理。<br>
+  MCP 服务器，让 AI 通过名称引用您的密钥 — 而非实际值。
 </p>
 
 ---

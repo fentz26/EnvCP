@@ -5,12 +5,12 @@
 </p>
 
 <p align="center">
-  <strong>Quản lý biến môi trường an toàn cho AI agent</strong>
+  <strong>Bí mật an toàn cho AI agent — cục bộ, mã hóa, chỉ tham chiếu.</strong>
 </p>
 
 <p align="center">
-  EnvCP cho phép bạn sử dụng AI agent an toàn mà không lộ bí mật.<br>
-  Khóa API và biến môi trường của bạn được mã hóa trên máy — AI chỉ tham chiếu chúng theo tên.
+  Quản lý biến môi trường an toàn cho lập trình hỗ trợ AI.<br>
+  MCP server giúp AI tham chiếu bí mật của bạn theo tên — không bao giờ theo giá trị.
 </p>
 
 ---

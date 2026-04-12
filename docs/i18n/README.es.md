@@ -5,12 +5,12 @@
 </p>
 
 <p align="center">
-  <strong>Gestión segura de variables de entorno para agentes de IA</strong>
+  <strong>Secretos seguros para agentes de IA — local, cifrado, solo por referencia.</strong>
 </p>
 
 <p align="center">
-  EnvCP te permite usar agentes de IA de forma segura sin exponer tus secretos.<br>
-  Tus claves API y variables de entorno permanecen cifradas en tu máquina — la IA solo las referencia por nombre.
+  Gestión segura de variables de entorno para el desarrollo asistido por IA.<br>
+  Servidor MCP que permite a la IA referenciar tus secretos por nombre — nunca por valor.
 </p>
 
 ---

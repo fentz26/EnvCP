@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-<strong>Secure Environment Variable Management for AI agent</strong>
+<strong>Secure secrets for AI agents — local, encrypted, reference-only.</strong>
 </p>
 
 <p align="center">
@@ -35,8 +35,8 @@
 </p>
 
 <p align="center">
-  EnvCP lets you safely use AI agent without exposing your secrets.<br>
-  Your API keys and environment variables stay encrypted on your machine — AI only references them by name.
+  Secure environment variable management for AI-assisted coding.<br>
+  MCP server that lets AI reference your secrets by name — never by value.
 </p>
 
 ---
