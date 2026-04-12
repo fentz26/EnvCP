@@ -161,11 +161,24 @@ async function testCLILifecycle() {
 }
 
 /**
+ * Enable AI read/write access in envcp.yaml so the server adapter can service requests.
+ * The CLI goes through its own access layer; only the server checks allow_ai_*.
+ */
+function enableAIAccess() {
+  const configPath = path.join(SANDBOX_DIR, 'envcp.yaml');
+  let config = fs.readFileSync(configPath, 'utf8');
+  config = config.replace(/allow_ai_read:\s*false/g, 'allow_ai_read: true');
+  config = config.replace(/allow_ai_write:\s*false/g, 'allow_ai_write: true');
+  fs.writeFileSync(configPath, config, 'utf8');
+}
+
+/**
  * Scenario 2: REST API
  * Starts the server, exercises CRUD over HTTP, then shuts it down.
  */
 async function testRestAPI() {
   return runScenario('rest-api', async () => {
+    enableAIAccess();
     const port = 18921;
     const envcp = findEnvcpCLI();
 
@@ -245,6 +258,7 @@ async function testRestAPI() {
  */
 async function testMCPStdio() {
   return runScenario('mcp-stdio', async () => {
+    enableAIAccess();
     const envcp = findEnvcpCLI();
 
     const server = spawn('node', ['--no-warnings', envcp, 'serve', '--mode', 'mcp'], {
