@@ -19,7 +19,6 @@ import {
   getGlobalVaultPath,
   getProjectVaultPath,
   resolveVaultPath,
-  getActiveVault,
   setActiveVault,
   listVaults,
   initNamedVault,
@@ -246,15 +245,17 @@ program
           if (pwd) storage.setPassword(pwd);
 
           const now = new Date().toISOString();
+          const existing = await storage.load();
           for (const [name, value] of Object.entries(vars)) {
-            await storage.set(name, {
+            existing[name] = {
               name, value,
               encrypted: config.storage.encrypted,
               created: now, updated: now,
               sync_to_env: true,
               protected: false,
-            });
+            };
           }
+          await storage.save(existing);
 
           // Create session for encrypted mode
           if (pwd) {
@@ -1524,11 +1525,11 @@ program
   .addCommand(
     new Command('init')
       .description('Initialize a vault')
-      .action(async (options, cmd) => {
+      .action(async (_options, cmd) => {
         const parentOpts = cmd.parent.opts();
         const projectPath = process.cwd();
         const config = await loadConfig(projectPath);
-        
+
         let vaultPath: string;
         let vaultName: string;
         
@@ -1646,8 +1647,7 @@ program
   .argument('<name>', 'Vault name (global, project, or named vault)')
   .action(async (name: string) => {
     const projectPath = process.cwd();
-    const config = await loadConfig(projectPath);
-    
+
     if (name !== 'global' && name !== 'project') {
       const vaultDir = path.join(projectPath, '.envcp/vaults', name);
       if (!await pathExists(vaultDir)) {
@@ -1655,7 +1655,7 @@ program
         return;
       }
     }
-    
+
     await setActiveVault(projectPath, name);
     console.log(chalk.green(`Switched to vault: ${name}`));
   });
@@ -1713,7 +1713,7 @@ program
     new Command('save')
       .description('Save current password to OS keychain')
       .action(async () => {
-        await withSession(async (storage, password, config, projectPath) => {
+        await withSession(async (_storage, password, config, projectPath) => {
           if (!password) {
             console.log(chalk.red('No password available (encryption disabled?)'));
             return;

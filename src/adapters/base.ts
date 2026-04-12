@@ -3,7 +3,6 @@ import { EnvCPConfig, Variable, ToolDefinition } from '../types.js';
 import { maskValue, hashVariablePassword, verifyVariablePassword, encryptVariableValue, decryptVariableValue } from '../utils/crypto.js';
 import { canAccess, isBlacklisted, canAIActiveCheck, validateVariableName, matchesPattern } from '../config/manager.js';
 import { SessionManager } from '../utils/session.js';
-import { resolveVaultPath } from '../vault/index.js';
 import * as fs from 'fs/promises';
 import { pathExists, parseEnv } from '../utils/fs.js';
 import * as path from 'path';

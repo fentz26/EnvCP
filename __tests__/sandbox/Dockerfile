@@ -16,9 +16,9 @@ RUN npm ci && \
 # Stage 2: Runtime (hardened)
 FROM node:20-bookworm-slim AS runtime
 
-# CIS 4.1: Create non-root user
-RUN groupadd --gid 1000 envcp && \
-    useradd --uid 1000 --gid envcp --shell /bin/bash --create-home envcp
+# CIS 4.1: Create non-root user (use existing node user if available)
+RUN id envcp 2>/dev/null || (groupadd -g 10001 envcp && \
+    useradd -u 10001 -g envcp --shell /bin/bash --create-home envcp)
 
 # CIS 5.1: Install minimal dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \

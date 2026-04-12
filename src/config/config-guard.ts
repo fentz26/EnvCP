@@ -168,7 +168,7 @@ export class ConfigGuard {
         const dir = path.dirname(filePath);
         if (!fs.existsSync(dir)) continue;
 
-        const watcher = watch(dir, { persistent: false }, (eventType, filename) => {
+        const watcher = watch(dir, { persistent: false }, (_eventType, filename) => {
           if (filename === path.basename(filePath)) {
             this.handleChange(filePath);
           }

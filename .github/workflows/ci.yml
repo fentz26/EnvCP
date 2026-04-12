@@ -32,6 +32,10 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Type check
+        if: matrix.node-version == 20
+        run: npx tsc --noEmit
+
       - name: Run tests
         run: npm test -- --ci --reporters=default --reporters=jest-junit
         env:

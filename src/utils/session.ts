@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as nodefs from 'fs/promises';
 import * as path from 'path';
 import { withLock } from './lock.js';
-import { ensureDir, pathExists } from './fs.js';
+import { ensureDir } from './fs.js';
 import { Session, SessionSchema } from '../types.js';
 import { generateId, encrypt, decrypt } from './crypto.js';
 
@@ -42,7 +42,6 @@ export class SessionManager {
   });
 
   const encrypted = await encrypt(sessionData, password);
-  await nodefs.writeFile(this.sessionPath, '', { encoding: 'utf8', mode: 0o600, flag: 'a' });
   await withLock(this.sessionPath, async () => {
     await nodefs.writeFile(this.sessionPath, encrypted, { encoding: 'utf8', mode: 0o600 });
   });
@@ -125,7 +124,6 @@ export class SessionManager {
   });
 
   const encrypted = await encrypt(sessionData, this.password);
-  await nodefs.writeFile(this.sessionPath, '', { encoding: 'utf8', mode: 0o600, flag: 'a' });
   await withLock(this.sessionPath, async () => {
     await nodefs.writeFile(this.sessionPath, encrypted, { encoding: 'utf8', mode: 0o600 });
   });

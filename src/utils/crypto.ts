@@ -183,10 +183,10 @@ export function validatePassword(password: string, config: {
  */
 export async function hashVariablePassword(password: string): Promise<string> {
   return argon2.hash(password, {
-    type: argon2.argon2id,
-    memoryCost: 65536,
-    timeCost: 3,
-    parallelism: 1,
+    type: ARGON2_OPTS.type,
+    memoryCost: ARGON2_OPTS.memoryCost,
+    timeCost: ARGON2_OPTS.timeCost,
+    parallelism: ARGON2_OPTS.parallelism,
   });
 }
 

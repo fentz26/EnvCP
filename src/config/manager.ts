@@ -378,9 +378,15 @@ export function validateVariableName(name: string): boolean {
   return /^[A-Za-z_][A-Za-z0-9_]*$/.test(name);
 }
 
+const _patternCache = new Map<string, RegExp>();
+
 export function matchesPattern(name: string, pattern: string): boolean {
-  const escaped = pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&');
-  const regex = new RegExp('^' + escaped.replace(/\*/g, '.*') + '$');
+  let regex = _patternCache.get(pattern);
+  if (!regex) {
+    const escaped = pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&');
+    regex = new RegExp('^' + escaped.replace(/\*/g, '.*') + '$');
+    _patternCache.set(pattern, regex);
+  }
   return regex.test(name);
 }
 

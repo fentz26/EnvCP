@@ -2,11 +2,12 @@ import * as fs from 'fs/promises';
 
 const MAX_RETRIES = 5;
 const BASE_DELAY_MS = 50;
+const MAX_DELAY_MS = 1000;
 
 /**
  * Acquires an exclusive lock on `filePath` using an atomic `.lock` sentinel file,
  * runs `fn`, then releases the lock. Retries up to MAX_RETRIES times with
- * linear back-off before throwing.
+ * exponential back-off + jitter before throwing.
  *
  * Uses O_CREAT|O_EXCL (the `wx` flag) which is atomic on POSIX and NTFS —
  * the same primitive proper-lockfile uses internally.
@@ -24,7 +25,8 @@ export async function withLock<T>(filePath: string, fn: () => Promise<T>): Promi
       if (attempt === MAX_RETRIES) {
         throw new Error(`Could not acquire lock for ${filePath} after ${MAX_RETRIES} retries`);
       }
-      await new Promise(resolve => setTimeout(resolve, BASE_DELAY_MS * (attempt + 1)));
+      const delay = Math.min(MAX_DELAY_MS, BASE_DELAY_MS * (2 ** attempt)) + Math.random() * 50;
+      await new Promise(resolve => setTimeout(resolve, delay));
     }
   }
 

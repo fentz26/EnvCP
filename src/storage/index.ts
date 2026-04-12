@@ -83,14 +83,15 @@ export class StorageManager {
 
   async save(variables: Record<string, Variable>): Promise<void> {
     this.cache = variables;
-    const data = JSON.stringify(variables, null, 2);
+    // Compact JSON for encrypted stores (whitespace is encrypted anyway);
+    // pretty-print only for plaintext stores where human readability matters.
+    const data = this.encrypted
+      ? JSON.stringify(variables)
+      : JSON.stringify(variables, null, 2);
 
     const storeDir = path.dirname(this.storePath);
     await ensureDir(storeDir);
     await nodefs.chmod(storeDir, 0o700);
-
-    // Ensure the store file exists for locking
-  await nodefs.writeFile(this.storePath, '', { encoding: 'utf8', flag: 'a' });
 
   await withLock(this.storePath, async () => {
     await this.rotateBackups();

@@ -163,13 +163,6 @@ class WindowsKeychain implements KeychainBackend {
     try {
       // cmdkey can't retrieve passwords; use PowerShell CredentialManager
       const target = `${service}:${account}`;
-      const script = `
-        Add-Type -AssemblyName System.Runtime.InteropServices;
-        $cred = [System.Runtime.InteropServices.Marshal];
-        $target = '${target.replace(/'/g, "''")}';
-        $c = New-Object -TypeName PSCredential -ArgumentList @('x', (ConvertTo-SecureString (cmdkey /list:$target | Out-String) -AsPlainText -Force));
-      `;
-      // Simpler approach: use Windows CredentialManager module or generic approach
       const { stdout } = await execFileAsync('powershell', [
         '-NoProfile', '-Command',
         `$cred = Get-StoredCredential -Target '${target.replace(/'/g, "''")}'; if ($cred) { $cred.GetNetworkCredential().Password } else { '' }`,
@@ -178,7 +171,6 @@ class WindowsKeychain implements KeychainBackend {
     } catch {
       // Fallback: try with cmdkey-based approach via PowerShell DPAPI
       try {
-        const target = `${service}:${account}`;
         const { stdout } = await execFileAsync('powershell', [
           '-NoProfile', '-Command',
           `[Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR((New-Object Management.Automation.PSCredential('u',(Get-Content '${os.homedir()}/.envcp/.credential' | ConvertTo-SecureString))).Password))`,

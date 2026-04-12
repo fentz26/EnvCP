@@ -2,7 +2,7 @@ import * as fs from 'fs/promises';
 import * as path from 'path';
 import * as os from 'os';
 import { ensureDir, pathExists } from '../utils/fs.js';
-import { VaultMode, EnvCPConfig } from '../types.js';
+import { EnvCPConfig } from '../types.js';
 
 const ACTIVE_VAULT_FILE = '.envcp/.active-vault';
 const NAMED_VAULTS_DIR = '.envcp/vaults';

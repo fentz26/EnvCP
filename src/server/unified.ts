@@ -1,4 +1,4 @@
-import { EnvCPConfig, ServerMode, ServerConfig, ClientType } from '../types.js';
+import { EnvCPConfig, ServerConfig, ClientType } from '../types.js';
 import { RESTAdapter } from '../adapters/rest.js';
 import { OpenAIAdapter } from '../adapters/openai.js';
 import { GeminiAdapter } from '../adapters/gemini.js';
@@ -28,9 +28,11 @@ export class UnifiedServer {
   }
 
   // Detect client type from request headers
-  detectClientType(req: http.IncomingMessage): ClientType {
+  detectClientType(req: http.IncomingMessage, pathname?: string): ClientType {
     const userAgent = req.headers['user-agent']?.toLowerCase() || '';
-    const pathname = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`).pathname;
+    if (pathname === undefined) {
+      pathname = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`).pathname;
+    }
 
     // Check for OpenAI-style requests
     if (pathname.startsWith('/v1/chat') ||
@@ -182,7 +184,7 @@ const whitelist = rl?.whitelist ?? [];
 
       // Root endpoint - show server info and detected mode
       if (pathname === '/' && req.method === 'GET') {
-        const detectedType = this.serverConfig.auto_detect ? this.detectClientType(req) : 'unknown';
+        const detectedType = this.serverConfig.auto_detect ? this.detectClientType(req, pathname) : 'unknown';
         sendJson(res, 200, {
           name: 'EnvCP Unified Server',
           version: '1.0.0',
@@ -202,7 +204,7 @@ const whitelist = rl?.whitelist ?? [];
       // Detect client type
       let clientType: ClientType = 'unknown';
       if (this.serverConfig.auto_detect) {
-        clientType = this.detectClientType(req);
+        clientType = this.detectClientType(req, pathname);
       }
 
       // Force mode query param
@@ -215,25 +217,25 @@ const whitelist = rl?.whitelist ?? [];
         // Route to appropriate adapter
         // REST API routes
         if ((clientType === 'rest' || clientType === 'unknown') && pathname.startsWith('/api')) {
-          await this.handleRESTRequest(req, res);
+          await this.handleRESTRequest(req, res, parsedUrl);
           return;
         }
 
         // OpenAI routes
         if (clientType === 'openai' || pathname.startsWith('/v1/chat') || pathname.startsWith('/v1/functions') || pathname === '/v1/tool_calls' || pathname === '/v1/models') {
-          await this.handleOpenAIRequest(req, res);
+          await this.handleOpenAIRequest(req, res, parsedUrl);
           return;
         }
 
         // Gemini routes
         if (clientType === 'gemini' || pathname.includes(':generateContent') || pathname === '/v1/function_calls' || pathname === '/v1/tools') {
-          await this.handleGeminiRequest(req, res);
+          await this.handleGeminiRequest(req, res, parsedUrl);
           return;
         }
 
         // Default to REST for unknown paths
         if (pathname.startsWith('/api')) {
-          await this.handleRESTRequest(req, res);
+          await this.handleRESTRequest(req, res, parsedUrl);
           return;
         }
 
@@ -268,10 +270,10 @@ const whitelist = rl?.whitelist ?? [];
     });
   }
 
-  private async handleRESTRequest(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+  private async handleRESTRequest(req: http.IncomingMessage, res: http.ServerResponse, parsedUrl?: URL): Promise<void> {
     // Delegate to REST adapter's internal handling
-    const parsedUrl = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
-    const pathname = parsedUrl.pathname || '/';
+    const url = parsedUrl ?? new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
+    const pathname = url.pathname || '/';
     const segments = pathname.split('/').filter(Boolean);
 
     if (!this.restAdapter) {
@@ -317,7 +319,7 @@ const whitelist = rl?.whitelist ?? [];
             return;
           }
           if (segments[2] && req.method === 'GET') {
-            const result = await this.restAdapter.callTool('envcp_get', { name: segments[2], show_value: parsedUrl.searchParams.get('show_value') === 'true' });
+            const result = await this.restAdapter.callTool('envcp_get', { name: segments[2], show_value: url.searchParams.get('show_value') === 'true' });
             sendJson(res, 200, { success: true, data: result, timestamp: new Date().toISOString() });
             return;
           }
@@ -356,14 +358,14 @@ const whitelist = rl?.whitelist ?? [];
     }
   }
 
-  private async handleOpenAIRequest(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+  private async handleOpenAIRequest(req: http.IncomingMessage, res: http.ServerResponse, parsedUrl?: URL): Promise<void> {
     if (!this.openaiAdapter) {
       sendJson(res, 503, { error: { message: 'OpenAI adapter not initialized', type: 'service_unavailable' } });
       return;
     }
 
-    const parsedUrl = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
-    const pathname = parsedUrl.pathname || '/';
+    const url = parsedUrl ?? new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
+    const pathname = url.pathname || '/';
     const body = req.method === 'POST' ? await parseBody(req) : {};
 
     try {
@@ -428,14 +430,14 @@ const whitelist = rl?.whitelist ?? [];
     }
   }
 
-  private async handleGeminiRequest(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+  private async handleGeminiRequest(req: http.IncomingMessage, res: http.ServerResponse, parsedUrl?: URL): Promise<void> {
     if (!this.geminiAdapter) {
       sendJson(res, 503, { error: { code: 503, message: 'Gemini adapter not initialized', status: 'UNAVAILABLE' } });
       return;
     }
 
-    const parsedUrl = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
-    const pathname = parsedUrl.pathname || '/';
+    const url = parsedUrl ?? new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
+    const pathname = url.pathname || '/';
     const body = req.method === 'POST' ? await parseBody(req) : {};
 
     try {
