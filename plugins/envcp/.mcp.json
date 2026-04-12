@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "envcp": {
+      "command": "npx",
+      "args": ["-y", "@fentz26/envcp", "serve", "--mode", "mcp"]
+    }
+  }
+}
