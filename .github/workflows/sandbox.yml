@@ -19,7 +19,7 @@ on:
 jobs:
   sandbox:
     runs-on: self-hosted
-    timeout-minutes: ${{ github.event.inputs.timeout || 10 }}
+    timeout-minutes: ${{ fromJSON(github.event.inputs.timeout || '10') }}
     
     steps:
       - name: Checkout
