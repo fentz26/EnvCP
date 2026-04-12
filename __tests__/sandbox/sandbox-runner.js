@@ -73,8 +73,18 @@ async function runScenario(name, fn) {
 /**
  * Execute CLI command
  */
+function findEnvcpCLI() {
+  let dir = __dirname;
+  for (let i = 0; i < 6; i++) {
+    const candidate = path.join(dir, 'dist', 'cli', 'index.js');
+    if (fs.existsSync(candidate)) return candidate;
+    dir = path.dirname(dir);
+  }
+  throw new Error(`Cannot find dist/cli/index.js from ${__dirname}`);
+}
+
 function execCLI(args, options = {}) {
-  const envcp = path.join(__dirname, '../../dist/cli/index.js');
+  const envcp = findEnvcpCLI();
   const result = spawnSync('node', [envcp, ...args], {
     cwd: options.cwd || SANDBOX_DIR,
     encoding: 'utf-8',
