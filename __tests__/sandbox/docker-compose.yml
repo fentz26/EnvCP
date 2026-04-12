@@ -40,9 +40,9 @@ services:
     
     # CIS 5.7: Use tmpfs for sensitive data
     tmpfs:
-      - /tmp/envcp-sandbox:noexec,nosuid,nodev,size=100m,mode=700
-      - /tmp/.npm-cache:noexec,nosuid,nodev,size=50m,mode=700
-      - /tmp/envcp-logs:noexec,nosuid,nodev,size=10m,mode=700
+      - /tmp/envcp-sandbox:noexec,nosuid,nodev,size=100m,mode=700,uid=10001,gid=10001
+      - /tmp/.npm-cache:noexec,nosuid,nodev,size=50m,mode=700,uid=10001,gid=10001
+      - /tmp/envcp-logs:noexec,nosuid,nodev,size=10m,mode=700,uid=10001,gid=10001
     
     # Environment variables (API keys passed at runtime)
     environment:

@@ -5,7 +5,7 @@
  * Orchestrates sandbox test scenarios and reports results.
  */
 
-const { spawn, execSync } = require('child_process');
+const { spawn, spawnSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const http = require('http');
@@ -75,24 +75,17 @@ async function runScenario(name, fn) {
  */
 function execCLI(args, options = {}) {
   const envcp = path.join(__dirname, '../../dist/cli/index.js');
-  const cmd = `node ${envcp} ${args.join(' ')}`;
-  
-  try {
-    const result = execSync(cmd, {
-      cwd: options.cwd || SANDBOX_DIR,
-      encoding: 'utf-8',
-      timeout: options.timeout || 30000,
-      env: { ...process.env, NO_COLOR: '1' }
-    });
-    return { success: true, stdout: result, stderr: '' };
-  } catch (error) {
-    return { 
-      success: false, 
-      stdout: error.stdout || '', 
-      stderr: error.stderr || error.message,
-      code: error.status || 1
-    };
+  const result = spawnSync('node', [envcp, ...args], {
+    cwd: options.cwd || SANDBOX_DIR,
+    encoding: 'utf-8',
+    timeout: options.timeout || 30000,
+    env: { ...process.env, NO_COLOR: '1' },
+  });
+  if (result.error) {
+    return { success: false, stdout: '', stderr: result.error.message, code: 1 };
   }
+  const success = result.status === 0;
+  return { success, stdout: result.stdout || '', stderr: result.stderr || '', code: result.status };
 }
 
 /**

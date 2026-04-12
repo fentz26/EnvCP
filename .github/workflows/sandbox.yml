@@ -58,9 +58,9 @@ jobs:
             --memory-swap="2g" \
             --cpus="2.0" \
             --network host \
-            --tmpfs /tmp/envcp-sandbox:noexec,nosuid,nodev,size=100m,mode=700 \
-            --tmpfs /tmp/.npm-cache:noexec,nosuid,nodev,size=50m,mode=700 \
-            --tmpfs /tmp/envcp-logs:noexec,nosuid,nodev,size=10m,mode=700 \
+            --tmpfs /tmp/envcp-sandbox:noexec,nosuid,nodev,size=100m,mode=700,uid=10001,gid=10001 \
+            --tmpfs /tmp/.npm-cache:noexec,nosuid,nodev,size=50m,mode=700,uid=10001,gid=10001 \
+            --tmpfs /tmp/envcp-logs:noexec,nosuid,nodev,size=10m,mode=700,uid=10001,gid=10001 \
             -e OPENAI_API_KEY="${{ secrets.OPENAI_API_KEY }}" \
             -e GEMINI_API_KEY="${{ secrets.GEMINI_API_KEY }}" \
             -e NVIDIA_API_KEY="${{ secrets.NVIDIA_API_KEY }}" \
