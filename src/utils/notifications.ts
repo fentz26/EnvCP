@@ -30,6 +30,11 @@ export class NotificationManager {
   }
 
   async sendLockoutNotification(event: Omit<LockoutEvent, 'vault_path'>): Promise<void> {
+    // Always skip notifications in test/CI environment
+    if (process.env.NODE_ENV === 'test' || process.env.CI === 'true') {
+      return;
+    }
+
     const fullEvent: LockoutEvent = {
       ...event,
       vault_path: this.vaultPath

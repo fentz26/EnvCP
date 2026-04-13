@@ -1,0 +1,1523 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites name="jest tests" tests="733" failures="0" errors="0" time="51.465">
+  <testsuite name="LockoutManager" errors="0" failures="0" skipped="0" timestamp="2026-04-13T21:55:48" time="4.565" tests="20">
+    <testcase classname="LockoutManager returns not locked with 0 attempts when no file exists" name="LockoutManager returns not locked with 0 attempts when no file exists" time="0.039">
+    </testcase>
+    <testcase classname="LockoutManager increments attempt counter on each failure" name="LockoutManager increments attempt counter on each failure" time="0.042">
+    </testcase>
+    <testcase classname="LockoutManager imposes lockout when threshold is reached" name="LockoutManager imposes lockout when threshold is reached" time="0.041">
+    </testcase>
+    <testcase classname="LockoutManager recordFailure returns locked=true and cooldown on threshold hit" name="LockoutManager recordFailure returns locked=true and cooldown on threshold hit" time="0.027">
+    </testcase>
+    <testcase classname="LockoutManager doubles cooldown on second lockout (exponential backoff)" name="LockoutManager doubles cooldown on second lockout (exponential backoff)" time="0.04">
+    </testcase>
+    <testcase classname="LockoutManager reset removes the lockout file" name="LockoutManager reset removes the lockout file" time="0.018">
+    </testcase>
+    <testcase classname="LockoutManager reset is idempotent when no file exists" name="LockoutManager reset is idempotent when no file exists" time="0.009">
+    </testcase>
+    <testcase classname="LockoutManager returns not locked after lockout period expires" name="LockoutManager returns not locked after lockout period expires" time="0.015">
+    </testcase>
+    <testcase classname="LockoutManager clears locked_until after expiry and preserves lockout_count" name="LockoutManager clears locked_until after expiry and preserves lockout_count" time="0.031">
+    </testcase>
+    <testcase classname="LockoutManager threshold=1 locks on first failure" name="LockoutManager threshold=1 locks on first failure" time="0.02">
+    </testcase>
+    <testcase classname="LockoutManager recordFailure uses default threshold and baseSeconds when called without args" name="LockoutManager recordFailure uses default threshold and baseSeconds when called without args" time="0.029">
+    </testcase>
+    <testcase classname="LockoutManager reset() silently ignores ENOENT when lockout file does not exist" name="LockoutManager reset() silently ignores ENOENT when lockout file does not exist" time="0.009">
+    </testcase>
+    <testcase classname="LockoutManager reset() rethrows errors that are not ENOENT" name="LockoutManager reset() rethrows errors that are not ENOENT" time="0.073">
+    </testcase>
+    <testcase classname="LockoutManager applies progressive delays when enabled" name="LockoutManager applies progressive delays when enabled" time="0.043">
+    </testcase>
+    <testcase classname="LockoutManager does not apply progressive delays when disabled" name="LockoutManager does not apply progressive delays when disabled" time="0.031">
+    </testcase>
+    <testcase classname="LockoutManager triggers permanent lockout after threshold" name="LockoutManager triggers permanent lockout after threshold" time="0.071">
+    </testcase>
+    <testcase classname="LockoutManager check() returns permanent_locked status" name="LockoutManager check() returns permanent_locked status" time="0.026">
+    </testcase>
+    <testcase classname="LockoutManager clearPermanentLockout() removes permanent lockout" name="LockoutManager clearPermanentLockout() removes permanent lockout" time="0.017">
+    </testcase>
+    <testcase classname="LockoutManager getStats() returns detailed statistics" name="LockoutManager getStats() returns detailed statistics" time="0.024">
+    </testcase>
+    <testcase classname="LockoutManager recordFailure() handles permanent lockout on first check" name="LockoutManager recordFailure() handles permanent lockout on first check" time="0.01">
+    </testcase>
+  </testsuite>
+  <testsuite name="SessionManager" errors="0" failures="0" skipped="0" timestamp="2026-04-13T21:55:53" time="14.532" tests="22">
+    <testcase classname="SessionManager creates a session and returns it" name="SessionManager creates a session and returns it" time="0.709">
+    </testcase>
+    <testcase classname="SessionManager session file is created on disk" name="SessionManager session file is created on disk" time="0.556">
+    </testcase>
+    <testcase classname="SessionManager loads a valid session with correct password" name="SessionManager loads a valid session with correct password" time="1.162">
+    </testcase>
+    <testcase classname="SessionManager returns null when loading with wrong password" name="SessionManager returns null when loading with wrong password" time="1.333">
+    </testcase>
+    <testcase classname="SessionManager returns null when no session file exists" name="SessionManager returns null when no session file exists" time="0.004">
+    </testcase>
+    <testcase classname="SessionManager isValid returns true for active session" name="SessionManager isValid returns true for active session" time="0.691">
+    </testcase>
+    <testcase classname="SessionManager isValid returns false when no session loaded" name="SessionManager isValid returns false when no session loaded" time="0.004">
+    </testcase>
+    <testcase classname="SessionManager extends session and increments extensions counter" name="SessionManager extends session and increments extensions counter" time="1.452">
+    </testcase>
+    <testcase classname="SessionManager extend returns null when max extensions reached" name="SessionManager extend returns null when max extensions reached" time="2.373">
+    </testcase>
+    <testcase classname="SessionManager getRemainingTime returns positive minutes for active session" name="SessionManager getRemainingTime returns positive minutes for active session" time="0.521">
+    </testcase>
+    <testcase classname="SessionManager getRemainingTime returns 0 when no session" name="SessionManager getRemainingTime returns 0 when no session" time="0.003">
+    </testcase>
+    <testcase classname="SessionManager destroy removes session file and clears state" name="SessionManager destroy removes session file and clears state" time="0.763">
+    </testcase>
+    <testcase classname="SessionManager getPassword returns password after create" name="SessionManager getPassword returns password after create" time="0.669">
+    </testcase>
+    <testcase classname="SessionManager rejects symlink at session path" name="SessionManager rejects symlink at session path" time="0.015">
+    </testcase>
+    <testcase classname="SessionManager load returns null when no password available" name="SessionManager load returns null when no password available" time="0.609">
+    </testcase>
+    <testcase classname="SessionManager load returns null for expired session" name="SessionManager load returns null for expired session" time="1.347">
+    </testcase>
+    <testcase classname="SessionManager extend returns null when no session loaded" name="SessionManager extend returns null when no session loaded" time="0.002">
+    </testcase>
+    <testcase classname="SessionManager destroy is idempotent (no error on missing file)" name="SessionManager destroy is idempotent (no error on missing file)" time="0.003">
+    </testcase>
+    <testcase classname="SessionManager load returns null for non-regular file (directory)" name="SessionManager load returns null for non-regular file (directory)" time="0.004">
+    </testcase>
+    <testcase classname="SessionManager extend returns null when session is expired" name="SessionManager extend returns null when session is expired" time="0.666">
+    </testcase>
+    <testcase classname="SessionManager uses default constructor params" name="SessionManager uses default constructor params" time="0.557">
+    </testcase>
+    <testcase classname="SessionManager destroy re-throws non-ENOENT errors" name="SessionManager destroy re-throws non-ENOENT errors" time="0.033">
+    </testcase>
+  </testsuite>
+  <testsuite name="StorageManager advanced" errors="0" failures="0" skipped="0" timestamp="2026-04-13T21:55:48" time="19.525" tests="44">
+    <testcase classname="StorageManager advanced works in plaintext (unencrypted) mode" name="StorageManager advanced works in plaintext (unencrypted) mode" time="0.05">
+    </testcase>
+    <testcase classname="StorageManager advanced exists() returns true when store exists" name="StorageManager advanced exists() returns true when store exists" time="0.011">
+    </testcase>
+    <testcase classname="StorageManager advanced invalidateCache forces reload" name="StorageManager advanced invalidateCache forces reload" time="1.448">
+    </testcase>
+    <testcase classname="StorageManager advanced setPassword with same password keeps cache" name="StorageManager advanced setPassword with same password keeps cache" time="0.98">
+    </testcase>
+    <testcase classname="StorageManager advanced setPassword with different password invalidates cache" name="StorageManager advanced setPassword with different password invalidates cache" time="1.538">
+    </testcase>
+    <testcase classname="StorageManager advanced creates backups on save" name="StorageManager advanced creates backups on save" time="0.044">
+    </testcase>
+    <testcase classname="StorageManager advanced verify returns valid for healthy store" name="StorageManager advanced verify returns valid for healthy store" time="1.304">
+    </testcase>
+    <testcase classname="StorageManager advanced verify returns invalid for non-existent store" name="StorageManager advanced verify returns invalid for non-existent store" time="0.004">
+    </testcase>
+    <testcase classname="StorageManager advanced verify returns invalid for empty store" name="StorageManager advanced verify returns invalid for empty store" time="0.008">
+    </testcase>
+    <testcase classname="StorageManager advanced verify counts backups" name="StorageManager advanced verify counts backups" time="0.039">
+    </testcase>
+    <testcase classname="StorageManager advanced auto-restores from backup when primary is corrupted" name="StorageManager advanced auto-restores from backup when primary is corrupted" time="3.646">
+    </testcase>
+    <testcase classname="StorageManager advanced verify returns invalid for corrupted encrypted store" name="StorageManager advanced verify returns invalid for corrupted encrypted store" time="0.167">
+    </testcase>
+    <testcase classname="StorageManager advanced verify returns invalid for non-object data" name="StorageManager advanced verify returns invalid for non-object data" time="0.01">
+    </testcase>
+    <testcase classname="StorageManager advanced tryRestoreFromBackup handles non-ENOENT errors (e.g., directory at backup path)" name="StorageManager advanced tryRestoreFromBackup handles non-ENOENT errors (e.g., directory at backup path)" time="2.869">
+    </testcase>
+    <testcase classname="StorageManager advanced throws for symlink store path" name="StorageManager advanced throws for symlink store path" time="0.028">
+    </testcase>
+    <testcase classname="LogManager creates log directory on init" name="LogManager creates log directory on init" time="0.027">
+    </testcase>
+    <testcase classname="LogManager writes log entries" name="LogManager writes log entries" time="0.023">
+    </testcase>
+    <testcase classname="LogManager retrieves logs for a date" name="LogManager retrieves logs for a date" time="0.02">
+    </testcase>
+    <testcase classname="LogManager returns empty array for missing date" name="LogManager returns empty array for missing date" time="0.016">
+    </testcase>
+    <testcase classname="LogManager pruneOldLogs deletes log files older than retainDays" name="LogManager pruneOldLogs deletes log files older than retainDays" time="0.014">
+    </testcase>
+    <testcase classname="LogManager pruneOldLogs ignores non-log files and handles stat errors gracefully" name="LogManager pruneOldLogs ignores non-log files and handles stat errors gracefully" time="0.029">
+    </testcase>
+    <testcase classname="LogManager enhanced audit features skips logging when audit is disabled" name="LogManager enhanced audit features skips logging when audit is disabled" time="0.01">
+    </testcase>
+    <testcase classname="LogManager enhanced audit features filters fields — omits disabled fields from log entries" name="LogManager enhanced audit features filters fields — omits disabled fields from log entries" time="0.026">
+    </testcase>
+    <testcase classname="LogManager enhanced audit features includes enabled optional fields in log entries" name="LogManager enhanced audit features includes enabled optional fields in log entries" time="0.01">
+    </testcase>
+    <testcase classname="LogManager enhanced audit features signs entries with HMAC and verifyEntry confirms integrity" name="LogManager enhanced audit features signs entries with HMAC and verifyEntry confirms integrity" time="0.024">
+    </testcase>
+    <testcase classname="LogManager enhanced audit features verifyEntry detects tampered entries" name="LogManager enhanced audit features verifyEntry detects tampered entries" time="0.016">
+    </testcase>
+    <testcase classname="LogManager enhanced audit features getLogs filters by operation" name="LogManager enhanced audit features getLogs filters by operation" time="0.019">
+    </testcase>
+    <testcase classname="LogManager enhanced audit features getLogs filters by success" name="LogManager enhanced audit features getLogs filters by success" time="0.007">
+    </testcase>
+    <testcase classname="LogManager enhanced audit features getLogs filters by tail" name="LogManager enhanced audit features getLogs filters by tail" time="0.017">
+    </testcase>
+    <testcase classname="LogManager enhanced audit features getLogDates returns sorted list of available log dates" name="LogManager enhanced audit features getLogDates returns sorted list of available log dates" time="0.021">
+    </testcase>
+    <testcase classname="StorageManager backup rotation creates .bak.1 after first save" name="StorageManager backup rotation creates .bak.1 after first save" time="0.029">
+    </testcase>
+    <testcase classname="StorageManager backup rotation shifts backups: .bak.1 becomes .bak.2 on second rotation" name="StorageManager backup rotation shifts backups: .bak.1 becomes .bak.2 on second rotation" time="0.048">
+    </testcase>
+    <testcase classname="StorageManager backup rotation does not create backups when maxBackups is 0" name="StorageManager backup rotation does not create backups when maxBackups is 0" time="0.023">
+    </testcase>
+    <testcase classname="StorageManager backup rotation restores from backup when store is corrupted" name="StorageManager backup rotation restores from backup when store is corrupted" time="0.041">
+    </testcase>
+    <testcase classname="StorageManager backup rotation backup file created even after first write (file is pre-touched before rotation)" name="StorageManager backup rotation backup file created even after first write (file is pre-touched before rotation)" time="0.035">
+    </testcase>
+    <testcase classname="StorageManager backup rotation tryRestoreFromBackup returns null for unencrypted store — line 130" name="StorageManager backup rotation tryRestoreFromBackup returns null for unencrypted store — line 130" time="0.026">
+    </testcase>
+    <testcase classname="LogManager HMAC reads existing HMAC key on second init (line 273 coverage)" name="LogManager HMAC reads existing HMAC key on second init (line 273 coverage)" time="0.043">
+    </testcase>
+    <testcase classname="LogManager HMAC verifyEntry returns false when hmac buffer length mismatch (line 298 coverage)" name="LogManager HMAC verifyEntry returns false when hmac buffer length mismatch (line 298 coverage)" time="0.018">
+    </testcase>
+    <testcase classname="LogManager HMAC verifyEntry returns true when hmacKey is null (line 292 false branch)" name="LogManager HMAC verifyEntry returns true when hmacKey is null (line 292 false branch)" time="0.011">
+    </testcase>
+    <testcase classname="LogManager — getLogs filters (lines 365-366) filters by variable (line 365)" name="LogManager — getLogs filters (lines 365-366) filters by variable (line 365)" time="0.033">
+    </testcase>
+    <testcase classname="LogManager — getLogs filters (lines 365-366) filters by source (line 366)" name="LogManager — getLogs filters (lines 365-366) filters by source (line 366)" time="0.03">
+    </testcase>
+    <testcase classname="LogManager — pruneOldLogs catch branch (line 323) silently returns when logDir does not exist (readdir catch)" name="LogManager — pruneOldLogs catch branch (line 323) silently returns when logDir does not exist (readdir catch)" time="0.004">
+    </testcase>
+    <testcase classname="LogManager — pruneOldLogs catch branch (line 323) prunes log files older than retainDays" name="LogManager — pruneOldLogs catch branch (line 323) prunes log files older than retainDays" time="0.021">
+    </testcase>
+    <testcase classname="StorageManager — tryRestoreFromBackup (lines 132-159) restores from .bak.1 when main store is corrupt (encrypted)" name="StorageManager — tryRestoreFromBackup (lines 132-159) restores from .bak.1 when main store is corrupt (encrypted)" time="1.456">
+    </testcase>
+  </testsuite>
+  <testsuite name="StorageManager" errors="0" failures="0" skipped="0" timestamp="2026-04-13T21:56:08" time="7.473" tests="22">
+    <testcase classname="StorageManager stores and retrieves variables (encrypted)" name="StorageManager stores and retrieves variables (encrypted)" time="0.813">
+    </testcase>
+    <testcase classname="StorageManager lists variable names" name="StorageManager lists variable names" time="1.159">
+    </testcase>
+    <testcase classname="StorageManager deletes variables" name="StorageManager deletes variables" time="1.32">
+    </testcase>
+    <testcase classname="StorageManager returns empty for non-existent store" name="StorageManager returns empty for non-existent store" time="0.003">
+    </testcase>
+    <testcase classname="StorageManager fails with wrong password" name="StorageManager fails with wrong password" time="1.153">
+    </testcase>
+    <testcase classname="StorageManager uses cache on subsequent loads" name="StorageManager uses cache on subsequent loads" time="0.5">
+    </testcase>
+    <testcase classname="StorageManager throws when store path is a directory" name="StorageManager throws when store path is a directory" time="0.004">
+    </testcase>
+    <testcase classname="StorageManager throws ELOOP error for symlink" name="StorageManager throws ELOOP error for symlink" time="0.007">
+    </testcase>
+    <testcase classname="StorageManager re-throws unexpected errors during load" name="StorageManager re-throws unexpected errors during load" time="0.041">
+    </testcase>
+    <testcase classname="StorageManager uses default constructor params" name="StorageManager uses default constructor params" time="0.475">
+    </testcase>
+    <testcase classname="StorageManager verifies store with valid data" name="StorageManager verifies store with valid data" time="0.014">
+    </testcase>
+    <testcase classname="StorageManager verifies store with empty file" name="StorageManager verifies store with empty file" time="0.008">
+    </testcase>
+    <testcase classname="StorageManager verifies store with corrupted data" name="StorageManager verifies store with corrupted data" time="0.007">
+    </testcase>
+    <testcase classname="StorageManager verifies store when file does not exist" name="StorageManager verifies store when file does not exist" time="0.009">
+    </testcase>
+    <testcase classname="StorageManager exists() returns true when store file exists" name="StorageManager exists() returns true when store file exists" time="0.012">
+    </testcase>
+    <testcase classname="StorageManager exists() returns false when store file does not exist" name="StorageManager exists() returns false when store file does not exist" time="0.002">
+    </testcase>
+    <testcase classname="StorageManager invalidateCache clears cache" name="StorageManager invalidateCache clears cache" time="0.008">
+    </testcase>
+    <testcase classname="StorageManager rotates backups on save" name="StorageManager rotates backups on save" time="0.023">
+    </testcase>
+    <testcase classname="StorageManager setPassword clears cache when password changes" name="StorageManager setPassword clears cache when password changes" time="0.583">
+    </testcase>
+    <testcase classname="StorageManager setPassword keeps cache when same password" name="StorageManager setPassword keeps cache when same password" time="0.622">
+    </testcase>
+    <testcase classname="StorageManager skips backups when maxBackups is 0" name="StorageManager skips backups when maxBackups is 0" time="0.019">
+    </testcase>
+    <testcase classname="StorageManager rotates backups shifting existing ones" name="StorageManager rotates backups shifting existing ones" time="0.032">
+    </testcase>
+  </testsuite>
+  <testsuite name="ConfigGuard" errors="0" failures="0" skipped="0" timestamp="2026-04-13T21:56:08" time="9.131" tests="46">
+    <testcase classname="ConfigGuard loadAndLock loads and freezes config" name="ConfigGuard loadAndLock loads and freezes config" time="0.193">
+    </testcase>
+    <testcase classname="ConfigGuard loadAndLock computes a hash" name="ConfigGuard loadAndLock computes a hash" time="0.027">
+    </testcase>
+    <testcase classname="ConfigGuard loadAndLock returns same hash for same config" name="ConfigGuard loadAndLock returns same hash for same config" time="0.053">
+    </testcase>
+    <testcase classname="ConfigGuard loadAndLock returns different hash when config changes" name="ConfigGuard loadAndLock returns different hash when config changes" time="0.06">
+    </testcase>
+    <testcase classname="ConfigGuard deepFreeze — arrays freezes nested arrays" name="ConfigGuard deepFreeze — arrays freezes nested arrays" time="0.044">
+    </testcase>
+    <testcase classname="ConfigGuard deepFreeze — arrays freezes nested sync.exclude array" name="ConfigGuard deepFreeze — arrays freezes nested sync.exclude array" time="0.044">
+    </testcase>
+    <testcase classname="ConfigGuard deepFreeze — arrays freezes nested objects inside arrays" name="ConfigGuard deepFreeze — arrays freezes nested objects inside arrays" time="0.031">
+    </testcase>
+    <testcase classname="ConfigGuard checkIntegrity returns true when config unchanged" name="ConfigGuard checkIntegrity returns true when config unchanged" time="0.03">
+    </testcase>
+    <testcase classname="ConfigGuard checkIntegrity returns false when config file modified" name="ConfigGuard checkIntegrity returns false when config file modified" time="0.039">
+    </testcase>
+    <testcase classname="ConfigGuard checkIntegrity detects file deletion" name="ConfigGuard checkIntegrity detects file deletion" time="0.035">
+    </testcase>
+    <testcase classname="ConfigGuard getConfig returns null before loadAndLock" name="ConfigGuard getConfig returns null before loadAndLock" time="0.008">
+    </testcase>
+    <testcase classname="ConfigGuard getConfig returns frozen config after loadAndLock" name="ConfigGuard getConfig returns frozen config after loadAndLock" time="0.031">
+    </testcase>
+    <testcase classname="ConfigGuard isTampered returns false initially" name="ConfigGuard isTampered returns false initially" time="0.029">
+    </testcase>
+    <testcase classname="ConfigGuard isTampered returns false when config unchanged" name="ConfigGuard isTampered returns false when config unchanged" time="0.038">
+    </testcase>
+    <testcase classname="ConfigGuard reload reloads config when already loaded" name="ConfigGuard reload reloads config when already loaded" time="0.087">
+    </testcase>
+    <testcase classname="ConfigGuard reload reloads config without prior loadAndLock" name="ConfigGuard reload reloads config without prior loadAndLock" time="0.06">
+    </testcase>
+    <testcase classname="ConfigGuard reload resets tampering flag after reload" name="ConfigGuard reload resets tampering flag after reload" time="0.075">
+    </testcase>
+    <testcase classname="ConfigGuard reload writes audit log on reload" name="ConfigGuard reload writes audit log on reload" time="0.053">
+    </testcase>
+    <testcase classname="ConfigGuard reload with encrypted store fails with wrong password when store exists" name="ConfigGuard reload with encrypted store fails with wrong password when store exists" time="0.339">
+    </testcase>
+    <testcase classname="ConfigGuard reload with encrypted store succeeds when store file does not exist" name="ConfigGuard reload with encrypted store succeeds when store file does not exist" time="0.028">
+    </testcase>
+    <testcase classname="ConfigGuard reload with encrypted store skips decryption when storage.encrypted is false" name="ConfigGuard reload with encrypted store skips decryption when storage.encrypted is false" time="0.037">
+    </testcase>
+    <testcase classname="ConfigGuard file watching — handleChange / verifyAndAlert detects tampering via debounce and sets isTampered" name="ConfigGuard file watching — handleChange / verifyAndAlert detects tampering via debounce and sets isTampered" time="0.529">
+    </testcase>
+    <testcase classname="ConfigGuard file watching — handleChange / verifyAndAlert writes audit log on tamper detection" name="ConfigGuard file watching — handleChange / verifyAndAlert writes audit log on tamper detection" time="0.529">
+    </testcase>
+    <testcase classname="ConfigGuard file watching — handleChange / verifyAndAlert does not flag tamper when config hash matches" name="ConfigGuard file watching — handleChange / verifyAndAlert does not flag tamper when config hash matches" time="0.532">
+    </testcase>
+    <testcase classname="ConfigGuard periodic integrity check detects tampering via periodic check" name="ConfigGuard periodic integrity check detects tampering via periodic check" time="0.54">
+    </testcase>
+    <testcase classname="ConfigGuard periodic integrity check does not re-alert if already tampered" name="ConfigGuard periodic integrity check does not re-alert if already tampered" time="0.644">
+    </testcase>
+    <testcase classname="ConfigGuard auditLog creates log directory and file" name="ConfigGuard auditLog creates log directory and file" time="0.019">
+    </testcase>
+    <testcase classname="ConfigGuard destroy cleans up without error" name="ConfigGuard destroy cleans up without error" time="0.008">
+    </testcase>
+    <testcase classname="ConfigGuard destroy cleans up watchers array" name="ConfigGuard destroy cleans up watchers array" time="0.015">
+    </testcase>
+    <testcase classname="ConfigGuard destroy can be called on fresh guard" name="ConfigGuard destroy can be called on fresh guard" time="0.003">
+    </testcase>
+    <testcase classname="ConfigGuard destroy clears periodic timer" name="ConfigGuard destroy clears periodic timer" time="0.311">
+    </testcase>
+    <testcase classname="ConfigGuard TTY output writes to stderr when TTY on verifyAndAlert" name="ConfigGuard TTY output writes to stderr when TTY on verifyAndAlert" time="0.319">
+    </testcase>
+    <testcase classname="ConfigGuard TTY output writes to stderr when TTY on periodic check" name="ConfigGuard TTY output writes to stderr when TTY on periodic check" time="0.337">
+    </testcase>
+    <testcase classname="ConfigGuard markInternalWrite does not throw" name="ConfigGuard markInternalWrite does not throw" time="0.009">
+    </testcase>
+    <testcase classname="ConfigGuard markInternalWrite handleChange returns early when called within 500ms of internal write — line 183" name="ConfigGuard markInternalWrite handleChange returns early when called within 500ms of internal write — line 183" time="0.234">
+    </testcase>
+    <testcase classname="ConfigGuard hashConfigFile and startWatching USERPROFILE fallback — lines 129, 155 uses USERPROFILE when HOME is unset (covers lines 129 and 155)" name="ConfigGuard hashConfigFile and startWatching USERPROFILE fallback — lines 129, 155 uses USERPROFILE when HOME is unset (covers lines 129 and 155)" time="0.025">
+    </testcase>
+    <testcase classname="ConfigGuard hashConfigFile and startWatching USERPROFILE fallback — lines 129, 155 uses empty string when both HOME and USERPROFILE are unset" name="ConfigGuard hashConfigFile and startWatching USERPROFILE fallback — lines 129, 155 uses empty string when both HOME and USERPROFILE are unset" time="0.029">
+    </testcase>
+    <testcase classname="ConfigGuard global vault store watching includes global vault store in integrity hash" name="ConfigGuard global vault store watching includes global vault store in integrity hash" time="0.015">
+    </testcase>
+    <testcase classname="ConfigGuard global vault store watching hash is stable when vault store does not exist" name="ConfigGuard global vault store watching hash is stable when vault store does not exist" time="0.029">
+    </testcase>
+    <testcase classname="ConfigGuard global vault store watching detects vault store tampering via file watcher" name="ConfigGuard global vault store watching detects vault store tampering via file watcher" time="0.432">
+    </testcase>
+    <testcase classname="ConfigGuard — reload() without loadAndLock first (line 77 ?? branch) calls loadConfig when this.config is null (no loadAndLock first)" name="ConfigGuard — reload() without loadAndLock first (line 77 ?? branch) calls loadConfig when this.config is null (no loadAndLock first)" time="0.019">
+    </testcase>
+    <testcase classname="ConfigGuard — checkIntegrity before loadAndLock (line 136 false branch) hashConfigFile is called with this.config=null when checkIntegrity called before loadAndLock" name="ConfigGuard — checkIntegrity before loadAndLock (line 136 false branch) hashConfigFile is called with this.config=null when checkIntegrity called before loadAndLock" time="0.011">
+    </testcase>
+    <testcase classname="ConfigGuard — reload() with invalid password (line 88) returns success:false with error message when password is wrong" name="ConfigGuard — reload() with invalid password (line 88) returns success:false with error message when password is wrong" time="1.264">
+    </testcase>
+    <testcase classname="ConfigGuard — reload() with invalid password (line 88) returns success:true when store does not exist (ENOENT branch)" name="ConfigGuard — reload() with invalid password (line 88) returns success:true when store does not exist (ENOENT branch)" time="0.019">
+    </testcase>
+    <testcase classname="ConfigGuard — startWatching with config (lines 162-169) includes global vault store in file watch list after loadAndLock" name="ConfigGuard — startWatching with config (lines 162-169) includes global vault store in file watch list after loadAndLock" time="0.024">
+    </testcase>
+    <testcase classname="ConfigGuard — periodic timer unref branch (line 212) creates periodic timer with unref when loadAndLock is called" name="ConfigGuard — periodic timer unref branch (line 212) creates periodic timer with unref when loadAndLock is called" time="0.026">
+    </testcase>
+  </testsuite>
+  <testsuite name="BaseAdapter tool operations" errors="0" failures="0" skipped="0" timestamp="2026-04-13T21:56:17" time="4.855" tests="82">
+    <testcase classname="BaseAdapter tool operations listVariables throws when AI read is disabled" name="BaseAdapter tool operations listVariables throws when AI read is disabled" time="0.348">
+    </testcase>
+    <testcase classname="BaseAdapter tool operations listVariables throws when active check is disabled" name="BaseAdapter tool operations listVariables throws when active check is disabled" time="0.097">
+    </testcase>
+    <testcase classname="BaseAdapter tool operations listVariables lists variables" name="BaseAdapter tool operations listVariables lists variables" time="0.043">
+    </testcase>
+    <testcase classname="BaseAdapter tool operations listVariables filters by tags" name="BaseAdapter tool operations listVariables filters by tags" time="0.045">
+    </testcase>
+    <testcase classname="BaseAdapter tool operations listVariables respects blacklist" name="BaseAdapter tool operations listVariables respects blacklist" time="0.046">
+    </testcase>
+    <testcase classname="BaseAdapter tool operations getVariable throws when AI read is disabled" name="BaseAdapter tool operations getVariable throws when AI read is disabled" time="0.035">
+    </testcase>
+    <testcase classname="BaseAdapter tool operations getVariable rejects invalid variable names" name="BaseAdapter tool operations getVariable rejects invalid variable names" time="0.025">
+    </testcase>
+    <testcase classname="BaseAdapter tool operations getVariable throws when variable not found" name="BaseAdapter tool operations getVariable throws when variable not found" time="0.012">
+    </testcase>
+    <testcase classname="BaseAdapter tool operations getVariable throws when blacklisted" name="BaseAdapter tool operations getVariable throws when blacklisted" time="0.027">
+    </testcase>
+    <testcase classname="BaseAdapter tool operations getVariable throws when access denied" name="BaseAdapter tool operations getVariable throws when access denied" time="0.027">
+    </testcase>
+    <testcase classname="BaseAdapter tool operations getVariable returns masked value when show_value is not set" name="BaseAdapter tool operations getVariable returns masked value when show_value is not set" time="0.039">
+    </testcase>
+    <testcase classname="BaseAdapter tool operations getVariable reveals value when show_value=true and mask_values=false" name="BaseAdapter tool operations getVariable reveals value when show_value=true and mask_values=false" time="0.021">
+    </testcase>
+    <testcase classname="BaseAdapter tool operations getVariable masks value even with show_value when mask_values is true" name="BaseAdapter tool operations getVariable masks value even with show_value when mask_values is true" time="0.034">
+    </testcase>
+    <testcase classname="BaseAdapter tool operations setVariable throws when AI write is disabled" name="BaseAdapter tool operations setVariable throws when AI write is disabled" time="0.031">
+    </testcase>
+    <testcase classname="BaseAdapter tool operations setVariable rejects invalid variable names" name="BaseAdapter tool operations setVariable rejects invalid variable names" time="0.016">
+    </testcase>
+    <testcase classname="BaseAdapter tool operations setVariable rejects blacklisted names" name="BaseAdapter tool operations setVariable rejects blacklisted names" time="0.025">
+    </testcase>
+    <testcase classname="BaseAdapter tool operations setVariable creates a new variable" name="BaseAdapter tool operations setVariable creates a new variable" time="0.021">
+    </testcase>
+    <testcase classname="BaseAdapter tool operations setVariable updates an existing variable" name="BaseAdapter tool operations setVariable updates an existing variable" time="0.043">
+    </testcase>
+    <testcase classname="BaseAdapter tool operations deleteVariable throws when AI delete is disabled" name="BaseAdapter tool operations deleteVariable throws when AI delete is disabled" time="0.037">
+    </testcase>
+    <testcase classname="BaseAdapter tool operations deleteVariable rejects invalid variable names" name="BaseAdapter tool operations deleteVariable rejects invalid variable names" time="0.033">
+    </testcase>
+    <testcase classname="BaseAdapter tool operations deleteVariable deletes existing variable" name="BaseAdapter tool operations deleteVariable deletes existing variable" time="0.044">
+    </testcase>
+    <testcase classname="BaseAdapter tool operations deleteVariable returns false for non-existent variable" name="BaseAdapter tool operations deleteVariable returns false for non-existent variable" time="0.015">
+    </testcase>
+    <testcase classname="BaseAdapter tool operations addToEnv adds a variable to .env file" name="BaseAdapter tool operations addToEnv adds a variable to .env file" time="0.061">
+    </testcase>
+    <testcase classname="BaseAdapter tool operations addToEnv updates existing variable in .env file" name="BaseAdapter tool operations addToEnv updates existing variable in .env file" time="0.03">
+    </testcase>
+    <testcase classname="BaseAdapter tool operations addToEnv throws for non-existent variable" name="BaseAdapter tool operations addToEnv throws for non-existent variable" time="0.01">
+    </testcase>
+    <testcase classname="BaseAdapter tool operations addToEnv rejects blacklisted variable" name="BaseAdapter tool operations addToEnv rejects blacklisted variable" time="0.033">
+    </testcase>
+    <testcase classname="BaseAdapter tool operations addToEnv blocks path traversal in env_file" name="BaseAdapter tool operations addToEnv blocks path traversal in env_file" time="0.024">
+    </testcase>
+    <testcase classname="BaseAdapter tool operations addToEnv blocks sibling-directory bypass in env_file" name="BaseAdapter tool operations addToEnv blocks sibling-directory bypass in env_file" time="0.023">
+    </testcase>
+    <testcase classname="BaseAdapter tool operations addToEnv blocks absolute path outside project in env_file" name="BaseAdapter tool operations addToEnv blocks absolute path outside project in env_file" time="0.018">
+    </testcase>
+    <testcase classname="BaseAdapter tool operations addToEnv allows nested env_file within project" name="BaseAdapter tool operations addToEnv allows nested env_file within project" time="0.034">
+    </testcase>
+    <testcase classname="BaseAdapter tool operations addToEnv blocks in-project symlink pointing outside project" name="BaseAdapter tool operations addToEnv blocks in-project symlink pointing outside project" time="0.028">
+    </testcase>
+    <testcase classname="BaseAdapter tool operations addToEnv quotes values that need quoting" name="BaseAdapter tool operations addToEnv quotes values that need quoting" time="0.029">
+    </testcase>
+    <testcase classname="BaseAdapter tool operations checkAccess rejects invalid variable names" name="BaseAdapter tool operations checkAccess rejects invalid variable names" time="0.021">
+    </testcase>
+    <testcase classname="BaseAdapter tool operations checkAccess returns accessible for valid variable" name="BaseAdapter tool operations checkAccess returns accessible for valid variable" time="0.059">
+    </testcase>
+    <testcase classname="BaseAdapter tool operations checkAccess returns not accessible for blacklisted variable" name="BaseAdapter tool operations checkAccess returns not accessible for blacklisted variable" time="0.028">
+    </testcase>
+    <testcase classname="BaseAdapter tool operations checkAccess returns not accessible for non-existent variable" name="BaseAdapter tool operations checkAccess returns not accessible for non-existent variable" time="0.009">
+    </testcase>
+    <testcase classname="BaseAdapter tool operations getToolDefinitions returns all registered tools" name="BaseAdapter tool operations getToolDefinitions returns all registered tools" time="0.014">
+    </testcase>
+    <testcase classname="BaseAdapter tool operations constructor with password sets password on storage when provided" name="BaseAdapter tool operations constructor with password sets password on storage when provided" time="0.006">
+    </testcase>
+    <testcase classname="BaseAdapter tool operations callTool throws for unknown tool" name="BaseAdapter tool operations callTool throws for unknown tool" time="0.006">
+    </testcase>
+    <testcase classname="BaseAdapter tool operations callTool throws when session locked (encrypted mode)" name="BaseAdapter tool operations callTool throws when session locked (encrypted mode)" time="0.012">
+    </testcase>
+    <testcase classname="BaseAdapter tool operations callTool calls envcp_sync via callTool handler" name="BaseAdapter tool operations callTool calls envcp_sync via callTool handler" time="0.033">
+    </testcase>
+    <testcase classname="BaseAdapter tool operations callTool calls envcp_run via callTool handler" name="BaseAdapter tool operations callTool calls envcp_run via callTool handler" time="0.294">
+    </testcase>
+    <testcase classname="BaseAdapter tool operations callTool calls envcp_add_to_env via callTool handler" name="BaseAdapter tool operations callTool calls envcp_add_to_env via callTool handler" time="0.057">
+    </testcase>
+    <testcase classname="BaseAdapter tool operations callTool calls envcp_check_access via callTool handler" name="BaseAdapter tool operations callTool calls envcp_check_access via callTool handler" time="0.046">
+    </testcase>
+    <testcase classname="BaseAdapter tool operations syncToEnv throws when AI export is disabled" name="BaseAdapter tool operations syncToEnv throws when AI export is disabled" time="0.037">
+    </testcase>
+    <testcase classname="BaseAdapter tool operations syncToEnv throws when sync is disabled" name="BaseAdapter tool operations syncToEnv throws when sync is disabled" time="0.032">
+    </testcase>
+    <testcase classname="BaseAdapter tool operations syncToEnv excludes blacklisted and sync_to_env=false variables" name="BaseAdapter tool operations syncToEnv excludes blacklisted and sync_to_env=false variables" time="0.061">
+    </testcase>
+    <testcase classname="BaseAdapter tool operations syncToEnv writes header when configured" name="BaseAdapter tool operations syncToEnv writes header when configured" time="0.031">
+    </testcase>
+    <testcase classname="BaseAdapter tool operations runCommand throws when AI execute is disabled" name="BaseAdapter tool operations runCommand throws when AI execute is disabled" time="0.022">
+    </testcase>
+    <testcase classname="BaseAdapter tool operations runCommand rejects shell metacharacters" name="BaseAdapter tool operations runCommand rejects shell metacharacters" time="0.019">
+    </testcase>
+    <testcase classname="BaseAdapter tool operations runCommand rejects commands not in allowed list" name="BaseAdapter tool operations runCommand rejects commands not in allowed list" time="0.025">
+    </testcase>
+    <testcase classname="BaseAdapter tool operations runCommand rejects mismatched quotes" name="BaseAdapter tool operations runCommand rejects mismatched quotes" time="0.016">
+    </testcase>
+    <testcase classname="BaseAdapter tool operations runCommand runs a valid command and captures output" name="BaseAdapter tool operations runCommand runs a valid command and captures output" time="0.037">
+    </testcase>
+    <testcase classname="BaseAdapter tool operations runCommand handles single-quoted arguments" name="BaseAdapter tool operations runCommand handles single-quoted arguments" time="0.041">
+    </testcase>
+    <testcase classname="BaseAdapter tool operations runCommand calls envcp_delete via callTool handler" name="BaseAdapter tool operations runCommand calls envcp_delete via callTool handler" time="0.043">
+    </testcase>
+    <testcase classname="BaseAdapter tool operations runCommand excludes blacklisted variables from injection" name="BaseAdapter tool operations runCommand excludes blacklisted variables from injection" time="0.057">
+    </testcase>
+    <testcase classname="BaseAdapter tool operations runCommand logs run start and exit to audit trail (issue #147)" name="BaseAdapter tool operations runCommand logs run start and exit to audit trail (issue #147)" time="0.071">
+    </testcase>
+    <testcase classname="BaseAdapter tool operations ensurePassword skips password check in unencrypted mode" name="BaseAdapter tool operations ensurePassword skips password check in unencrypted mode" time="0.017">
+    </testcase>
+    <testcase classname="BaseAdapter tool operations ensurePassword uses session password when session is valid (encrypted mode)" name="BaseAdapter tool operations ensurePassword uses session password when session is valid (encrypted mode)" time="1.219">
+    </testcase>
+    <testcase classname="parseEnv strips single-quoted values" name="parseEnv strips single-quoted values" time="0.002">
+    </testcase>
+    <testcase classname="parseEnv strips double-quoted values" name="parseEnv strips double-quoted values" time="0.001">
+    </testcase>
+    <testcase classname="parseEnv skips lines without = sign — line 25 (eqIndex === -1 branch)" name="parseEnv skips lines without = sign — line 25 (eqIndex === -1 branch)" time="0.002">
+    </testcase>
+    <testcase classname="BaseAdapter parseCommand edge cases handles double space (empty token skipped) — line 647" name="BaseAdapter parseCommand edge cases handles double space (empty token skipped) — line 647" time="0.019">
+    </testcase>
+    <testcase classname="BaseAdapter parseCommand edge cases handles trailing space (no trailing empty token) — line 655" name="BaseAdapter parseCommand edge cases handles trailing space (no trailing empty token) — line 655" time="0.021">
+    </testcase>
+    <testcase classname="BaseAdapter parseCommand edge cases throws on mismatched single quote — line 658" name="BaseAdapter parseCommand edge cases throws on mismatched single quote — line 658" time="0.026">
+    </testcase>
+    <testcase classname="BaseAdapter parseCommand edge cases throws on mismatched double quote — line 658" name="BaseAdapter parseCommand edge cases throws on mismatched double quote — line 658" time="0.02">
+    </testcase>
+    <testcase classname="BaseAdapter parseCommand edge cases handles single-quoted token with spaces" name="BaseAdapter parseCommand edge cases handles single-quoted token with spaces" time="0.015">
+    </testcase>
+    <testcase classname="BaseAdapter parseCommand edge cases handles double-quoted token" name="BaseAdapter parseCommand edge cases handles double-quoted token" time="0.029">
+    </testcase>
+    <testcase classname="BaseAdapter syncToEnv value quoting — line 530 quotes values containing spaces" name="BaseAdapter syncToEnv value quoting — line 530 quotes values containing spaces" time="0.032">
+    </testcase>
+    <testcase classname="BaseAdapter syncToEnv value quoting — line 530 quotes values containing hash character" name="BaseAdapter syncToEnv value quoting — line 530 quotes values containing hash character" time="0.038">
+    </testcase>
+    <testcase classname="BaseAdapter runCommand variable not in storage — line 786 runs command without injecting missing variable" name="BaseAdapter runCommand variable not in storage — line 786 runs command without injecting missing variable" time="0.056">
+    </testcase>
+    <testcase classname="BaseAdapter checkRootDelete -recursive variant — line 688 rejects rm with -recursive (single-dash long form) targeting /" name="BaseAdapter checkRootDelete -recursive variant — line 688 rejects rm with -recursive (single-dash long form) targeting /" time="0.029">
+    </testcase>
+    <testcase classname="parseCommand edge cases throws on unclosed double quote" name="parseCommand edge cases throws on unclosed double quote" time="0.026">
+    </testcase>
+    <testcase classname="parseCommand edge cases throws on unclosed single quote" name="parseCommand edge cases throws on unclosed single quote" time="0.015">
+    </testcase>
+    <testcase classname="validateCommand with command_blacklist throws when command matches a user-configured blacklist pattern" name="validateCommand with command_blacklist throws when command matches a user-configured blacklist pattern" time="0.014">
+    </testcase>
+    <testcase classname="runCommand with scrub_output disabled returns raw output when scrub_output is false" name="runCommand with scrub_output disabled returns raw output when scrub_output is false" time="0.054">
+    </testcase>
+    <testcase classname="runCommand with scrub_output disabled applies custom redact_patterns from config" name="runCommand with scrub_output disabled applies custom redact_patterns from config" time="0.046">
+    </testcase>
+    <testcase classname="BaseAdapter constructor with custom session config uses custom session timeout_minutes and max_extensions from config" name="BaseAdapter constructor with custom session config uses custom session timeout_minutes and max_extensions from config" time="0.014">
+    </testcase>
+    <testcase classname="parseCommand — empty command (line 657) throws Empty command error for blank string" name="parseCommand — empty command (line 657) throws Empty command error for blank string" time="0.021">
+    </testcase>
+    <testcase classname="parseCommand — empty command (line 657) throws Empty command error for whitespace-only string" name="parseCommand — empty command (line 657) throws Empty command error for whitespace-only string" time="0.017">
+    </testcase>
+    <testcase classname="checkRootDelete — --recursive flag (line 687 branch) blocks rm --recursive / (long flag branch)" name="checkRootDelete — --recursive flag (line 687 branch) blocks rm --recursive / (long flag branch)" time="0.019">
+    </testcase>
+    <testcase classname="checkRootDelete — --recursive flag (line 687 branch) blocks rm -recursive / (single-dash long form)" name="checkRootDelete — --recursive flag (line 687 branch) blocks rm -recursive / (single-dash long form)" time="0.016">
+    </testcase>
+  </testsuite>
+  <testsuite name="encrypt/decrypt" errors="0" failures="0" skipped="0" timestamp="2026-04-13T21:56:15" time="6.872" tests="34">
+    <testcase classname="encrypt/decrypt round-trips correctly" name="encrypt/decrypt round-trips correctly" time="1.198">
+    </testcase>
+    <testcase classname="encrypt/decrypt fails with wrong password" name="encrypt/decrypt fails with wrong password" time="1.56">
+    </testcase>
+    <testcase classname="encrypt/decrypt produces different ciphertext each time (random salt/iv)" name="encrypt/decrypt produces different ciphertext each time (random salt/iv)" time="1.261">
+    </testcase>
+    <testcase classname="maskValue fully masks short values" name="maskValue fully masks short values" time="0.007">
+    </testcase>
+    <testcase classname="maskValue shows prefix/suffix for longer values" name="maskValue shows prefix/suffix for longer values" time="0.01">
+    </testcase>
+    <testcase classname="validatePassword accepts valid password with defaults (8+ chars)" name="validatePassword accepts valid password with defaults (8+ chars)" time="0.011">
+    </testcase>
+    <testcase classname="validatePassword rejects too short password with default min_length=8" name="validatePassword rejects too short password with default min_length=8" time="0.002">
+    </testcase>
+    <testcase classname="validatePassword rejects too short password with custom min_length" name="validatePassword rejects too short password with custom min_length" time="0.004">
+    </testcase>
+    <testcase classname="validatePassword accepts short password when min_length is lowered" name="validatePassword accepts short password when min_length is lowered" time="0.004">
+    </testcase>
+    <testcase classname="validatePassword rejects single char when disallowed (default)" name="validatePassword rejects single char when disallowed (default)" time="0.002">
+    </testcase>
+    <testcase classname="validatePassword rejects numeric-only when disallowed (default)" name="validatePassword rejects numeric-only when disallowed (default)" time="0.001">
+    </testcase>
+    <testcase classname="validatePassword accepts numeric-only when explicitly allowed (non-common number)" name="validatePassword accepts numeric-only when explicitly allowed (non-common number)" time="0.002">
+    </testcase>
+    <testcase classname="validatePassword rejects known weak passwords" name="validatePassword rejects known weak passwords" time="0.002">
+    </testcase>
+    <testcase classname="validatePassword rejects weak passwords case-insensitively" name="validatePassword rejects weak passwords case-insensitively" time="0.008">
+    </testcase>
+    <testcase classname="validatePassword enforces complexity" name="validatePassword enforces complexity" time="0.013">
+    </testcase>
+    <testcase classname="validatePassword rejects non-weak password with only 2 char types when complexity required" name="validatePassword rejects non-weak password with only 2 char types when complexity required" time="0.002">
+    </testcase>
+    <testcase classname="validatePassword returns warning for short-but-valid passwords" name="validatePassword returns warning for short-but-valid passwords" time="0.001">
+    </testcase>
+    <testcase classname="validatePassword returns warning for single-case-only long passwords" name="validatePassword returns warning for single-case-only long passwords" time="0.011">
+    </testcase>
+    <testcase classname="validatePassword no warning for strong passwords" name="validatePassword no warning for strong passwords" time="0.013">
+    </testcase>
+    <testcase classname="helpers generateId returns 32-char hex" name="helpers generateId returns 32-char hex" time="0.001">
+    </testcase>
+    <testcase classname="helpers generateSessionToken returns 64-char hex" name="helpers generateSessionToken returns 64-char hex" time="0.001">
+    </testcase>
+    <testcase classname="helpers quickHash returns 16-char hex" name="helpers quickHash returns 16-char hex" time="0.009">
+    </testcase>
+    <testcase classname="encryption versioning encrypt output starts with v2: prefix (Argon2id)" name="encryption versioning encrypt output starts with v2: prefix (Argon2id)" time="0.644">
+    </testcase>
+    <testcase classname="encryption versioning decrypt handles legacy v1: (PBKDF2) data" name="encryption versioning decrypt handles legacy v1: (PBKDF2) data" time="0.281">
+    </testcase>
+    <testcase classname="encryption versioning decrypt handles modern v2: prefixed data" name="encryption versioning decrypt handles modern v2: prefixed data" time="1.423">
+    </testcase>
+    <testcase classname="scrubOutput replaces injected secret values with [REDACTED]" name="scrubOutput replaces injected secret values with [REDACTED]" time="0.006">
+    </testcase>
+    <testcase classname="scrubOutput skips secrets shorter than 4 chars" name="scrubOutput skips secrets shorter than 4 chars" time="0.001">
+    </testcase>
+    <testcase classname="scrubOutput redacts longest secrets first to avoid partial matches" name="scrubOutput redacts longest secrets first to avoid partial matches" time="0.001">
+    </testcase>
+    <testcase classname="scrubOutput applies built-in pattern: OpenAI API key" name="scrubOutput applies built-in pattern: OpenAI API key" time="0.005">
+    </testcase>
+    <testcase classname="scrubOutput applies built-in pattern: GitHub PAT" name="scrubOutput applies built-in pattern: GitHub PAT" time="0.005">
+    </testcase>
+    <testcase classname="scrubOutput applies built-in pattern: JWT token" name="scrubOutput applies built-in pattern: JWT token" time="0.003">
+    </testcase>
+    <testcase classname="scrubOutput applies extra patterns from config" name="scrubOutput applies extra patterns from config" time="0.002">
+    </testcase>
+    <testcase classname="scrubOutput ignores invalid regex patterns gracefully without throwing" name="scrubOutput ignores invalid regex patterns gracefully without throwing" time="0.001">
+    </testcase>
+    <testcase classname="scrubOutput returns output unchanged when no secrets or patterns" name="scrubOutput returns output unchanged when no secrets or patterns" time="0.001">
+    </testcase>
+  </testsuite>
+  <testsuite name="recovery key functions" errors="0" failures="0" skipped="0" timestamp="2026-04-13T21:56:22" time="2.814" tests="3">
+    <testcase classname="recovery key functions generateRecoveryKey returns a 48-char hex string" name="recovery key functions generateRecoveryKey returns a 48-char hex string" time="0.008">
+    </testcase>
+    <testcase classname="recovery key functions createRecoveryData and recoverPassword round-trip" name="recovery key functions createRecoveryData and recoverPassword round-trip" time="1.133">
+    </testcase>
+    <testcase classname="recovery key functions recoverPassword fails with wrong key" name="recovery key functions recoverPassword fails with wrong key" time="1.354">
+    </testcase>
+  </testsuite>
+  <testsuite name="RESTAdapter HTTP server" errors="0" failures="0" skipped="0" timestamp="2026-04-13T21:56:25" time="5.095" tests="76">
+    <testcase classname="RESTAdapter HTTP server GET /api/health returns ok" name="RESTAdapter HTTP server GET /api/health returns ok" time="0.059">
+    </testcase>
+    <testcase classname="RESTAdapter HTTP server GET /api/tools lists tools" name="RESTAdapter HTTP server GET /api/tools lists tools" time="0.009">
+    </testcase>
+    <testcase classname="RESTAdapter HTTP server POST /api/variables creates a variable" name="RESTAdapter HTTP server POST /api/variables creates a variable" time="0.021">
+    </testcase>
+    <testcase classname="RESTAdapter HTTP server GET /api/variables lists variables" name="RESTAdapter HTTP server GET /api/variables lists variables" time="0.016">
+    </testcase>
+    <testcase classname="RESTAdapter HTTP server GET /api/variables/:name gets a variable" name="RESTAdapter HTTP server GET /api/variables/:name gets a variable" time="0.031">
+    </testcase>
+    <testcase classname="RESTAdapter HTTP server PUT /api/variables/:name updates a variable" name="RESTAdapter HTTP server PUT /api/variables/:name updates a variable" time="0.022">
+    </testcase>
+    <testcase classname="RESTAdapter HTTP server DELETE /api/variables/:name deletes a variable" name="RESTAdapter HTTP server DELETE /api/variables/:name deletes a variable" time="0.03">
+    </testcase>
+    <testcase classname="RESTAdapter HTTP server POST /api/tools/:name calls a tool" name="RESTAdapter HTTP server POST /api/tools/:name calls a tool" time="0.043">
+    </testcase>
+    <testcase classname="RESTAdapter HTTP server returns 404 for unknown route" name="RESTAdapter HTTP server returns 404 for unknown route" time="0.019">
+    </testcase>
+    <testcase classname="RESTAdapter HTTP server getApiDocs returns documentation string" name="RESTAdapter HTTP server getApiDocs returns documentation string" time="0.001">
+    </testcase>
+    <testcase classname="RESTAdapter HTTP server POST /api/run executes a command" name="RESTAdapter HTTP server POST /api/run executes a command" time="0.048">
+    </testcase>
+    <testcase classname="RESTAdapter HTTP server GET /api/access/:name checks access" name="RESTAdapter HTTP server GET /api/access/:name checks access" time="0.017">
+    </testcase>
+    <testcase classname="RESTAdapter with API key rejects requests without API key" name="RESTAdapter with API key rejects requests without API key" time="0.014">
+    </testcase>
+    <testcase classname="RESTAdapter with API key accepts requests with valid API key" name="RESTAdapter with API key accepts requests with valid API key" time="0.008">
+    </testcase>
+    <testcase classname="RESTAdapter with API key handles OPTIONS preflight" name="RESTAdapter with API key handles OPTIONS preflight" time="0.005">
+    </testcase>
+    <testcase classname="OpenAIAdapter getOpenAIFunctions returns function definitions" name="OpenAIAdapter getOpenAIFunctions returns function definitions" time="0.005">
+    </testcase>
+    <testcase classname="OpenAIAdapter processToolCalls processes valid calls" name="OpenAIAdapter processToolCalls processes valid calls" time="0.01">
+    </testcase>
+    <testcase classname="OpenAIAdapter processToolCalls handles errors" name="OpenAIAdapter processToolCalls handles errors" time="0.001">
+    </testcase>
+    <testcase classname="OpenAIAdapter GET /v1/models returns model list" name="OpenAIAdapter GET /v1/models returns model list" time="0.008">
+    </testcase>
+    <testcase classname="OpenAIAdapter GET /v1/functions returns functions" name="OpenAIAdapter GET /v1/functions returns functions" time="0.006">
+    </testcase>
+    <testcase classname="OpenAIAdapter POST /v1/functions/call calls a function" name="OpenAIAdapter POST /v1/functions/call calls a function" time="0.011">
+    </testcase>
+    <testcase classname="OpenAIAdapter POST /v1/functions/call returns 400 without name" name="OpenAIAdapter POST /v1/functions/call returns 400 without name" time="0.004">
+    </testcase>
+    <testcase classname="OpenAIAdapter POST /v1/tool_calls processes batch calls" name="OpenAIAdapter POST /v1/tool_calls processes batch calls" time="0.007">
+    </testcase>
+    <testcase classname="OpenAIAdapter POST /v1/tool_calls returns 400 without array" name="OpenAIAdapter POST /v1/tool_calls returns 400 without array" time="0.005">
+    </testcase>
+    <testcase classname="OpenAIAdapter POST /v1/chat/completions without tool_calls returns available tools" name="OpenAIAdapter POST /v1/chat/completions without tool_calls returns available tools" time="0.005">
+    </testcase>
+    <testcase classname="OpenAIAdapter POST /v1/chat/completions returns 400 without messages" name="OpenAIAdapter POST /v1/chat/completions returns 400 without messages" time="0.005">
+    </testcase>
+    <testcase classname="OpenAIAdapter GET / returns health check" name="OpenAIAdapter GET / returns health check" time="0.005">
+    </testcase>
+    <testcase classname="OpenAIAdapter returns 404 for unknown path" name="OpenAIAdapter returns 404 for unknown path" time="0.01">
+    </testcase>
+    <testcase classname="OpenAIAdapter handles OPTIONS preflight" name="OpenAIAdapter handles OPTIONS preflight" time="0.004">
+    </testcase>
+    <testcase classname="OpenAIAdapter POST /v1/chat/completions with tool_calls processes them" name="OpenAIAdapter POST /v1/chat/completions with tool_calls processes them" time="0.006">
+    </testcase>
+    <testcase classname="RESTAdapter sync and error routes POST /api/sync syncs to .env file" name="RESTAdapter sync and error routes POST /api/sync syncs to .env file" time="0.023">
+    </testcase>
+    <testcase classname="RESTAdapter sync and error routes POST /api/run executes command" name="RESTAdapter sync and error routes POST /api/run executes command" time="0.048">
+    </testcase>
+    <testcase classname="RESTAdapter sync and error routes maps &quot;not found&quot; errors to 404 status" name="RESTAdapter sync and error routes maps &quot;not found&quot; errors to 404 status" time="0.005">
+    </testcase>
+    <testcase classname="RESTAdapter sync and error routes maps &quot;disabled&quot; errors to 403 status" name="RESTAdapter sync and error routes maps &quot;disabled&quot; errors to 403 status" time="0.019">
+    </testcase>
+    <testcase classname="RESTAdapter sync and error routes POST /api/tools/envcp_add_to_env calls add_to_env handler" name="RESTAdapter sync and error routes POST /api/tools/envcp_add_to_env calls add_to_env handler" time="0.045">
+    </testcase>
+    <testcase classname="RESTAdapter sync and error routes POST /api/tools/envcp_check_access calls check_access handler" name="RESTAdapter sync and error routes POST /api/tools/envcp_check_access calls check_access handler" time="0.034">
+    </testcase>
+    <testcase classname="RESTAdapter sync and error routes maps generic errors to 500 status — line 250" name="RESTAdapter sync and error routes maps generic errors to 500 status — line 250" time="0.013">
+    </testcase>
+    <testcase classname="OpenAIAdapter with API key rejects without API key" name="OpenAIAdapter with API key rejects without API key" time="0.01">
+    </testcase>
+    <testcase classname="OpenAIAdapter with API key accepts with valid Bearer token" name="OpenAIAdapter with API key accepts with valid Bearer token" time="0.005">
+    </testcase>
+    <testcase classname="GeminiAdapter getGeminiFunctionDeclarations returns declarations" name="GeminiAdapter getGeminiFunctionDeclarations returns declarations" time="0.002">
+    </testcase>
+    <testcase classname="GeminiAdapter processFunctionCalls processes valid calls" name="GeminiAdapter processFunctionCalls processes valid calls" time="0.016">
+    </testcase>
+    <testcase classname="GeminiAdapter processFunctionCalls handles errors" name="GeminiAdapter processFunctionCalls handles errors" time="0.001">
+    </testcase>
+    <testcase classname="GeminiAdapter GET /v1/models returns models" name="GeminiAdapter GET /v1/models returns models" time="0.015">
+    </testcase>
+    <testcase classname="GeminiAdapter GET /v1/tools returns tool declarations" name="GeminiAdapter GET /v1/tools returns tool declarations" time="0.01">
+    </testcase>
+    <testcase classname="GeminiAdapter POST /v1/functions/call calls a function" name="GeminiAdapter POST /v1/functions/call calls a function" time="0.033">
+    </testcase>
+    <testcase classname="GeminiAdapter POST /v1/functions/call returns 400 without name" name="GeminiAdapter POST /v1/functions/call returns 400 without name" time="0.011">
+    </testcase>
+    <testcase classname="GeminiAdapter POST /v1/function_calls processes batch" name="GeminiAdapter POST /v1/function_calls processes batch" time="0.016">
+    </testcase>
+    <testcase classname="GeminiAdapter POST /v1/function_calls returns 400 without array" name="GeminiAdapter POST /v1/function_calls returns 400 without array" time="0.009">
+    </testcase>
+    <testcase classname="GeminiAdapter POST generateContent with function calls" name="GeminiAdapter POST generateContent with function calls" time="0.016">
+    </testcase>
+    <testcase classname="GeminiAdapter POST generateContent without function calls returns tools" name="GeminiAdapter POST generateContent without function calls returns tools" time="0.017">
+    </testcase>
+    <testcase classname="GeminiAdapter GET / returns health check" name="GeminiAdapter GET / returns health check" time="0.009">
+    </testcase>
+    <testcase classname="GeminiAdapter returns 404 for unknown path" name="GeminiAdapter returns 404 for unknown path" time="0.016">
+    </testcase>
+    <testcase classname="GeminiAdapter handles OPTIONS preflight" name="GeminiAdapter handles OPTIONS preflight" time="0.01">
+    </testcase>
+    <testcase classname="GeminiAdapter error handling returns 500 when callTool throws in /v1/functions/call" name="GeminiAdapter error handling returns 500 when callTool throws in /v1/functions/call" time="0.014">
+    </testcase>
+    <testcase classname="OpenAIAdapter error handling returns 500 when callTool throws in /v1/functions/call" name="OpenAIAdapter error handling returns 500 when callTool throws in /v1/functions/call" time="0.01">
+    </testcase>
+    <testcase classname="Adapter rate limiting REST adapter rate limits after many requests" name="Adapter rate limiting REST adapter rate limits after many requests" time="0.738">
+    </testcase>
+    <testcase classname="Adapter rate limiting OpenAI adapter rate limits after many requests" name="Adapter rate limiting OpenAI adapter rate limits after many requests" time="0.447">
+    </testcase>
+    <testcase classname="Adapter rate limiting Gemini adapter rate limits after many requests" name="Adapter rate limiting Gemini adapter rate limits after many requests" time="0.421">
+    </testcase>
+    <testcase classname="GeminiAdapter with API key rejects without API key" name="GeminiAdapter with API key rejects without API key" time="0.013">
+    </testcase>
+    <testcase classname="GeminiAdapter with API key accepts with x-goog-api-key header" name="GeminiAdapter with API key accepts with x-goog-api-key header" time="0.005">
+    </testcase>
+    <testcase classname="Adapter rateLimitEnabled=false branch REST adapter allows requests when rate limit disabled — rest.ts:103" name="Adapter rateLimitEnabled=false branch REST adapter allows requests when rate limit disabled — rest.ts:103" time="0.017">
+    </testcase>
+    <testcase classname="Adapter rateLimitEnabled=false branch OpenAI adapter allows requests when rate limit disabled — openai.ts:62" name="Adapter rateLimitEnabled=false branch OpenAI adapter allows requests when rate limit disabled — openai.ts:62" time="0.064">
+    </testcase>
+    <testcase classname="Adapter rateLimitEnabled=false branch Gemini adapter allows requests when rate limit disabled — gemini.ts:59" name="Adapter rateLimitEnabled=false branch Gemini adapter allows requests when rate limit disabled — gemini.ts:59" time="0.018">
+    </testcase>
+    <testcase classname="RESTAdapter non-api path and edge-case routes GET / returns 404 (non-api path — rest.ts:147 false branch)" name="RESTAdapter non-api path and edge-case routes GET / returns 404 (non-api path — rest.ts:147 false branch)" time="0.009">
+    </testcase>
+    <testcase classname="RESTAdapter non-api path and edge-case routes GET /api/variables?tags=foo filters by tag (rest.ts:186 true branch)" name="RESTAdapter non-api path and edge-case routes GET /api/variables?tags=foo filters by tag (rest.ts:186 true branch)" time="0.014">
+    </testcase>
+    <testcase classname="RESTAdapter non-api path and edge-case routes DELETE /api/variables/ without name returns 404 (rest.ts:213 false branch)" name="RESTAdapter non-api path and edge-case routes DELETE /api/variables/ without name returns 404 (rest.ts:213 false branch)" time="0.003">
+    </testcase>
+    <testcase classname="OpenAI adapter edge cases processToolCalls handles non-Error throw (openai.ts:45 false branch)" name="OpenAI adapter edge cases processToolCalls handles non-Error throw (openai.ts:45 false branch)" time="0.007">
+    </testcase>
+    <testcase classname="OpenAI adapter edge cases POST /v1/functions/call without arguments uses empty object (openai.ts:129)" name="OpenAI adapter edge cases POST /v1/functions/call without arguments uses empty object (openai.ts:129)" time="0.013">
+    </testcase>
+    <testcase classname="OpenAI adapter edge cases non-Error thrown in HTTP handler returns 500 (openai.ts:227 false branch)" name="OpenAI adapter edge cases non-Error thrown in HTTP handler returns 500 (openai.ts:227 false branch)" time="0.012">
+    </testcase>
+    <testcase classname="GeminiAdapter edge cases processFunctionCalls handles non-Error throw (gemini.ts:43 false branch)" name="GeminiAdapter edge cases processFunctionCalls handles non-Error throw (gemini.ts:43 false branch)" time="0.002">
+    </testcase>
+    <testcase classname="Auth failure — REST adapter returns 401 with wrong API key" name="Auth failure — REST adapter returns 401 with wrong API key" time="0.013">
+    </testcase>
+    <testcase classname="Auth failure — OpenAI adapter returns 401 with wrong API key" name="Auth failure — OpenAI adapter returns 401 with wrong API key" time="0.012">
+    </testcase>
+    <testcase classname="Auth failure — Gemini adapter returns 401 with wrong API key" name="Auth failure — Gemini adapter returns 401 with wrong API key" time="0.015">
+    </testcase>
+    <testcase classname="REST adapter — non-Error throw in catch (lines 249-250) returns 500 when tool throws a non-Error string (String(error) branch)" name="REST adapter — non-Error throw in catch (lines 249-250) returns 500 when tool throws a non-Error string (String(error) branch)" time="0.004">
+    </testcase>
+    <testcase classname="OpenAI adapter — non-Error throw in catch (line 91 branch) returns 500 when callTool throws a non-Error string" name="OpenAI adapter — non-Error throw in catch (line 91 branch) returns 500 when callTool throws a non-Error string" time="0.009">
+    </testcase>
+    <testcase classname="Gemini adapter — non-Error throw in catch (line 218 branch) returns 500 when callTool throws a non-Error string" name="Gemini adapter — non-Error throw in catch (line 218 branch) returns 500 when callTool throws a non-Error string" time="0.009">
+    </testcase>
+  </testsuite>
+  <testsuite name="UnifiedServer" errors="0" failures="0" skipped="0" timestamp="2026-04-13T21:56:22" time="8.887" tests="89">
+    <testcase classname="UnifiedServer GET / returns server info with auto mode" name="UnifiedServer GET / returns server info with auto mode" time="0.089">
+    </testcase>
+    <testcase classname="UnifiedServer handles CORS preflight" name="UnifiedServer handles CORS preflight" time="0.013">
+    </testcase>
+    <testcase classname="UnifiedServer routes REST requests to /api/*" name="UnifiedServer routes REST requests to /api/*" time="0.017">
+    </testcase>
+    <testcase classname="UnifiedServer routes OpenAI requests to /v1/models" name="UnifiedServer routes OpenAI requests to /v1/models" time="0.013">
+    </testcase>
+    <testcase classname="UnifiedServer routes Gemini requests to generateContent" name="UnifiedServer routes Gemini requests to generateContent" time="0.018">
+    </testcase>
+    <testcase classname="UnifiedServer returns 404 for unknown paths" name="UnifiedServer returns 404 for unknown paths" time="0.01">
+    </testcase>
+    <testcase classname="UnifiedServer supports ?mode=rest query param" name="UnifiedServer supports ?mode=rest query param" time="0.012">
+    </testcase>
+    <testcase classname="UnifiedServer API key validation rejects requests without API key" name="UnifiedServer API key validation rejects requests without API key" time="0.014">
+    </testcase>
+    <testcase classname="UnifiedServer API key validation accepts requests with valid X-API-Key" name="UnifiedServer API key validation accepts requests with valid X-API-Key" time="0.005">
+    </testcase>
+    <testcase classname="UnifiedServer API key validation accepts requests with valid Bearer token" name="UnifiedServer API key validation accepts requests with valid Bearer token" time="0.005">
+    </testcase>
+    <testcase classname="UnifiedServer CRUD via unified server creates, reads, updates, deletes via REST routes" name="UnifiedServer CRUD via unified server creates, reads, updates, deletes via REST routes" time="0.061">
+    </testcase>
+    <testcase classname="UnifiedServer single modes starts in rest mode" name="UnifiedServer single modes starts in rest mode" time="0.036">
+    </testcase>
+    <testcase classname="UnifiedServer single modes starts in openai mode" name="UnifiedServer single modes starts in openai mode" time="0.031">
+    </testcase>
+    <testcase classname="UnifiedServer single modes starts in gemini mode" name="UnifiedServer single modes starts in gemini mode" time="0.029">
+    </testcase>
+    <testcase classname="UnifiedServer all mode routes routes /v1/functions via unified OpenAI handler" name="UnifiedServer all mode routes routes /v1/functions via unified OpenAI handler" time="0.01">
+    </testcase>
+    <testcase classname="UnifiedServer all mode routes routes /v1/functions/call via unified OpenAI handler" name="UnifiedServer all mode routes routes /v1/functions/call via unified OpenAI handler" time="0.014">
+    </testcase>
+    <testcase classname="UnifiedServer all mode routes routes /v1/tool_calls via unified OpenAI handler" name="UnifiedServer all mode routes routes /v1/tool_calls via unified OpenAI handler" time="0.008">
+    </testcase>
+    <testcase classname="UnifiedServer all mode routes routes /v1/chat/completions via unified OpenAI handler" name="UnifiedServer all mode routes routes /v1/chat/completions via unified OpenAI handler" time="0.007">
+    </testcase>
+    <testcase classname="UnifiedServer all mode routes routes /v1/tools via unified Gemini handler" name="UnifiedServer all mode routes routes /v1/tools via unified Gemini handler" time="0.012">
+    </testcase>
+    <testcase classname="UnifiedServer all mode routes routes /v1/function_calls via unified Gemini handler" name="UnifiedServer all mode routes routes /v1/function_calls via unified Gemini handler" time="0.011">
+    </testcase>
+    <testcase classname="UnifiedServer all mode routes routes generateContent via unified Gemini handler" name="UnifiedServer all mode routes routes generateContent via unified Gemini handler" time="0.007">
+    </testcase>
+    <testcase classname="UnifiedServer all mode routes GET /api/tools via unified REST handler" name="UnifiedServer all mode routes GET /api/tools via unified REST handler" time="0.006">
+    </testcase>
+    <testcase classname="UnifiedServer all mode routes POST /api/tools/:name via unified REST handler" name="UnifiedServer all mode routes POST /api/tools/:name via unified REST handler" time="0.036">
+    </testcase>
+    <testcase classname="UnifiedServer all mode routes POST /api/variables via unified REST handler" name="UnifiedServer all mode routes POST /api/variables via unified REST handler" time="0.015">
+    </testcase>
+    <testcase classname="UnifiedServer all mode routes GET /api/variables via unified REST handler" name="UnifiedServer all mode routes GET /api/variables via unified REST handler" time="0.005">
+    </testcase>
+    <testcase classname="UnifiedServer all mode routes GET /api/variables/:name via unified REST handler" name="UnifiedServer all mode routes GET /api/variables/:name via unified REST handler" time="0.021">
+    </testcase>
+    <testcase classname="UnifiedServer all mode routes PUT /api/variables/:name via unified REST handler" name="UnifiedServer all mode routes PUT /api/variables/:name via unified REST handler" time="0.051">
+    </testcase>
+    <testcase classname="UnifiedServer all mode routes DELETE /api/variables/:name via unified REST handler" name="UnifiedServer all mode routes DELETE /api/variables/:name via unified REST handler" time="0.031">
+    </testcase>
+    <testcase classname="UnifiedServer all mode routes POST /v1/chat/completions with tool_calls via unified" name="UnifiedServer all mode routes POST /v1/chat/completions with tool_calls via unified" time="0.008">
+    </testcase>
+    <testcase classname="UnifiedServer all mode routes POST /v1/functions/call via unified Gemini handler" name="UnifiedServer all mode routes POST /v1/functions/call via unified Gemini handler" time="0.005">
+    </testcase>
+    <testcase classname="UnifiedServer all mode routes POST /v1/functions/call routed to Gemini handler via ?mode=gemini" name="UnifiedServer all mode routes POST /v1/functions/call routed to Gemini handler via ?mode=gemini" time="0.006">
+    </testcase>
+    <testcase classname="UnifiedServer all mode routes returns 404 for unknown OpenAI route via unified" name="UnifiedServer all mode routes returns 404 for unknown OpenAI route via unified" time="0.006">
+    </testcase>
+    <testcase classname="UnifiedServer all mode routes returns 404 for unknown REST sub-route via unified" name="UnifiedServer all mode routes returns 404 for unknown REST sub-route via unified" time="0.004">
+    </testcase>
+    <testcase classname="UnifiedServer all mode routes POST generateContent with no function calls via unified Gemini" name="UnifiedServer all mode routes POST generateContent with no function calls via unified Gemini" time="0.004">
+    </testcase>
+    <testcase classname="UnifiedServer all mode routes handles errors in unified REST handler gracefully" name="UnifiedServer all mode routes handles errors in unified REST handler gracefully" time="0.007">
+    </testcase>
+    <testcase classname="UnifiedServer all mode routes handles errors in unified OpenAI handler gracefully" name="UnifiedServer all mode routes handles errors in unified OpenAI handler gracefully" time="0.006">
+    </testcase>
+    <testcase classname="UnifiedServer all mode routes handles errors in unified Gemini handler gracefully" name="UnifiedServer all mode routes handles errors in unified Gemini handler gracefully" time="0.006">
+    </testcase>
+    <testcase classname="UnifiedServer all mode routes handles errors in unified Gemini generateContent handler" name="UnifiedServer all mode routes handles errors in unified Gemini generateContent handler" time="0.005">
+    </testcase>
+    <testcase classname="UnifiedServer all mode routes returns 404 for unknown Gemini path via unified" name="UnifiedServer all mode routes returns 404 for unknown Gemini path via unified" time="0.005">
+    </testcase>
+    <testcase classname="UnifiedServer sync/run/error routes POST /api/sync syncs variables" name="UnifiedServer sync/run/error routes POST /api/sync syncs variables" time="0.019">
+    </testcase>
+    <testcase classname="UnifiedServer sync/run/error routes POST /api/run executes a command" name="UnifiedServer sync/run/error routes POST /api/run executes a command" time="0.039">
+    </testcase>
+    <testcase classname="UnifiedServer sync/run/error routes REST handler returns 404 for unknown sub-route" name="UnifiedServer sync/run/error routes REST handler returns 404 for unknown sub-route" time="0.004">
+    </testcase>
+    <testcase classname="UnifiedServer sync/run/error routes REST handler catches errors from callTool" name="UnifiedServer sync/run/error routes REST handler catches errors from callTool" time="0.005">
+    </testcase>
+    <testcase classname="UnifiedServer adapter 503 paths returns 503 for OpenAI when adapter nulled" name="UnifiedServer adapter 503 paths returns 503 for OpenAI when adapter nulled" time="0.005">
+    </testcase>
+    <testcase classname="UnifiedServer adapter 503 paths returns 503 for Gemini when adapter nulled" name="UnifiedServer adapter 503 paths returns 503 for Gemini when adapter nulled" time="0.004">
+    </testcase>
+    <testcase classname="UnifiedServer adapter 503 paths returns 503 for REST handler when adapter nulled" name="UnifiedServer adapter 503 paths returns 503 for REST handler when adapter nulled" time="0.003">
+    </testcase>
+    <testcase classname="UnifiedServer adapter 503 paths returns 404 for non-api non-v1 path" name="UnifiedServer adapter 503 paths returns 404 for non-api non-v1 path" time="0.004">
+    </testcase>
+    <testcase classname="UnifiedServer adapter 503 paths returns 500 when internal error occurs in request handler" name="UnifiedServer adapter 503 paths returns 500 when internal error occurs in request handler" time="0.003">
+    </testcase>
+    <testcase classname="UnifiedServer rate limiting rate limits after many rapid requests" name="UnifiedServer rate limiting rate limits after many rapid requests" time="0.748">
+    </testcase>
+    <testcase classname="UnifiedServer.detectClientType detects OpenAI from path" name="UnifiedServer.detectClientType detects OpenAI from path" time="0.005">
+    </testcase>
+    <testcase classname="UnifiedServer.detectClientType detects OpenAI from header" name="UnifiedServer.detectClientType detects OpenAI from header" time="0.001">
+    </testcase>
+    <testcase classname="UnifiedServer.detectClientType detects Gemini from path" name="UnifiedServer.detectClientType detects Gemini from path" time="0.001">
+    </testcase>
+    <testcase classname="UnifiedServer.detectClientType detects Gemini from header" name="UnifiedServer.detectClientType detects Gemini from header" time="0.002">
+    </testcase>
+    <testcase classname="UnifiedServer.detectClientType detects MCP from header" name="UnifiedServer.detectClientType detects MCP from header" time="0.001">
+    </testcase>
+    <testcase classname="UnifiedServer.detectClientType detects REST from /api path" name="UnifiedServer.detectClientType detects REST from /api path" time="0.001">
+    </testcase>
+    <testcase classname="UnifiedServer.detectClientType returns unknown for unrecognized requests" name="UnifiedServer.detectClientType returns unknown for unrecognized requests" time="0.001">
+    </testcase>
+    <testcase classname="UnifiedServer.detectClientType routes /api/* to REST when client type is MCP (fallback)" name="UnifiedServer.detectClientType routes /api/* to REST when client type is MCP (fallback)" time="0.026">
+    </testcase>
+    <testcase classname="UnifiedServer vault-aware startup resolves vault path and starts in rest mode" name="UnifiedServer vault-aware startup resolves vault path and starts in rest mode" time="0.025">
+    </testcase>
+    <testcase classname="UnifiedServer vault-aware startup resolves global vault path when default is global" name="UnifiedServer vault-aware startup resolves global vault path when default is global" time="0.025">
+    </testcase>
+    <testcase classname="UnifiedServer auto_detect=false in all mode GET / with auto_detect=false returns detected_client=unknown" name="UnifiedServer auto_detect=false in all mode GET / with auto_detect=false returns detected_client=unknown" time="0.012">
+    </testcase>
+    <testcase classname="UnifiedServer auto_detect=false in all mode routes /api/* to REST when auto_detect=false" name="UnifiedServer auto_detect=false in all mode routes /api/* to REST when auto_detect=false" time="0.013">
+    </testcase>
+    <testcase classname="UnifiedServer auto_detect=false in all mode routes OpenAI path via explicit path match when auto_detect=false" name="UnifiedServer auto_detect=false in all mode routes OpenAI path via explicit path match when auto_detect=false" time="0.009">
+    </testcase>
+    <testcase classname="UnifiedServer rate_limit disabled skips rate-limiter setup when rate_limit.enabled=false" name="UnifiedServer rate_limit disabled skips rate-limiter setup when rate_limit.enabled=false" time="0.028">
+    </testcase>
+    <testcase classname="UnifiedServer non-Error throws in catch blocks REST handler catches non-Error throw (string)" name="UnifiedServer non-Error throws in catch blocks REST handler catches non-Error throw (string)" time="0.02">
+    </testcase>
+    <testcase classname="UnifiedServer non-Error throws in catch blocks outer request handler catches non-Error throw (string)" name="UnifiedServer non-Error throws in catch blocks outer request handler catches non-Error throw (string)" time="0.011">
+    </testcase>
+    <testcase classname="UnifiedServer non-Error throws in catch blocks OpenAI handler catches non-Error throw (string)" name="UnifiedServer non-Error throws in catch blocks OpenAI handler catches non-Error throw (string)" time="0.01">
+    </testcase>
+    <testcase classname="UnifiedServer non-Error throws in catch blocks Gemini handler catches non-Error throw (string)" name="UnifiedServer non-Error throws in catch blocks Gemini handler catches non-Error throw (string)" time="0.006">
+    </testcase>
+    <testcase classname="UnifiedServer direct handler calls with null/edge-case urls handleRESTRequest handles null req.url" name="UnifiedServer direct handler calls with null/edge-case urls handleRESTRequest handles null req.url" time="0.013">
+    </testcase>
+    <testcase classname="UnifiedServer direct handler calls with null/edge-case urls handleRESTRequest with non-api path returns 404" name="UnifiedServer direct handler calls with null/edge-case urls handleRESTRequest with non-api path returns 404" time="0.006">
+    </testcase>
+    <testcase classname="UnifiedServer direct handler calls with null/edge-case urls handleOpenAIRequest handles null req.url" name="UnifiedServer direct handler calls with null/edge-case urls handleOpenAIRequest handles null req.url" time="0.009">
+    </testcase>
+    <testcase classname="UnifiedServer direct handler calls with null/edge-case urls handleGeminiRequest handles null req.url" name="UnifiedServer direct handler calls with null/edge-case urls handleGeminiRequest handles null req.url" time="0.005">
+    </testcase>
+    <testcase classname="UnifiedServer direct handler calls with null/edge-case urls handleGeminiRequest with generateContent and no contents field" name="UnifiedServer direct handler calls with null/edge-case urls handleGeminiRequest with generateContent and no contents field" time="0.02">
+    </testcase>
+    <testcase classname="UnifiedServer direct handler calls with null/edge-case urls handleGeminiRequest with content missing parts array" name="UnifiedServer direct handler calls with null/edge-case urls handleGeminiRequest with content missing parts array" time="0.003">
+    </testcase>
+    <testcase classname="UnifiedServer direct handler calls with null/edge-case urls handleGeminiRequest /v1/functions/call without args uses {} — unified.ts:417" name="UnifiedServer direct handler calls with null/edge-case urls handleGeminiRequest /v1/functions/call without args uses {} — unified.ts:417" time="0.016">
+    </testcase>
+    <testcase classname="UnifiedServer direct handler calls with null/edge-case urls handleRESTRequest DELETE /api/variables/ with no name returns 404 — unified.ts:297" name="UnifiedServer direct handler calls with null/edge-case urls handleRESTRequest DELETE /api/variables/ with no name returns 404 — unified.ts:297" time="0.001">
+    </testcase>
+    <testcase classname="UnifiedServer checkApiKeySecurity (#148) emits warning to stderr when AI flags are enabled with no api_key" name="UnifiedServer checkApiKeySecurity (#148) emits warning to stderr when AI flags are enabled with no api_key" time="0.049">
+    </testcase>
+    <testcase classname="UnifiedServer checkApiKeySecurity (#148) warning includes all active allow_ai_* flag names" name="UnifiedServer checkApiKeySecurity (#148) warning includes all active allow_ai_* flag names" time="0.029">
+    </testcase>
+    <testcase classname="UnifiedServer checkApiKeySecurity (#148) throws when allow_ai_execute is enabled with no api_key" name="UnifiedServer checkApiKeySecurity (#148) throws when allow_ai_execute is enabled with no api_key" time="0.182">
+    </testcase>
+    <testcase classname="UnifiedServer checkApiKeySecurity (#148) does not warn when no AI flags are enabled" name="UnifiedServer checkApiKeySecurity (#148) does not warn when no AI flags are enabled" time="0.032">
+    </testcase>
+    <testcase classname="UnifiedServer checkApiKeySecurity (#148) does not warn when api_key is configured" name="UnifiedServer checkApiKeySecurity (#148) does not warn when api_key is configured" time="0.018">
+    </testcase>
+    <testcase classname="UnifiedServer — branch coverage paths returns 401 with wrong API key (auth_failure log path)" name="UnifiedServer — branch coverage paths returns 401 with wrong API key (auth_failure log path)" time="0.013">
+    </testcase>
+    <testcase classname="UnifiedServer — branch coverage paths POST /v1/tool_calls with non-array tool_calls returns empty results" name="UnifiedServer — branch coverage paths POST /v1/tool_calls with non-array tool_calls returns empty results" time="0.005">
+    </testcase>
+    <testcase classname="UnifiedServer — branch coverage paths POST /v1/chat/completions with non-array messages processes no tool calls" name="UnifiedServer — branch coverage paths POST /v1/chat/completions with non-array messages processes no tool calls" time="0.005">
+    </testcase>
+    <testcase classname="UnifiedServer — branch coverage paths POST /v1/functions/call with non-string name uses empty string" name="UnifiedServer — branch coverage paths POST /v1/functions/call with non-string name uses empty string" time="0.006">
+    </testcase>
+    <testcase classname="UnifiedServer — branch coverage paths POST /v1/function_calls with non-array functionCalls returns empty results" name="UnifiedServer — branch coverage paths POST /v1/function_calls with non-array functionCalls returns empty results" time="0.007">
+    </testcase>
+    <testcase classname="UnifiedServer — branch coverage paths detectClientType returns type without explicit pathname" name="UnifiedServer — branch coverage paths detectClientType returns type without explicit pathname" time="0.005">
+    </testcase>
+    <testcase classname="UnifiedServer — branch coverage paths detectClientType called with no pathname arg hits line 38 branch" name="UnifiedServer — branch coverage paths detectClientType called with no pathname arg hits line 38 branch" time="0.001">
+    </testcase>
+    <testcase classname="UnifiedServer — branch coverage paths Gemini handler throws non-Error → String(error) branch (line 520)" name="UnifiedServer — branch coverage paths Gemini handler throws non-Error → String(error) branch (line 520)" time="0.005">
+    </testcase>
+    <testcase classname="UnifiedServer — branch coverage paths OpenAI handler throws non-Error → String(error) branch in handleOpenAIRequest" name="UnifiedServer — branch coverage paths OpenAI handler throws non-Error → String(error) branch in handleOpenAIRequest" time="0.005">
+    </testcase>
+  </testsuite>
+  <testsuite name="EnvCPServer" errors="0" failures="0" skipped="0" timestamp="2026-04-13T21:56:31" time="1.807" tests="12">
+    <testcase classname="EnvCPServer constructs and sets up handlers without error" name="EnvCPServer constructs and sets up handlers without error" time="1.046">
+    </testcase>
+    <testcase classname="EnvCPServer constructs with password for encrypted mode" name="EnvCPServer constructs with password for encrypted mode" time="0.009">
+    </testcase>
+    <testcase classname="EnvCPServer adapter has default tools registered" name="EnvCPServer adapter has default tools registered" time="0.01">
+    </testcase>
+    <testcase classname="EnvCPServer setupHandlers registers ListTools and CallTool handlers" name="EnvCPServer setupHandlers registers ListTools and CallTool handlers" time="0.008">
+    </testcase>
+    <testcase classname="EnvCPServer ListToolsRequestSchema handler returns tools" name="EnvCPServer ListToolsRequestSchema handler returns tools" time="0.036">
+    </testcase>
+    <testcase classname="EnvCPServer CallToolRequestSchema handler calls a tool" name="EnvCPServer CallToolRequestSchema handler calls a tool" time="0.046">
+    </testcase>
+    <testcase classname="EnvCPServer CallToolRequestSchema handler returns error for unknown tool" name="EnvCPServer CallToolRequestSchema handler returns error for unknown tool" time="0.035">
+    </testcase>
+    <testcase classname="EnvCPServer adapter can call tools after init" name="EnvCPServer adapter can call tools after init" time="0.02">
+    </testcase>
+    <testcase classname="EnvCPServer adapter callTool handles undefined args gracefully (MCP line 46 coverage)" name="EnvCPServer adapter callTool handles undefined args gracefully (MCP line 46 coverage)" time="0.081">
+    </testcase>
+    <testcase classname="EnvCPServer CallTool handler wraps adapter errors as McpError" name="EnvCPServer CallTool handler wraps adapter errors as McpError" time="0.011">
+    </testcase>
+    <testcase classname="EnvCPServer CallTool handler wraps non-Error throws as McpError (line 57 branch)" name="EnvCPServer CallTool handler wraps non-Error throws as McpError (line 57 branch)" time="0.014">
+    </testcase>
+    <testcase classname="EnvCPServer CallTool handler uses {} when arguments is undefined (line 47 branch)" name="EnvCPServer CallTool handler uses {} when arguments is undefined (line 47 branch)" time="0.011">
+    </testcase>
+  </testsuite>
+  <testsuite name="per-variable crypto helpers" errors="0" failures="0" skipped="0" timestamp="2026-04-13T21:55:48" time="44.345" tests="28">
+    <testcase classname="per-variable crypto helpers hashVariablePassword returns an argon2 hash" name="per-variable crypto helpers hashVariablePassword returns an argon2 hash" time="0.709">
+    </testcase>
+    <testcase classname="per-variable crypto helpers verifyVariablePassword returns true for correct password" name="per-variable crypto helpers verifyVariablePassword returns true for correct password" time="1.777">
+    </testcase>
+    <testcase classname="per-variable crypto helpers verifyVariablePassword returns false for wrong password" name="per-variable crypto helpers verifyVariablePassword returns false for wrong password" time="1.591">
+    </testcase>
+    <testcase classname="per-variable crypto helpers encryptVariableValue + decryptVariableValue round-trip" name="per-variable crypto helpers encryptVariableValue + decryptVariableValue round-trip" time="1.322">
+    </testcase>
+    <testcase classname="per-variable crypto helpers decryptVariableValue throws on wrong password" name="per-variable crypto helpers decryptVariableValue throws on wrong password" time="1.343">
+    </testcase>
+    <testcase classname="protected variables via BaseAdapter setVariable with protect creates a protected variable" name="protected variables via BaseAdapter setVariable with protect creates a protected variable" time="1.488">
+    </testcase>
+    <testcase classname="protected variables via BaseAdapter setVariable with protect throws when protect=true but no variable_password" name="protected variables via BaseAdapter setVariable with protect throws when protect=true but no variable_password" time="0.157">
+    </testcase>
+    <testcase classname="protected variables via BaseAdapter setVariable with protect stores [PROTECTED] as the value field" name="protected variables via BaseAdapter setVariable with protect stores [PROTECTED] as the value field" time="2.697">
+    </testcase>
+    <testcase classname="protected variables via BaseAdapter setVariable with protect updates a protected variable with correct password" name="protected variables via BaseAdapter setVariable with protect updates a protected variable with correct password" time="3.493">
+    </testcase>
+    <testcase classname="protected variables via BaseAdapter setVariable with protect rejects update of protected variable with wrong password" name="protected variables via BaseAdapter setVariable with protect rejects update of protected variable with wrong password" time="1.96">
+    </testcase>
+    <testcase classname="protected variables via BaseAdapter getVariable with protection throws when no variable_password provided for protected variable" name="protected variables via BaseAdapter getVariable with protection throws when no variable_password provided for protected variable" time="1.037">
+    </testcase>
+    <testcase classname="protected variables via BaseAdapter getVariable with protection throws on wrong variable_password" name="protected variables via BaseAdapter getVariable with protection throws on wrong variable_password" time="1.662">
+    </testcase>
+    <testcase classname="protected variables via BaseAdapter getVariable with protection decrypts and returns value with correct variable_password" name="protected variables via BaseAdapter getVariable with protection decrypts and returns value with correct variable_password" time="2.182">
+    </testcase>
+    <testcase classname="protected variables via BaseAdapter getVariable with protection returns masked decrypted value when show_value is false" name="protected variables via BaseAdapter getVariable with protection returns masked decrypted value when show_value is false" time="2.583">
+    </testcase>
+    <testcase classname="protected variables via BaseAdapter getVariable with protection returns protected=false for non-protected variables" name="protected variables via BaseAdapter getVariable with protection returns protected=false for non-protected variables" time="0.021">
+    </testcase>
+    <testcase classname="protected variables via BaseAdapter unprotect removes protection with correct password" name="protected variables via BaseAdapter unprotect removes protection with correct password" time="2.718">
+    </testcase>
+    <testcase classname="protected variables via BaseAdapter unprotect throws when unprotecting with wrong password" name="protected variables via BaseAdapter unprotect throws when unprotecting with wrong password" time="1.807">
+    </testcase>
+    <testcase classname="protected variables via BaseAdapter unprotect throws when unprotecting a non-protected variable" name="protected variables via BaseAdapter unprotect throws when unprotecting a non-protected variable" time="0.018">
+    </testcase>
+    <testcase classname="protected variables via BaseAdapter unprotect throws when unprotecting without variable_password" name="protected variables via BaseAdapter unprotect throws when unprotecting without variable_password" time="1.526">
+    </testcase>
+    <testcase classname="protected variables via BaseAdapter listVariables with protected vars marks protected variables in listing" name="protected variables via BaseAdapter listVariables with protected vars marks protected variables in listing" time="1.333">
+    </testcase>
+    <testcase classname="protected variables via BaseAdapter listVariables with protected vars returns plain string array when no protected vars exist" name="protected variables via BaseAdapter listVariables with protected vars returns plain string array when no protected vars exist" time="0.095">
+    </testcase>
+    <testcase classname="protected variables via BaseAdapter setVariable on existing protected without protect/unprotect throws when updating protected variable without password" name="protected variables via BaseAdapter setVariable on existing protected without protect/unprotect throws when updating protected variable without password" time="1.133">
+    </testcase>
+    <testcase classname="protected variables via BaseAdapter deleteVariable on protected variable deletes a protected variable (no password needed for delete)" name="protected variables via BaseAdapter deleteVariable on protected variable deletes a protected variable (no password needed for delete)" time="1.195">
+    </testcase>
+    <testcase classname="protected variables via BaseAdapter require_variable_password config flag requires protect for new variables when enabled" name="protected variables via BaseAdapter require_variable_password config flag requires protect for new variables when enabled" time="0.008">
+    </testcase>
+    <testcase classname="protected variables via BaseAdapter require_variable_password config flag allows protected creation when enabled" name="protected variables via BaseAdapter require_variable_password config flag allows protected creation when enabled" time="1.129">
+    </testcase>
+    <testcase classname="protected variables via BaseAdapter require_variable_password config flag allows updating existing variables when enabled" name="protected variables via BaseAdapter require_variable_password config flag allows updating existing variables when enabled" time="0.038">
+    </testcase>
+    <testcase classname="protected variables via BaseAdapter setVariable — protected update edge cases throws when updating a protected variable without providing variable_password" name="protected variables via BaseAdapter setVariable — protected update edge cases throws when updating a protected variable without providing variable_password" time="1.049">
+    </testcase>
+    <testcase classname="protected variables via BaseAdapter setVariable — protected update edge cases unprotect uses decryptedValue when no new value provided" name="protected variables via BaseAdapter setVariable — protected update edge cases unprotect uses decryptedValue when no new value provided" time="2.012">
+    </testcase>
+  </testsuite>
+  <testsuite name="KeychainManager" errors="0" failures="0" skipped="0" timestamp="2026-04-13T21:56:33" time="0.808" tests="11">
+    <testcase classname="KeychainManager selects correct backend for current platform" name="KeychainManager selects correct backend for current platform" time="0.008">
+    </testcase>
+    <testcase classname="KeychainManager reports availability status" name="KeychainManager reports availability status" time="0.052">
+    </testcase>
+    <testcase classname="KeychainManager getStatus returns structured status" name="KeychainManager getStatus returns structured status" time="0.204">
+    </testcase>
+    <testcase classname="KeychainManager uses custom service name" name="KeychainManager uses custom service name" time="0.002">
+    </testcase>
+    <testcase classname="KeychainManager uses default service name" name="KeychainManager uses default service name" time="0.001">
+    </testcase>
+    <testcase classname="KeychainManager retrieve returns null for non-existent entry" name="KeychainManager retrieve returns null for non-existent entry" time="0.045">
+    </testcase>
+    <testcase classname="KeychainManager remove handles non-existent entry gracefully" name="KeychainManager remove handles non-existent entry gracefully" time="0.043">
+    </testcase>
+    <testcase classname="KeychainManager store returns result object (may fail if daemon not running)" name="KeychainManager store returns result object (may fail if daemon not running)" time="0.03">
+    </testcase>
+    <testcase classname="KeychainManager getStatus reports hasPassword=false when not available" name="KeychainManager getStatus reports hasPassword=false when not available" time="0.047">
+    </testcase>
+    <testcase classname="KeychainManager storePassword and retrievePassword use project-scoped accounts" name="KeychainManager storePassword and retrievePassword use project-scoped accounts" time="0.037">
+    </testcase>
+    <testcase classname="KeychainManager storePassword without projectPath uses global account" name="KeychainManager storePassword without projectPath uses global account" time="0.032">
+    </testcase>
+  </testsuite>
+  <testsuite name="withLock" errors="0" failures="0" skipped="0" timestamp="2026-04-13T21:56:32" time="2.27" tests="5">
+    <testcase classname="withLock acquires lock and runs fn" name="withLock acquires lock and runs fn" time="0.025">
+    </testcase>
+    <testcase classname="withLock releases lock after fn throws" name="withLock releases lock after fn throws" time="0.052">
+    </testcase>
+    <testcase classname="withLock retries when lock is held" name="withLock retries when lock is held" time="0.223">
+    </testcase>
+    <testcase classname="withLock throws after max retries" name="withLock throws after max retries" time="1.678">
+    </testcase>
+    <testcase classname="withLock throws non-EEXIST errors immediately" name="withLock throws non-EEXIST errors immediately" time="0.012">
+    </testcase>
+  </testsuite>
+  <testsuite name="update-checker" errors="0" failures="0" skipped="0" timestamp="2026-04-13T21:56:33" time="1.442" tests="45">
+    <testcase classname="update-checker getCurrentVersion returns a version string" name="update-checker getCurrentVersion returns a version string" time="0.01">
+    </testcase>
+    <testcase classname="update-checker compareVersions returns 0 for equal versions" name="update-checker compareVersions returns 0 for equal versions" time="0.003">
+    </testcase>
+    <testcase classname="update-checker compareVersions returns 1 when a &gt; b" name="update-checker compareVersions returns 1 when a &gt; b" time="0.003">
+    </testcase>
+    <testcase classname="update-checker compareVersions returns -1 when a &lt; b" name="update-checker compareVersions returns -1 when a &lt; b" time="0.004">
+    </testcase>
+    <testcase classname="update-checker compareVersions handles v prefix" name="update-checker compareVersions handles v prefix" time="0.003">
+    </testcase>
+    <testcase classname="update-checker compareVersions handles different length versions" name="update-checker compareVersions handles different length versions" time="0.003">
+    </testcase>
+    <testcase classname="update-checker parseRelease parses tag and body" name="update-checker parseRelease parses tag and body" time="0.004">
+    </testcase>
+    <testcase classname="update-checker parseRelease detects critical with emoji" name="update-checker parseRelease detects critical with emoji" time="0.003">
+    </testcase>
+    <testcase classname="update-checker parseRelease detects critical with [critical]" name="update-checker parseRelease detects critical with [critical]" time="0.003">
+    </testcase>
+    <testcase classname="update-checker parseRelease detects critical with severity: critical" name="update-checker parseRelease detects critical with severity: critical" time="0.002">
+    </testcase>
+    <testcase classname="update-checker parseRelease non-critical release" name="update-checker parseRelease non-critical release" time="0.001">
+    </testcase>
+    <testcase classname="update-checker parseRelease handles missing fields" name="update-checker parseRelease handles missing fields" time="0.003">
+    </testcase>
+    <testcase classname="update-checker extractAdvisory extracts advisory with ENVCP ID" name="update-checker extractAdvisory extracts advisory with ENVCP ID" time="0.007">
+    </testcase>
+    <testcase classname="update-checker extractAdvisory extracts advisory with severity only" name="update-checker extractAdvisory extracts advisory with severity only" time="0.006">
+    </testcase>
+    <testcase classname="update-checker extractAdvisory returns undefined when no advisory info" name="update-checker extractAdvisory returns undefined when no advisory info" time="0.004">
+    </testcase>
+    <testcase classname="update-checker extractAdvisory extracts summary from matching line" name="update-checker extractAdvisory extracts summary from matching line" time="0.004">
+    </testcase>
+    <testcase classname="update-checker extractAdvisory uses default summary when no matching line" name="update-checker extractAdvisory uses default summary when no matching line" time="0.004">
+    </testcase>
+    <testcase classname="update-checker extractAdvisory defaults severity to medium when no sevMatch — line 82" name="update-checker extractAdvisory defaults severity to medium when no sevMatch — line 82" time="0.006">
+    </testcase>
+    <testcase classname="update-checker extractAdvisory falls back to github URL when url is empty — line 83" name="update-checker extractAdvisory falls back to github URL when url is empty — line 83" time="0.006">
+    </testcase>
+    <testcase classname="update-checker cache writeCache creates file" name="update-checker cache writeCache creates file" time="0.008">
+    </testcase>
+    <testcase classname="update-checker cache getCachedResult returns null when no cache" name="update-checker cache getCachedResult returns null when no cache" time="0.006">
+    </testcase>
+    <testcase classname="update-checker cache getCachedResult returns cached data" name="update-checker cache getCachedResult returns cached data" time="0.009">
+    </testcase>
+    <testcase classname="update-checker cache getCachedResult returns null for expired cache" name="update-checker cache getCachedResult returns null for expired cache" time="0.006">
+    </testcase>
+    <testcase classname="update-checker cache getCachedResult returns null for corrupted cache" name="update-checker cache getCachedResult returns null for corrupted cache" time="0.005">
+    </testcase>
+    <testcase classname="update-checker cache writeCache creates directory when missing" name="update-checker cache writeCache creates directory when missing" time="0.005">
+    </testcase>
+    <testcase classname="update-checker checkForUpdate returns up-to-date when current &gt;= latest" name="update-checker checkForUpdate returns up-to-date when current &gt;= latest" time="0.007">
+    </testcase>
+    <testcase classname="update-checker checkForUpdate detects available update" name="update-checker checkForUpdate detects available update" time="0.003">
+    </testcase>
+    <testcase classname="update-checker checkForUpdate detects critical update" name="update-checker checkForUpdate detects critical update" time="0.003">
+    </testcase>
+    <testcase classname="update-checker checkForUpdate extracts advisory from release" name="update-checker checkForUpdate extracts advisory from release" time="0.005">
+    </testcase>
+    <testcase classname="update-checker checkForUpdate uses cache on second call" name="update-checker checkForUpdate uses cache on second call" time="0.004">
+    </testcase>
+    <testcase classname="update-checker checkForUpdate re-fetches after cache expires" name="update-checker checkForUpdate re-fetches after cache expires" time="0.006">
+    </testcase>
+    <testcase classname="update-checker checkForUpdate handles fetch failure gracefully" name="update-checker checkForUpdate handles fetch failure gracefully" time="0.005">
+    </testcase>
+    <testcase classname="update-checker checkForUpdate critical is false when no update even if release is critical" name="update-checker checkForUpdate critical is false when no update even if release is critical" time="0.003">
+    </testcase>
+    <testcase classname="update-checker checkForUpdate returns advisory from cache when update available" name="update-checker checkForUpdate returns advisory from cache when update available" time="0.003">
+    </testcase>
+    <testcase classname="update-checker formatUpdateMessage shows up-to-date message" name="update-checker formatUpdateMessage shows up-to-date message" time="0.002">
+    </testcase>
+    <testcase classname="update-checker formatUpdateMessage shows update available" name="update-checker formatUpdateMessage shows update available" time="0.002">
+    </testcase>
+    <testcase classname="update-checker formatUpdateMessage shows critical warning" name="update-checker formatUpdateMessage shows critical warning" time="0.002">
+    </testcase>
+    <testcase classname="update-checker formatUpdateMessage includes advisory details" name="update-checker formatUpdateMessage includes advisory details" time="0.003">
+    </testcase>
+    <testcase classname="update-checker formatUpdateMessage omits URL line when advisory url is empty — line 219" name="update-checker formatUpdateMessage omits URL line when advisory url is empty — line 219" time="0.002">
+    </testcase>
+    <testcase classname="update-checker fetchLatestRelease returns a release or handles error" name="update-checker fetchLatestRelease returns a release or handles error" time="0.421">
+    </testcase>
+    <testcase classname="update-checker logUpdateCheck writes audit log" name="update-checker logUpdateCheck writes audit log" time="0.018">
+    </testcase>
+    <testcase classname="update-checker logUpdateCheck creates log directory if missing" name="update-checker logUpdateCheck creates log directory if missing" time="0.011">
+    </testcase>
+    <testcase classname="update-checker logUpdateCheck appends to existing log when dir already exists — line 233" name="update-checker logUpdateCheck appends to existing log when dir already exists — line 233" time="0.007">
+    </testcase>
+    <testcase classname="update-checker checkForUpdate without fetcher — lines 148, 157 uses process.cwd() when projectPath is not provided — line 148" name="update-checker checkForUpdate without fetcher — lines 148, 157 uses process.cwd() when projectPath is not provided — line 148" time="0.004">
+    </testcase>
+    <testcase classname="update-checker checkForUpdate without fetcher — lines 148, 157 falls back to fetchLatestRelease when no fetcher provided — line 157" name="update-checker checkForUpdate without fetcher — lines 148, 157 falls back to fetchLatestRelease when no fetcher provided — line 157" time="0.075">
+    </testcase>
+  </testsuite>
+  <testsuite name="loadConfig" errors="0" failures="0" skipped="0" timestamp="2026-04-13T21:56:34" time="1.319" tests="45">
+    <testcase classname="loadConfig returns defaults when no config exists" name="loadConfig returns defaults when no config exists" time="0.027">
+    </testcase>
+    <testcase classname="loadConfig loads project config from envcp.yaml" name="loadConfig loads project config from envcp.yaml" time="0.046">
+    </testcase>
+    <testcase classname="loadConfig merges global and project configs" name="loadConfig merges global and project configs" time="0.03">
+    </testcase>
+    <testcase classname="saveConfig writes config to envcp.yaml" name="saveConfig writes config to envcp.yaml" time="0.04">
+    </testcase>
+    <testcase classname="initConfig creates .envcp directory and config" name="initConfig creates .envcp directory and config" time="0.026">
+    </testcase>
+    <testcase classname="initConfig creates .gitignore if it does not exist" name="initConfig creates .gitignore if it does not exist" time="0.027">
+    </testcase>
+    <testcase classname="initConfig appends to existing .gitignore" name="initConfig appends to existing .gitignore" time="0.022">
+    </testcase>
+    <testcase classname="initConfig does not duplicate .envcp/ in existing .gitignore" name="initConfig does not duplicate .envcp/ in existing .gitignore" time="0.016">
+    </testcase>
+    <testcase classname="initConfig uses directory basename when no project name given" name="initConfig uses directory basename when no project name given" time="0.014">
+    </testcase>
+    <testcase classname="registerMcpConfig registers to project-local .vscode/mcp.json when .vscode exists" name="registerMcpConfig registers to project-local .vscode/mcp.json when .vscode exists" time="0.037">
+    </testcase>
+    <testcase classname="registerMcpConfig registers to project-local .cursor/mcp.json when .cursor exists" name="registerMcpConfig registers to project-local .cursor/mcp.json when .cursor exists" time="0.015">
+    </testcase>
+    <testcase classname="registerMcpConfig registers to project-local .jb-mcp.json when .idea exists" name="registerMcpConfig registers to project-local .jb-mcp.json when .idea exists" time="0.021">
+    </testcase>
+    <testcase classname="registerMcpConfig skips project-local configs when directories do not exist" name="registerMcpConfig skips project-local configs when directories do not exist" time="0.012">
+    </testcase>
+    <testcase classname="registerMcpConfig reports already configured when envcp entry exists" name="registerMcpConfig reports already configured when envcp entry exists" time="0.011">
+    </testcase>
+    <testcase classname="registerMcpConfig includes manual targets in result" name="registerMcpConfig includes manual targets in result" time="0.011">
+    </testcase>
+    <testcase classname="registerMcpConfig registers to Zed settings when file exists" name="registerMcpConfig registers to Zed settings when file exists" time="0.019">
+    </testcase>
+    <testcase classname="registerMcpConfig registers to OpenCode config when file exists" name="registerMcpConfig registers to OpenCode config when file exists" time="0.016">
+    </testcase>
+    <testcase classname="registerMcpConfig registers to GitHub Copilot CLI config when file exists" name="registerMcpConfig registers to GitHub Copilot CLI config when file exists" time="0.01">
+    </testcase>
+    <testcase classname="registerMcpConfig handles invalid JSON in existing config gracefully" name="registerMcpConfig handles invalid JSON in existing config gracefully" time="0.025">
+    </testcase>
+    <testcase classname="registerMcpConfig updates existing Google AntiGravity config if file exists" name="registerMcpConfig updates existing Google AntiGravity config if file exists" time="0.013">
+    </testcase>
+    <testcase classname="registerMcpConfig skips Google AntiGravity when no existing file" name="registerMcpConfig skips Google AntiGravity when no existing file" time="0.015">
+    </testcase>
+    <testcase classname="registerMcpConfig registers to OpenCode config (mcp_key format) when file exists" name="registerMcpConfig registers to OpenCode config (mcp_key format) when file exists" time="0.021">
+    </testcase>
+    <testcase classname="registerMcpConfig marks OpenCode as already configured when envcp key exists" name="registerMcpConfig marks OpenCode as already configured when envcp key exists" time="0.018">
+    </testcase>
+    <testcase classname="registerMcpConfig registers to GitHub Copilot CLI config (mcp_servers_array format) when file exists" name="registerMcpConfig registers to GitHub Copilot CLI config (mcp_servers_array format) when file exists" time="0.015">
+    </testcase>
+    <testcase classname="registerMcpConfig marks GitHub Copilot CLI as already configured when envcp entry exists" name="registerMcpConfig marks GitHub Copilot CLI as already configured when envcp entry exists" time="0.021">
+    </testcase>
+    <testcase classname="registerMcpConfig registers Claude Code (mcpServers format) when ~/.claude/mcp.json exists" name="registerMcpConfig registers Claude Code (mcpServers format) when ~/.claude/mcp.json exists" time="0.049">
+    </testcase>
+    <testcase classname="registerMcpConfig registers Zed (context_servers format) when ~/.config/zed/settings.json exists" name="registerMcpConfig registers Zed (context_servers format) when ~/.config/zed/settings.json exists" time="0.012">
+    </testcase>
+    <testcase classname="registerMcpConfig marks Zed as already configured when context_servers.envcp exists" name="registerMcpConfig marks Zed as already configured when context_servers.envcp exists" time="0.03">
+    </testcase>
+    <testcase classname="registerMcpConfig global config (~/.envcp/config.yaml) is merged into loadConfig" name="registerMcpConfig global config (~/.envcp/config.yaml) is merged into loadConfig" time="0.03">
+    </testcase>
+    <testcase classname="canAIActiveCheck / requiresUserReference returns false when allow_ai_active_check is false" name="canAIActiveCheck / requiresUserReference returns false when allow_ai_active_check is false" time="0.013">
+    </testcase>
+    <testcase classname="canAIActiveCheck / requiresUserReference returns true when allow_ai_active_check is true" name="canAIActiveCheck / requiresUserReference returns true when allow_ai_active_check is true" time="0.015">
+    </testcase>
+    <testcase classname="canAIActiveCheck / requiresUserReference returns true when require_user_reference is true" name="canAIActiveCheck / requiresUserReference returns true when require_user_reference is true" time="0.007">
+    </testcase>
+    <testcase classname="canAIActiveCheck / requiresUserReference returns false when require_user_reference is false" name="canAIActiveCheck / requiresUserReference returns false when require_user_reference is false" time="0.002">
+    </testcase>
+    <testcase classname="loadConfig — non-object YAML edge cases ignores global config when YAML parses to non-object (e.g. a number)" name="loadConfig — non-object YAML edge cases ignores global config when YAML parses to non-object (e.g. a number)" time="0.042">
+    </testcase>
+    <testcase classname="loadConfig — non-object YAML edge cases ignores project config when YAML parses to non-object (e.g. a string)" name="loadConfig — non-object YAML edge cases ignores project config when YAML parses to non-object (e.g. a string)" time="0.019">
+    </testcase>
+    <testcase classname="registerMcpConfig — platform-specific paths uses darwin-specific paths — line 166" name="registerMcpConfig — platform-specific paths uses darwin-specific paths — line 166" time="0.021">
+    </testcase>
+    <testcase classname="registerMcpConfig — platform-specific paths uses win32-specific paths — lines 167, 190" name="registerMcpConfig — platform-specific paths uses win32-specific paths — lines 167, 190" time="0.008">
+    </testcase>
+    <testcase classname="registerMcpConfig — platform-specific paths uses USERPROFILE in registerMcpConfig when HOME is unset — line 289" name="registerMcpConfig — platform-specific paths uses USERPROFILE in registerMcpConfig when HOME is unset — line 289" time="0.007">
+    </testcase>
+    <testcase classname="loadConfig — USERPROFILE fallback uses USERPROFILE when HOME is unset" name="loadConfig — USERPROFILE fallback uses USERPROFILE when HOME is unset" time="0.006">
+    </testcase>
+    <testcase classname="loadConfig — FAILSAFE_SCHEMA rejects !!js/ tags (issue #151) rejects !!js/regexp tag in project config — throws or uses defaults" name="loadConfig — FAILSAFE_SCHEMA rejects !!js/ tags (issue #151) rejects !!js/regexp tag in project config — throws or uses defaults" time="0.113">
+    </testcase>
+    <testcase classname="loadConfig — FAILSAFE_SCHEMA rejects !!js/ tags (issue #151) rejects !!js/undefined tag in global config — throws" name="loadConfig — FAILSAFE_SCHEMA rejects !!js/ tags (issue #151) rejects !!js/undefined tag in global config — throws" time="0.018">
+    </testcase>
+    <testcase classname="loadConfig — FAILSAFE_SCHEMA rejects !!js/ tags (issue #151) still parses valid plain YAML after schema switch" name="loadConfig — FAILSAFE_SCHEMA rejects !!js/ tags (issue #151) still parses valid plain YAML after schema switch" time="0.012">
+    </testcase>
+    <testcase classname="deepMerge — nested object recursion (line 88) deeply merges global and project configs (nested objects)" name="deepMerge — nested object recursion (line 88) deeply merges global and project configs (nested objects)" time="0.015">
+    </testcase>
+    <testcase classname="writeToConfig — alreadyExists path (line 257) reports alreadyConfigured when envcp already exists in mcpServers config" name="writeToConfig — alreadyExists path (line 257) reports alreadyConfigured when envcp already exists in mcpServers config" time="0.016">
+    </testcase>
+    <testcase classname="registerMcpConfig — write path (line 332) writes new mcp.json when Claude Code dir exists but file does not yet" name="registerMcpConfig — write path (line 332) writes new mcp.json when Claude Code dir exists but file does not yet" time="0.02">
+    </testcase>
+  </testsuite>
+  <testsuite name="envcp_run policy filtering" errors="0" failures="0" skipped="0" timestamp="2026-04-13T21:56:34" time="0.945" tests="20">
+    <testcase classname="envcp_run policy filtering injects variable allowed by allowed_patterns" name="envcp_run policy filtering injects variable allowed by allowed_patterns" time="0.059">
+    </testcase>
+    <testcase classname="envcp_run policy filtering excludes variable denied by denied_patterns" name="envcp_run policy filtering excludes variable denied by denied_patterns" time="0.049">
+    </testcase>
+    <testcase classname="envcp_run policy filtering excludes variable blocked by blacklist" name="envcp_run policy filtering excludes variable blocked by blacklist" time="0.031">
+    </testcase>
+    <testcase classname="envcp_run policy filtering injects only allowed variables for mixed request list" name="envcp_run policy filtering injects only allowed variables for mixed request list" time="0.048">
+    </testcase>
+    <testcase classname="envcp_run command_blacklist rejects a command matching the blacklist" name="envcp_run command_blacklist rejects a command matching the blacklist" time="0.116">
+    </testcase>
+    <testcase classname="envcp_run command_blacklist rejects a blacklisted program regardless of args" name="envcp_run command_blacklist rejects a blacklisted program regardless of args" time="0.007">
+    </testcase>
+    <testcase classname="envcp_run command_blacklist allows commands not on the blacklist" name="envcp_run command_blacklist allows commands not on the blacklist" time="0.015">
+    </testcase>
+    <testcase classname="envcp_run command_blacklist blacklist check is case-insensitive" name="envcp_run command_blacklist blacklist check is case-insensitive" time="0.004">
+    </testcase>
+    <testcase classname="envcp_run disallow_root_delete rejects rm -rf /" name="envcp_run disallow_root_delete rejects rm -rf /" time="0.01">
+    </testcase>
+    <testcase classname="envcp_run disallow_root_delete rejects rm -r /" name="envcp_run disallow_root_delete rejects rm -r /" time="0.013">
+    </testcase>
+    <testcase classname="envcp_run disallow_root_delete rejects rm --recursive /" name="envcp_run disallow_root_delete rejects rm --recursive /" time="0.006">
+    </testcase>
+    <testcase classname="envcp_run disallow_root_delete rejects rm -rf /*" name="envcp_run disallow_root_delete rejects rm -rf /*" time="0.005">
+    </testcase>
+    <testcase classname="envcp_run disallow_root_delete allows rm -rf targeting non-root path" name="envcp_run disallow_root_delete allows rm -rf targeting non-root path" time="0.036">
+    </testcase>
+    <testcase classname="envcp_run require_command_whitelist rejects command not in allowed_commands when whitelist is required" name="envcp_run require_command_whitelist rejects command not in allowed_commands when whitelist is required" time="0.015">
+    </testcase>
+    <testcase classname="envcp_run require_command_whitelist allows command in allowed_commands when whitelist is required" name="envcp_run require_command_whitelist allows command in allowed_commands when whitelist is required" time="0.042">
+    </testcase>
+    <testcase classname="envcp_run disallow_root_delete — path normalization rejects rm -rf with double-slash // (normalizes to /)" name="envcp_run disallow_root_delete — path normalization rejects rm -rf with double-slash // (normalizes to /)" time="0.018">
+    </testcase>
+    <testcase classname="envcp_run disallow_root_delete — path normalization rejects rm -rf /. (dot in root)" name="envcp_run disallow_root_delete — path normalization rejects rm -rf /. (dot in root)" time="0.007">
+    </testcase>
+    <testcase classname="envcp_run disallow_path_manipulation rejects when an injected vault variable overrides HOME to /" name="envcp_run disallow_path_manipulation rejects when an injected vault variable overrides HOME to /" time="0.022">
+    </testcase>
+    <testcase classname="envcp_run disallow_path_manipulation rejects when an injected vault variable sets PATH with directory traversal" name="envcp_run disallow_path_manipulation rejects when an injected vault variable sets PATH with directory traversal" time="0.015">
+    </testcase>
+    <testcase classname="envcp_run disallow_path_manipulation allows safe PATH values" name="envcp_run disallow_path_manipulation allows safe PATH values" time="0.019">
+    </testcase>
+  </testsuite>
+  <testsuite name="setSecurityHeaders" errors="0" failures="0" skipped="0" timestamp="2026-04-13T21:56:34" time="1.062" tests="19">
+    <testcase classname="setSecurityHeaders sets all security headers" name="setSecurityHeaders sets all security headers" time="0.011">
+    </testcase>
+    <testcase classname="setCorsHeaders defaults to empty string (no CORS) when no origin specified" name="setCorsHeaders defaults to empty string (no CORS) when no origin specified" time="0.001">
+    </testcase>
+    <testcase classname="setCorsHeaders uses allowed origin when specified" name="setCorsHeaders uses allowed origin when specified" time="0.001">
+    </testcase>
+    <testcase classname="setCorsHeaders allows localhost origins" name="setCorsHeaders allows localhost origins" time="0.001">
+    </testcase>
+    <testcase classname="setCorsHeaders rejects non-local origins when no allowedOrigin set" name="setCorsHeaders rejects non-local origins when no allowedOrigin set" time="0.003">
+    </testcase>
+    <testcase classname="sendJson sends JSON with correct content type and status" name="sendJson sends JSON with correct content type and status" time="0.002">
+    </testcase>
+    <testcase classname="sendJson sanitizes error responses (strips stack traces)" name="sendJson sanitizes error responses (strips stack traces)" time="0.002">
+    </testcase>
+    <testcase classname="sendJson sanitizes Error objects in error responses" name="sendJson sanitizes Error objects in error responses" time="0.001">
+    </testcase>
+    <testcase classname="sendJson does not sanitize success responses" name="sendJson does not sanitize success responses" time="0.002">
+    </testcase>
+    <testcase classname="parseBody parses valid JSON body" name="parseBody parses valid JSON body" time="0.006">
+    </testcase>
+    <testcase classname="parseBody returns empty object for empty body" name="parseBody returns empty object for empty body" time="0.002">
+    </testcase>
+    <testcase classname="parseBody rejects invalid JSON" name="parseBody rejects invalid JSON" time="0.036">
+    </testcase>
+    <testcase classname="parseBody rejects oversized body" name="parseBody rejects oversized body" time="0.004">
+    </testcase>
+    <testcase classname="sendJson sanitization edge cases sanitizes nested Error values in objects" name="sendJson sanitization edge cases sanitizes nested Error values in objects" time="0.002">
+    </testcase>
+    <testcase classname="sendJson sanitization edge cases passes through non-object non-Error data in error responses" name="sendJson sanitization edge cases passes through non-object non-Error data in error responses" time="0.001">
+    </testcase>
+    <testcase classname="RateLimiter cleanup cleans up stale entries" name="RateLimiter cleanup cleans up stale entries" time="0.204">
+    </testcase>
+    <testcase classname="RateLimiter cleanup retains recent entries and cleans old ones (mixed state)" name="RateLimiter cleanup retains recent entries and cleans old ones (mixed state)" time="0.302">
+    </testcase>
+    <testcase classname="rateLimitMiddleware allows requests and sets header" name="rateLimitMiddleware allows requests and sets header" time="0.003">
+    </testcase>
+    <testcase classname="rateLimitMiddleware blocks when rate limit exceeded" name="rateLimitMiddleware blocks when rate limit exceeded" time="0.002">
+    </testcase>
+  </testsuite>
+  <testsuite name="vault manager" errors="0" failures="0" skipped="0" timestamp="2026-04-13T21:56:35" time="0.68" tests="21">
+    <testcase classname="vault manager getGlobalVaultPath returns path in home directory" name="vault manager getGlobalVaultPath returns path in home directory" time="0.017">
+    </testcase>
+    <testcase classname="vault manager getProjectVaultPath returns path in project directory" name="vault manager getProjectVaultPath returns path in project directory" time="0.012">
+    </testcase>
+    <testcase classname="vault manager getActiveVault returns null when no active vault file" name="vault manager getActiveVault returns null when no active vault file" time="0.007">
+    </testcase>
+    <testcase classname="vault manager getActiveVault returns vault name when file exists" name="vault manager getActiveVault returns vault name when file exists" time="0.009">
+    </testcase>
+    <testcase classname="vault manager setActiveVault creates active vault file" name="vault manager setActiveVault creates active vault file" time="0.005">
+    </testcase>
+    <testcase classname="vault manager resolveVaultPath returns project vault by default" name="vault manager resolveVaultPath returns project vault by default" time="0.01">
+    </testcase>
+    <testcase classname="vault manager resolveVaultPath returns global vault when active vault is global" name="vault manager resolveVaultPath returns global vault when active vault is global" time="0.006">
+    </testcase>
+    <testcase classname="vault manager resolveVaultPath returns project vault when active vault is set to project" name="vault manager resolveVaultPath returns project vault when active vault is set to project" time="0.019">
+    </testcase>
+    <testcase classname="vault manager resolveVaultPath returns named vault when active vault is named" name="vault manager resolveVaultPath returns named vault when active vault is named" time="0.012">
+    </testcase>
+    <testcase classname="vault manager initNamedVault creates vault directory" name="vault manager initNamedVault creates vault directory" time="0.014">
+    </testcase>
+    <testcase classname="vault manager initNamedVault rejects reserved names" name="vault manager initNamedVault rejects reserved names" time="0.063">
+    </testcase>
+    <testcase classname="vault manager initNamedVault rejects invalid names" name="vault manager initNamedVault rejects invalid names" time="0.01">
+    </testcase>
+    <testcase classname="vault manager listVaults lists project and global vaults" name="vault manager listVaults lists project and global vaults" time="0.026">
+    </testcase>
+    <testcase classname="vault manager listVaults marks active vault" name="vault manager listVaults marks active vault" time="0.015">
+    </testcase>
+    <testcase classname="vault manager listVaults lists named vaults" name="vault manager listVaults lists named vaults" time="0.011">
+    </testcase>
+    <testcase classname="vault manager listVaults skips non-directory entries in named vaults dir — line 78" name="vault manager listVaults skips non-directory entries in named vaults dir — line 78" time="0.019">
+    </testcase>
+    <testcase classname="vault manager getActiveVault empty file — line 44 returns null when active vault file contains only whitespace" name="vault manager getActiveVault empty file — line 44 returns null when active vault file contains only whitespace" time="0.009">
+    </testcase>
+    <testcase classname="vault manager resolveVaultPath with named vault — lines 25, 29 returns named vault path when active vault dir exists — line 25" name="vault manager resolveVaultPath with named vault — lines 25, 29 returns named vault path when active vault dir exists — line 25" time="0.016">
+    </testcase>
+    <testcase classname="vault manager resolveVaultPath with named vault — lines 25, 29 falls back to default when named active vault dir missing — line 29" name="vault manager resolveVaultPath with named vault — lines 25, 29 falls back to default when named active vault dir missing — line 29" time="0.015">
+    </testcase>
+    <testcase classname="vault manager getGlobalVaultPath USERPROFILE fallback — line 11 uses USERPROFILE when HOME is unset" name="vault manager getGlobalVaultPath USERPROFILE fallback — line 11 uses USERPROFILE when HOME is unset" time="0.003">
+    </testcase>
+    <testcase classname="vault manager getGlobalVaultPath USERPROFILE fallback — line 11 falls back to os.homedir() when both HOME and USERPROFILE are unset" name="vault manager getGlobalVaultPath USERPROFILE fallback — line 11 falls back to os.homedir() when both HOME and USERPROFILE are unset" time="0.009">
+    </testcase>
+  </testsuite>
+  <testsuite name="GpgBackend" errors="0" failures="0" skipped="0" timestamp="2026-04-13T21:56:35" time="0.69" tests="41">
+    <testcase classname="GpgBackend name is GPG" name="GpgBackend name is GPG" time="0.005">
+    </testcase>
+    <testcase classname="GpgBackend isAvailable returns true when gpg is present and key found" name="GpgBackend isAvailable returns true when gpg is present and key found" time="0.004">
+    </testcase>
+    <testcase classname="GpgBackend isAvailable returns false when gpg not found" name="GpgBackend isAvailable returns false when gpg not found" time="0.003">
+    </testcase>
+    <testcase classname="GpgBackend isAvailable returns true without key_id (no key check needed)" name="GpgBackend isAvailable returns true without key_id (no key check needed)" time="0.002">
+    </testcase>
+    <testcase classname="GpgBackend encryptData sends plaintext to gpg stdin and returns base64 blob" name="GpgBackend encryptData sends plaintext to gpg stdin and returns base64 blob" time="0.008">
+    </testcase>
+    <testcase classname="GpgBackend decryptData sends blob to gpg stdin and returns plaintext" name="GpgBackend decryptData sends blob to gpg stdin and returns plaintext" time="0.002">
+    </testcase>
+    <testcase classname="GpgBackend encryptData throws when no key_id configured" name="GpgBackend encryptData throws when no key_id configured" time="0.1">
+    </testcase>
+    <testcase classname="GpgBackend encryptData rejects when gpg returns an error" name="GpgBackend encryptData rejects when gpg returns an error" time="0.019">
+    </testcase>
+    <testcase classname="GpgBackend getStatus reflects availability and keyId" name="GpgBackend getStatus reflects availability and keyId" time="0.008">
+    </testcase>
+    <testcase classname="YubiKeyPivBackend name is YubiKey PIV" name="YubiKeyPivBackend name is YubiKey PIV" time="0.005">
+    </testcase>
+    <testcase classname="YubiKeyPivBackend isAvailable returns true when ykman lists a device" name="YubiKeyPivBackend isAvailable returns true when ykman lists a device" time="0.009">
+    </testcase>
+    <testcase classname="YubiKeyPivBackend isAvailable returns false when ykman errors" name="YubiKeyPivBackend isAvailable returns false when ykman errors" time="0.001">
+    </testcase>
+    <testcase classname="YubiKeyPivBackend isAvailable returns false when no device listed" name="YubiKeyPivBackend isAvailable returns false when no device listed" time="0.001">
+    </testcase>
+    <testcase classname="YubiKeyPivBackend passes --device serial when configured" name="YubiKeyPivBackend passes --device serial when configured" time="0.001">
+    </testcase>
+    <testcase classname="YubiKeyPivBackend getStatus returns device string when available" name="YubiKeyPivBackend getStatus returns device string when available" time="0.003">
+    </testcase>
+    <testcase classname="YubiKeyPivBackend getStatus available:false when ykman errors" name="YubiKeyPivBackend getStatus available:false when ykman errors" time="0.002">
+    </testcase>
+    <testcase classname="Pkcs11Backend name is PKCS#11" name="Pkcs11Backend name is PKCS#11" time="0.002">
+    </testcase>
+    <testcase classname="Pkcs11Backend isAvailable returns true when library loads and slot exists" name="Pkcs11Backend isAvailable returns true when library loads and slot exists" time="0.004">
+    </testcase>
+    <testcase classname="Pkcs11Backend isAvailable returns false when no slots" name="Pkcs11Backend isAvailable returns false when no slots" time="0.001">
+    </testcase>
+    <testcase classname="Pkcs11Backend isAvailable returns false when slot index out of range" name="Pkcs11Backend isAvailable returns false when slot index out of range" time="0.005">
+    </testcase>
+    <testcase classname="Pkcs11Backend isAvailable returns false when load throws" name="Pkcs11Backend isAvailable returns false when load throws" time="0.003">
+    </testcase>
+    <testcase classname="Pkcs11Backend encryptData opens session, encrypts, and returns base64" name="Pkcs11Backend encryptData opens session, encrypts, and returns base64" time="0.005">
+    </testcase>
+    <testcase classname="Pkcs11Backend decryptData opens session, decrypts, and returns buffer" name="Pkcs11Backend decryptData opens session, decrypts, and returns buffer" time="0.002">
+    </testcase>
+    <testcase classname="Pkcs11Backend encryptData throws when no public key found" name="Pkcs11Backend encryptData throws when no public key found" time="0.002">
+    </testcase>
+    <testcase classname="Pkcs11Backend C_Finalize called even when C_EncryptInit throws" name="Pkcs11Backend C_Finalize called even when C_EncryptInit throws" time="0.003">
+    </testcase>
+    <testcase classname="Pkcs11Backend getStatus reflects availability and keyId" name="Pkcs11Backend getStatus reflects availability and keyId" time="0.002">
+    </testcase>
+    <testcase classname="HsmManager.fromConfig selects YubiKeyPivBackend for type yubikey" name="HsmManager.fromConfig selects YubiKeyPivBackend for type yubikey" time="0.002">
+    </testcase>
+    <testcase classname="HsmManager.fromConfig selects GpgBackend for type gpg" name="HsmManager.fromConfig selects GpgBackend for type gpg" time="0.005">
+    </testcase>
+    <testcase classname="HsmManager.fromConfig selects Pkcs11Backend for type pkcs11" name="HsmManager.fromConfig selects Pkcs11Backend for type pkcs11" time="0.002">
+    </testcase>
+    <testcase classname="HsmManager.fromConfig throws when pkcs11 used without pkcs11_lib" name="HsmManager.fromConfig throws when pkcs11 used without pkcs11_lib" time="0.006">
+    </testcase>
+    <testcase classname="HsmManager.fromConfig resolves relative protected_key_path against projectPath" name="HsmManager.fromConfig resolves relative protected_key_path against projectPath" time="0.001">
+    </testcase>
+    <testcase classname="HsmManager.fromConfig uses absolute protected_key_path as-is" name="HsmManager.fromConfig uses absolute protected_key_path as-is" time="0.006">
+    </testcase>
+    <testcase classname="HsmManager protect/retrieve round-trips vault password through mock GPG backend" name="HsmManager protect/retrieve round-trips vault password through mock GPG backend" time="0.011">
+    </testcase>
+    <testcase classname="HsmManager protect/retrieve retrieveVaultPassword throws with helpful message when file missing" name="HsmManager protect/retrieve retrieveVaultPassword throws with helpful message when file missing" time="0.008">
+    </testcase>
+    <testcase classname="HsmManager protect/retrieve protectVaultPassword writes file with mode 0o600" name="HsmManager protect/retrieve protectVaultPassword writes file with mode 0o600" time="0.005">
+    </testcase>
+    <testcase classname="HsmManager protect/retrieve isAvailable delegates to backend" name="HsmManager protect/retrieve isAvailable delegates to backend" time="0.004">
+    </testcase>
+    <testcase classname="HsmManager protect/retrieve getStatus delegates to backend and has required fields" name="HsmManager protect/retrieve getStatus delegates to backend and has required fields" time="0.004">
+    </testcase>
+    <testcase classname="HsmManager.combineSecrets produces a 64-char hex string" name="HsmManager.combineSecrets produces a 64-char hex string" time="0.004">
+    </testcase>
+    <testcase classname="HsmManager.combineSecrets is deterministic" name="HsmManager.combineSecrets is deterministic" time="0.001">
+    </testcase>
+    <testcase classname="HsmManager.combineSecrets differs when HSM secret changes" name="HsmManager.combineSecrets differs when HSM secret changes" time="0.002">
+    </testcase>
+    <testcase classname="HsmManager.combineSecrets differs when user password changes" name="HsmManager.combineSecrets differs when user password changes" time="0.002">
+    </testcase>
+  </testsuite>
+  <testsuite name="EnvCPServer.start()" errors="0" failures="0" skipped="0" timestamp="2026-04-13T21:56:35" time="1.028" tests="2">
+    <testcase classname="EnvCPServer.start() calls adapter.init(), creates StdioServerTransport, and connects" name="EnvCPServer.start() calls adapter.init(), creates StdioServerTransport, and connects" time="0.18">
+    </testcase>
+    <testcase classname="EnvCPServer.start() works with password in encrypted mode" name="EnvCPServer.start() works with password in encrypted mode" time="0.009">
+    </testcase>
+  </testsuite>
+  <testsuite name="matchesPattern" errors="0" failures="0" skipped="0" timestamp="2026-04-13T21:56:36" time="0.43" tests="17">
+    <testcase classname="matchesPattern matches exact names" name="matchesPattern matches exact names" time="0.006">
+    </testcase>
+    <testcase classname="matchesPattern matches wildcard patterns" name="matchesPattern matches wildcard patterns" time="0.002">
+    </testcase>
+    <testcase classname="matchesPattern does not treat dots as wildcards (regex escaping)" name="matchesPattern does not treat dots as wildcards (regex escaping)" time="0.004">
+    </testcase>
+    <testcase classname="matchesPattern escapes other regex special chars" name="matchesPattern escapes other regex special chars" time="0.004">
+    </testcase>
+    <testcase classname="validateVariableName accepts valid names" name="validateVariableName accepts valid names" time="0.002">
+    </testcase>
+    <testcase classname="validateVariableName rejects invalid names" name="validateVariableName rejects invalid names" time="0.002">
+    </testcase>
+    <testcase classname="canAccess / isBlacklisted blacklists matching patterns" name="canAccess / isBlacklisted blacklists matching patterns" time="0.013">
+    </testcase>
+    <testcase classname="canAccess / isBlacklisted denies access for denied patterns" name="canAccess / isBlacklisted denies access for denied patterns" time="0.004">
+    </testcase>
+    <testcase classname="canAccess / isBlacklisted restricts to allowed patterns when set" name="canAccess / isBlacklisted restricts to allowed patterns when set" time="0.004">
+    </testcase>
+    <testcase classname="parseEnvFile parses simple key=value pairs" name="parseEnvFile parses simple key=value pairs" time="0.005">
+    </testcase>
+    <testcase classname="parseEnvFile strips double quotes and unescapes backslash sequences" name="parseEnvFile strips double quotes and unescapes backslash sequences" time="0.002">
+    </testcase>
+    <testcase classname="parseEnvFile strips single quotes literally" name="parseEnvFile strips single quotes literally" time="0.002">
+    </testcase>
+    <testcase classname="parseEnvFile ignores comment lines" name="parseEnvFile ignores comment lines" time="0.001">
+    </testcase>
+    <testcase classname="parseEnvFile ignores lines without =" name="parseEnvFile ignores lines without =" time="0.002">
+    </testcase>
+    <testcase classname="parseEnvFile ignores invalid variable names" name="parseEnvFile ignores invalid variable names" time="0.001">
+    </testcase>
+    <testcase classname="sync.target validation accepts a relative sync target path" name="sync.target validation accepts a relative sync target path" time="0.003">
+    </testcase>
+    <testcase classname="sync.target validation rejects an absolute sync target path" name="sync.target validation rejects an absolute sync target path" time="0.053">
+    </testcase>
+  </testsuite>
+  <testsuite name="UnifiedServer MCP mode start" errors="0" failures="0" skipped="0" timestamp="2026-04-13T21:56:36" time="0.635" tests="3">
+    <testcase classname="UnifiedServer MCP mode start creates EnvCPServer and calls start() in MCP mode" name="UnifiedServer MCP mode start creates EnvCPServer and calls start() in MCP mode" time="0.054">
+    </testcase>
+    <testcase classname="UnifiedServer SIGTERM handler calls stop() and process.exit(0) on SIGTERM" name="UnifiedServer SIGTERM handler calls stop() and process.exit(0) on SIGTERM" time="0.046">
+    </testcase>
+    <testcase classname="UnifiedServer handleGeminiRequest /v1/functions/call routes /v1/functions/call to Gemini handler via direct call" name="UnifiedServer handleGeminiRequest /v1/functions/call routes /v1/functions/call to Gemini handler via direct call" time="0.017">
+    </testcase>
+  </testsuite>
+  <testsuite name="BaseAdapter.syncToEnv path hardening" errors="0" failures="0" skipped="0" timestamp="2026-04-13T21:56:36" time="0.705" tests="3">
+    <testcase classname="BaseAdapter.syncToEnv path hardening writes to a normal relative sync target" name="BaseAdapter.syncToEnv path hardening writes to a normal relative sync target" time="0.074">
+    </testcase>
+    <testcase classname="BaseAdapter.syncToEnv path hardening blocks ../ traversal targets" name="BaseAdapter.syncToEnv path hardening blocks ../ traversal targets" time="0.139">
+    </testcase>
+    <testcase classname="BaseAdapter.syncToEnv path hardening blocks absolute sync targets at runtime guard" name="BaseAdapter.syncToEnv path hardening blocks absolute sync targets at runtime guard" time="0.038">
+    </testcase>
+  </testsuite>
+  <testsuite name="validateApiKey" errors="0" failures="0" skipped="0" timestamp="2026-04-13T21:56:37" time="0.351" tests="15">
+    <testcase classname="validateApiKey returns false for undefined" name="validateApiKey returns false for undefined" time="0.016">
+    </testcase>
+    <testcase classname="validateApiKey returns false for wrong length" name="validateApiKey returns false for wrong length" time="0.001">
+    </testcase>
+    <testcase classname="validateApiKey returns false for wrong key" name="validateApiKey returns false for wrong key" time="0.001">
+    </testcase>
+    <testcase classname="validateApiKey returns true for correct key" name="validateApiKey returns true for correct key" time="0.001">
+    </testcase>
+    <testcase classname="RateLimiter allows requests within limit" name="RateLimiter allows requests within limit" time="0.01">
+    </testcase>
+    <testcase classname="RateLimiter blocks requests over limit" name="RateLimiter blocks requests over limit" time="0.002">
+    </testcase>
+    <testcase classname="RateLimiter tracks IPs independently" name="RateLimiter tracks IPs independently" time="0.002">
+    </testcase>
+    <testcase classname="RateLimiter reports remaining requests" name="RateLimiter reports remaining requests" time="0.009">
+    </testcase>
+    <testcase classname="RateLimiter default constructor — line 102 uses default maxRequests=60 and windowMs=60000" name="RateLimiter default constructor — line 102 uses default maxRequests=60 and windowMs=60000" time="0.002">
+    </testcase>
+    <testcase classname="setSecurityHeaders sets all required security headers" name="setSecurityHeaders sets all required security headers" time="0.003">
+    </testcase>
+    <testcase classname="rateLimitMiddleware strips ::ffff: prefix from IP" name="rateLimitMiddleware strips ::ffff: prefix from IP" time="0.009">
+    </testcase>
+    <testcase classname="rateLimitMiddleware allows whitelisted IPs" name="rateLimitMiddleware allows whitelisted IPs" time="0.002">
+    </testcase>
+    <testcase classname="rateLimitMiddleware uses unknown when remoteAddress is undefined — line 155" name="rateLimitMiddleware uses unknown when remoteAddress is undefined — line 155" time="0.002">
+    </testcase>
+    <testcase classname="RateLimiter — unref branch (line 107) calls unref on the cleanup timer when unref is available" name="RateLimiter — unref branch (line 107) calls unref on the cleanup timer when unref is available" time="0.002">
+    </testcase>
+    <testcase classname="RateLimiter — unref branch (line 107) handles a timer object without unref (false branch of line 107)" name="RateLimiter — unref branch (line 107) handles a timer object without unref (false branch of line 107)" time="0.002">
+    </testcase>
+  </testsuite>
+  <testsuite name="fetchLatestRelease mocked" errors="0" failures="0" skipped="0" timestamp="2026-04-13T21:56:37" time="0.43" tests="5">
+    <testcase classname="fetchLatestRelease mocked rejects on non-200 status" name="fetchLatestRelease mocked rejects on non-200 status" time="0.06">
+    </testcase>
+    <testcase classname="fetchLatestRelease mocked rejects on non-200 with no message" name="fetchLatestRelease mocked rejects on non-200 with no message" time="0.075">
+    </testcase>
+    <testcase classname="fetchLatestRelease mocked rejects when response body is not JSON" name="fetchLatestRelease mocked rejects when response body is not JSON" time="0.011">
+    </testcase>
+    <testcase classname="fetchLatestRelease mocked rejects on request error" name="fetchLatestRelease mocked rejects on request error" time="0.003">
+    </testcase>
+    <testcase classname="fetchLatestRelease mocked rejects on timeout" name="fetchLatestRelease mocked rejects on timeout" time="0.013">
+    </testcase>
+  </testsuite>
+  <testsuite name="BaseAdapter runCommand timeout" errors="0" failures="0" skipped="0" timestamp="2026-04-13T21:56:37" time="0.639" tests="3">
+    <testcase classname="BaseAdapter runCommand timeout kills process after 30s timeout and appends timeout message" name="BaseAdapter runCommand timeout kills process after 30s timeout and appends timeout message" time="0.095">
+    </testcase>
+    <testcase classname="BaseAdapter runCommand timeout sends SIGKILL if process is not killed after 5s grace period" name="BaseAdapter runCommand timeout sends SIGKILL if process is not killed after 5s grace period" time="0.018">
+    </testcase>
+    <testcase classname="BaseAdapter runCommand timeout does not send SIGKILL if process already killed" name="BaseAdapter runCommand timeout does not send SIGKILL if process already killed" time="0.023">
+    </testcase>
+  </testsuite>
+</testsuites>
