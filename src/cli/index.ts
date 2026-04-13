@@ -15,6 +15,7 @@ import { KeychainManager } from '../utils/keychain.js';
 import { HsmManager } from '../utils/hsm.js';
 import { checkForUpdate, formatUpdateMessage, logUpdateCheck } from '../utils/update-checker.js';
 import { LockoutManager } from '../utils/lockout.js';
+import { NotificationManager } from '../utils/notifications.js';
 import { Variable, EnvCPConfig } from '../types.js';
 import {
   getGlobalVaultPath,
@@ -429,7 +430,23 @@ program
     }
 
     const sessionDir = path.join(projectPath, path.dirname(config.session?.path || '.envcp/.session'));
-    const lockoutManager = new LockoutManager(path.join(sessionDir, '.lockout'));
+    
+    // Set up notifications if configured
+    const notificationConfig = config.security?.brute_force_protection?.notifications;
+    let lockoutManager: LockoutManager;
+    
+    if (notificationConfig && (notificationConfig.webhook_url || notificationConfig.email)) {
+      const notificationManager = new NotificationManager(notificationConfig, projectPath);
+      const notificationCallback = (event: Parameters<typeof notificationManager.sendLockoutNotification>[0]) => {
+        notificationManager.sendLockoutNotification(event).catch(() => {
+          // Silently ignore notification errors
+        });
+      };
+      lockoutManager = new LockoutManager(path.join(sessionDir, '.lockout'), notificationCallback);
+      lockoutManager.setNotificationSource('cli', '127.0.0.1', 'terminal');
+    } else {
+      lockoutManager = new LockoutManager(path.join(sessionDir, '.lockout'));
+    }
     
     // Use new brute_force_protection config if available, fall back to session config
     const bfpConfig = config.security?.brute_force_protection;

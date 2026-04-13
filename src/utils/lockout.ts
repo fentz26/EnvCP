@@ -22,11 +22,54 @@ export interface LockoutStatus {
   delay_seconds?: number;
 }
 
+export type LockoutNotificationCallback = (event: {
+  type: 'lockout_triggered' | 'permanent_lockout' | 'auth_failure';
+  timestamp: string;
+  attempts: number;
+  lockout_count: number;
+  permanent_lockout_count: number;
+  remaining_seconds?: number;
+  source: 'cli' | 'api' | 'unknown';
+  ip?: string;
+  user_agent?: string;
+}) => void;
+
 export class LockoutManager {
   private lockoutPath: string;
+  private notificationCallback?: LockoutNotificationCallback;
+  private notificationSource: 'cli' | 'api' | 'unknown' = 'unknown';
+  private notificationIp?: string;
+  private notificationUserAgent?: string;
 
-  constructor(lockoutPath: string) {
+  constructor(lockoutPath: string, notificationCallback?: LockoutNotificationCallback) {
     this.lockoutPath = lockoutPath;
+    this.notificationCallback = notificationCallback;
+  }
+
+  setNotificationSource(source: 'cli' | 'api' | 'unknown', ip?: string, userAgent?: string): void {
+    this.notificationSource = source;
+    this.notificationIp = ip;
+    this.notificationUserAgent = userAgent;
+  }
+
+  private sendNotification(type: 'lockout_triggered' | 'permanent_lockout' | 'auth_failure', data: LockoutData, remainingSeconds?: number, attempts?: number): void {
+    if (!this.notificationCallback) return;
+    
+    try {
+      this.notificationCallback({
+        type,
+        timestamp: new Date().toISOString(),
+        attempts: attempts ?? data.attempts,
+        lockout_count: data.lockout_count,
+        permanent_lockout_count: data.permanent_lockout_count,
+        remaining_seconds: remainingSeconds,
+        source: this.notificationSource,
+        ip: this.notificationIp,
+        user_agent: this.notificationUserAgent
+      });
+    } catch {
+      // Silently ignore notification errors
+    }
   }
 
   private async read(): Promise<LockoutData> {
@@ -131,6 +174,9 @@ export class LockoutManager {
         permanent_locked: true,
         locked_until: null
       });
+      
+      this.sendNotification('permanent_lockout', data);
+      
       return { 
         locked: true, 
         permanent_locked: true,
@@ -154,6 +200,8 @@ export class LockoutManager {
         permanent_locked: false
       });
       
+      this.sendNotification('lockout_triggered', data, cooldown);
+      
       return { 
         locked: true, 
         permanent_locked: false,
@@ -165,6 +213,9 @@ export class LockoutManager {
     }
 
     await this.write({ ...data, attempts });
+    
+    // Send auth failure notification
+    this.sendNotification('auth_failure', data, undefined, attempts);
     
     const result: LockoutStatus = { 
       locked: false, 
