@@ -233,6 +233,10 @@ export abstract class BaseAdapter {
       throw new Error('AI read access is disabled');
     }
 
+    if (!validateVariableName(args.name)) {
+      throw new Error(`Invalid variable name '${args.name}'. Must match [A-Za-z_][A-Za-z0-9_]*`);
+    }
+
     const variable = await this.storage.get(args.name);
 
     if (!variable) {
@@ -481,6 +485,10 @@ export abstract class BaseAdapter {
       throw new Error('AI delete access is disabled');
     }
 
+    if (!validateVariableName(args.name)) {
+      throw new Error(`Invalid variable name '${args.name}'. Must match [A-Za-z_][A-Za-z0-9_]*`);
+    }
+
     const deleted = await this.storage.delete(args.name);
 
     await this.logs.log({
@@ -609,6 +617,10 @@ export abstract class BaseAdapter {
     accessible: boolean;
     message: string;
   }> {
+    if (!validateVariableName(args.name)) {
+      throw new Error(`Invalid variable name '${args.name}'. Must match [A-Za-z_][A-Za-z0-9_]*`);
+    }
+
     const variable = await this.storage.get(args.name);
     const exists = !!variable;
     const blacklisted = isBlacklisted(args.name, this.config);

@@ -110,6 +110,11 @@ describe('BaseAdapter tool operations', () => {
       await expect(a.runGetVariable({ name: 'X' })).rejects.toThrow('AI read access is disabled');
     });
 
+    it('rejects invalid variable names', async () => {
+      await expect(adapter.runGetVariable({ name: '123bad' })).rejects.toThrow('Invalid variable name');
+      await expect(adapter.runGetVariable({ name: '../etc/passwd' })).rejects.toThrow('Invalid variable name');
+    });
+
     it('throws when variable not found', async () => {
       await expect(adapter.runGetVariable({ name: 'MISSING' })).rejects.toThrow("Variable 'MISSING' not found");
     });
@@ -187,6 +192,10 @@ describe('BaseAdapter tool operations', () => {
       await expect(a.runDeleteVariable({ name: 'X' })).rejects.toThrow('AI delete access is disabled');
     });
 
+    it('rejects invalid variable names', async () => {
+      await expect(adapter.runDeleteVariable({ name: '123bad' })).rejects.toThrow('Invalid variable name');
+    });
+
     it('deletes existing variable', async () => {
       await adapter.seedVariable({ name: 'DEL', value: 'x', encrypted: false, created: now, updated: now, sync_to_env: true });
       const result = await adapter.runDeleteVariable({ name: 'DEL' });
@@ -242,6 +251,10 @@ describe('BaseAdapter tool operations', () => {
   });
 
   describe('checkAccess', () => {
+    it('rejects invalid variable names', async () => {
+      await expect(adapter.runCheckAccess({ name: '123bad' })).rejects.toThrow('Invalid variable name');
+    });
+
     it('returns accessible for valid variable', async () => {
       await adapter.seedVariable({ name: 'APP_KEY', value: 'v', encrypted: false, created: now, updated: now, sync_to_env: true });
       const result = await adapter.runCheckAccess({ name: 'APP_KEY' });
