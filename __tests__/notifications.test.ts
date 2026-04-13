@@ -384,7 +384,6 @@ describe('NotificationManager', () => {
           resolve();
         });
       });
-      }, 100);
     } finally {
       if (originalNodeEnv !== undefined) {
         process.env.NODE_ENV = originalNodeEnv;
