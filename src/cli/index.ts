@@ -396,6 +396,7 @@ program
   .command('unlock')
   .description('Unlock EnvCP session with password')
   .option('-p, --password <password>', 'Password (will prompt if not provided)')
+  .option('--recovery-key <key>', 'Recovery key to clear permanent lockout')
   .option('--save-to-keychain', 'Save password to OS keychain for auto-unlock')
   .option('--setup-hsm', 'Protect vault password with hardware security module')
   .option('--hsm-type <type>', 'HSM type: yubikey | gpg | pkcs11 (default: yubikey)')
@@ -448,6 +449,45 @@ program
       lockoutManager = new LockoutManager(path.join(sessionDir, '.lockout'));
     }
     
+    // Handle recovery key if provided
+    if (options.recoveryKey) {
+      const recoveryPath = path.join(projectPath, config.security?.recovery_file || '.envcp/.recovery');
+      if (!await pathExists(recoveryPath)) {
+        console.log(chalk.red('No recovery file found.'));
+        return;
+      }
+      
+      const recoveryData = await fs.readFile(recoveryPath, 'utf8');
+      try {
+        await recoverPassword(recoveryData, options.recoveryKey);
+        // Recovery key is valid - clear permanent lockout
+        await lockoutManager.clearPermanentLockout();
+        console.log(chalk.green('Permanent lockout cleared.'));
+        
+        // Log recovery event
+        const logManager = new LogManager(path.join(projectPath, '.envcp', 'logs'), config.audit);
+        await logManager.init();
+        await logManager.log({
+          timestamp: new Date().toISOString(),
+          operation: 'unlock',
+          variable: '',
+          source: 'cli',
+          success: true,
+          message: 'Permanent lockout cleared with recovery key (via --recovery-key flag)',
+          session_id: '',
+          client_id: 'cli',
+          client_type: 'terminal',
+          ip: '127.0.0.1'
+        });
+        
+        console.log(chalk.yellow('Note: You still need to enter the correct password.'));
+        // Continue with password prompt
+      } catch {
+        console.log(chalk.red('Invalid recovery key.'));
+        return;
+      }
+    }
+    
     // Use new brute_force_protection config if available, fall back to session config
     const bfpConfig = config.security?.brute_force_protection;
     const lockoutThreshold = bfpConfig?.max_attempts ?? config.session?.lockout_threshold ?? 5;
@@ -483,7 +523,53 @@ program
         if (lockoutStatus.permanent_locked) {
           console.log(chalk.red.bold('PERMANENT LOCKOUT: Too many failed attempts.'));
           console.log(chalk.red('Recovery key or administrator intervention required.'));
-          return;
+          
+          // Offer recovery key option
+          const { useRecovery } = await inquirer.prompt([
+            { type: 'confirm', name: 'useRecovery', message: 'Use recovery key to clear lockout?', default: true }
+          ]);
+          
+          if (useRecovery) {
+            const { recoveryKey } = await inquirer.prompt([
+              { type: 'password', name: 'recoveryKey', message: 'Enter recovery key:', mask: '*' }
+            ]);
+            
+            const recoveryPath = path.join(projectPath, config.security?.recovery_file || '.envcp/.recovery');
+            if (!await pathExists(recoveryPath)) {
+              console.log(chalk.red('No recovery file found.'));
+              return;
+            }
+            
+            const recoveryData = await fs.readFile(recoveryPath, 'utf8');
+            try {
+              await recoverPassword(recoveryData, recoveryKey);
+              // Recovery key is valid - clear permanent lockout
+              await lockoutManager.clearPermanentLockout();
+              console.log(chalk.green('Permanent lockout cleared. You can now attempt to unlock.'));
+              console.log(chalk.yellow('Note: You still need to enter the correct password.'));
+              
+              // Log recovery event
+              await logManager.log({
+                timestamp: new Date().toISOString(),
+                operation: 'unlock',
+                variable: '',
+                source: 'cli',
+                success: true,
+                message: 'Permanent lockout cleared with recovery key',
+                session_id: '',
+                client_id: 'cli',
+                client_type: 'terminal',
+                ip: '127.0.0.1'
+              });
+              
+              // Continue with password prompt
+            } catch {
+              console.log(chalk.red('Invalid recovery key.'));
+              return;
+            }
+          } else {
+            return;
+          }
         } else {
           console.log(chalk.red(`Too many failed attempts. Try again in ${lockoutStatus.remaining_seconds} second(s).`));
           return;
