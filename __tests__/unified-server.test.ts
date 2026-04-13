@@ -1079,4 +1079,44 @@ describe('UnifiedServer — branch coverage paths', () => {
     const { status } = await fetch(port, 'GET', '/api/health', undefined, auth);
     expect(status).toBe(200);
   });
+
+  it('detectClientType called with no pathname arg hits line 38 branch', () => {
+    // Call detectClientType without pathname to exercise the undefined branch (line 38)
+    const fakeReq = {
+      headers: { 'user-agent': 'test' },
+      url: '/api/health',
+    } as http.IncomingMessage;
+    const result = (server as any).detectClientType(fakeReq);
+    expect(typeof result).toBe('string');
+  });
+
+  it('Gemini handler throws non-Error → String(error) branch (line 520)', async () => {
+    // /v1/function_calls routes to handleGeminiRequest; patch processFunctionCalls to throw a string
+    const ga = (server as any).geminiAdapter;
+    if (ga) {
+      const orig = ga.processFunctionCalls?.bind(ga);
+      ga.processFunctionCalls = async () => { throw 'gemini-non-error'; };
+      const { status } = await fetch(port, 'POST', '/v1/function_calls',
+        { functionCalls: [{ name: 'envcp_list', args: {} }] }, auth);
+      expect(status).toBe(500);
+      if (orig) ga.processFunctionCalls = orig;
+    } else {
+      expect(server).toBeDefined();
+    }
+  });
+
+  it('OpenAI handler throws non-Error → String(error) branch in handleOpenAIRequest', async () => {
+    const oa = (server as any).openaiAdapter;
+    if (oa) {
+      const orig = oa.callTool?.bind(oa);
+      oa.callTool = async () => { throw 'openai-non-error'; };
+      // /v1/functions/call routes to handleOpenAIRequest
+      const { status } = await fetch(port, 'POST', '/v1/functions/call',
+        { name: 'envcp_list', arguments: {} }, auth);
+      expect(status).toBe(500);
+      if (orig) oa.callTool = orig;
+    } else {
+      expect(server).toBeDefined();
+    }
+  });
 });

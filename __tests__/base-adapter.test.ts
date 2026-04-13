@@ -737,3 +737,56 @@ describe('BaseAdapter constructor with custom session config', () => {
     }
   });
 });
+
+describe('parseCommand — empty command (line 657)', () => {
+  let tmpDir: string;
+  let adapter: TestAdapter;
+
+  beforeEach(async () => {
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-empty-cmd-'));
+    adapter = new TestAdapter(makeConfig({ allow_ai_execute: true }), tmpDir);
+    await adapter.init();
+  });
+
+  afterEach(async () => {
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  });
+
+  it('throws Empty command error for blank string', () => {
+    expect(() => adapter.runParseCommand('')).toThrow('Empty command');
+  });
+
+  it('throws Empty command error for whitespace-only string', () => {
+    expect(() => adapter.runParseCommand('   ')).toThrow('Empty command');
+  });
+});
+
+describe('checkRootDelete — --recursive flag (line 687 branch)', () => {
+  let tmpDir: string;
+  let adapter: TestAdapter;
+
+  beforeEach(async () => {
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-rootdel-'));
+    adapter = new TestAdapter(
+      makeConfig({ allow_ai_execute: true, allowed_commands: ['rm'] }),
+      tmpDir,
+    );
+    await adapter.init();
+  });
+
+  afterEach(async () => {
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  });
+
+  it('blocks rm --recursive / (long flag branch)', async () => {
+    await expect(
+      adapter.runRunCommand({ command: 'rm --recursive /', variables: [] }),
+    ).rejects.toThrow('root filesystem');
+  });
+
+  it('blocks rm -recursive / (single-dash long form)', async () => {
+    await expect(
+      adapter.runRunCommand({ command: 'rm -recursive /', variables: [] }),
+    ).rejects.toThrow('root filesystem');
+  });
+});
