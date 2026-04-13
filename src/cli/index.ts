@@ -25,7 +25,7 @@ import {
   initNamedVault,
 } from '../vault/index.js';
 
-async function withSession(fn: (storage: StorageManager, password: string, config: EnvCPConfig, projectPath: string) => Promise<void>, vaultOverride?: 'global' | 'project'): Promise<void> {
+async function withSession(fn: (storage: StorageManager, password: string, config: EnvCPConfig, projectPath: string, logManager: LogManager) => Promise<void>, vaultOverride?: 'global' | 'project'): Promise<void> {
   const projectPath = process.cwd();
   const config = await loadConfig(projectPath);
 
@@ -37,16 +37,23 @@ async function withSession(fn: (storage: StorageManager, password: string, confi
 
   if (config.encryption?.enabled === false) {
     const storage = new StorageManager(vaultPath, false);
-    await fn(storage, '', config, projectPath);
+    const logManager = new LogManager(path.join(projectPath, '.envcp', 'logs'), config.audit);
+    await logManager.init();
+    await fn(storage, '', config, projectPath, logManager);
     return;
   }
 
-  const sessionManager = new SessionManager(
-    path.join(projectPath, config.session?.path || '.envcp/.session'),
-    config.session?.timeout_minutes || 30,
-    config.session?.max_extensions || 5
-  );
-  await sessionManager.init();
+    const sessionManager = new SessionManager(
+      path.join(projectPath, config.session?.path || '.envcp/.session'),
+      config.session?.timeout_minutes || 30,
+      config.session?.max_extensions || 5
+    );
+
+    await sessionManager.init();
+
+    // Initialize audit logging
+    const logManager = new LogManager(path.join(projectPath, '.envcp', 'logs'), config.audit);
+    await logManager.init();
 
   let session = await sessionManager.load();
   let password = '';
@@ -140,7 +147,7 @@ async function withSession(fn: (storage: StorageManager, password: string, confi
   const storage = new StorageManager(vaultPath, config.storage.encrypted);
   if (password) storage.setPassword(password);
 
-  await fn(storage, password, config, projectPath);
+  await fn(storage, password, config, projectPath, logManager);
 }
 
 const program = new Command();
@@ -196,11 +203,37 @@ program
     if (securityChoice === 'none') {
       config.encryption = { enabled: false };
       config.storage.encrypted = false;
-      config.security = { mode: 'recoverable', recovery_file: '.envcp/.recovery' };
+      config.security = { 
+        mode: 'recoverable', 
+        recovery_file: '.envcp/.recovery',
+        brute_force_protection: {
+          enabled: true,
+          max_attempts: 5,
+          lockout_duration: 300,
+          progressive_delay: true,
+          max_delay: 60,
+          permanent_lockout_threshold: 50,
+          permanent_lockout_action: 'require_recovery_key',
+          notifications: {}
+        }
+      };
     } else {
       config.encryption = { enabled: true };
       config.storage.encrypted = true;
-      config.security = { mode: securityChoice, recovery_file: '.envcp/.recovery' };
+      config.security = { 
+        mode: securityChoice, 
+        recovery_file: '.envcp/.recovery',
+        brute_force_protection: {
+          enabled: true,
+          max_attempts: 5,
+          lockout_duration: 300,
+          progressive_delay: true,
+          max_delay: 60,
+          permanent_lockout_threshold: 50,
+          permanent_lockout_action: 'require_recovery_key',
+          notifications: {}
+        }
+      };
     }
 
     // For encrypted modes: get password now
@@ -397,8 +430,14 @@ program
 
     const sessionDir = path.join(projectPath, path.dirname(config.session?.path || '.envcp/.session'));
     const lockoutManager = new LockoutManager(path.join(sessionDir, '.lockout'));
-    const lockoutThreshold = config.session?.lockout_threshold ?? 5;
-    const lockoutBaseSeconds = config.session?.lockout_base_seconds ?? 60;
+    
+    // Use new brute_force_protection config if available, fall back to session config
+    const bfpConfig = config.security?.brute_force_protection;
+    const lockoutThreshold = bfpConfig?.max_attempts ?? config.session?.lockout_threshold ?? 5;
+    const lockoutBaseSeconds = bfpConfig?.lockout_duration ?? config.session?.lockout_base_seconds ?? 60;
+    const progressiveDelay = bfpConfig?.progressive_delay ?? true;
+    const maxDelay = bfpConfig?.max_delay ?? 60;
+    const permanentThreshold = bfpConfig?.permanent_lockout_threshold ?? 0;
 
     const sessionManager = new SessionManager(
       path.join(projectPath, config.session?.path || '.envcp/.session'),
@@ -407,6 +446,10 @@ program
     );
 
     await sessionManager.init();
+
+    // Initialize audit logging
+    const logManager = new LogManager(path.join(projectPath, '.envcp', 'logs'), config.audit);
+    await logManager.init();
 
     const storage = new StorageManager(
       path.join(projectPath, config.storage.path),
@@ -420,8 +463,14 @@ program
     if (storeExists) {
       const lockoutStatus = await lockoutManager.check();
       if (lockoutStatus.locked) {
-        console.log(chalk.red(`Too many failed attempts. Try again in ${lockoutStatus.remaining_seconds} second(s).`));
-        return;
+        if (lockoutStatus.permanent_locked) {
+          console.log(chalk.red.bold('PERMANENT LOCKOUT: Too many failed attempts.'));
+          console.log(chalk.red('Recovery key or administrator intervention required.'));
+          return;
+        } else {
+          console.log(chalk.red(`Too many failed attempts. Try again in ${lockoutStatus.remaining_seconds} second(s).`));
+          return;
+        }
       }
     }
 
@@ -457,12 +506,71 @@ program
       await storage.load();
     } catch (error) {
       if (storeExists) {
-        const status = await lockoutManager.recordFailure(lockoutThreshold, lockoutBaseSeconds);
-        if (status.locked) {
+        const status = await lockoutManager.recordFailure(
+          lockoutThreshold, 
+          lockoutBaseSeconds,
+          progressiveDelay,
+          maxDelay,
+          permanentThreshold
+        );
+        
+        // Log the failed attempt
+        await logManager.log({
+          timestamp: new Date().toISOString(),
+          operation: 'auth_failure',
+          variable: '',
+          source: 'cli',
+          success: false,
+          message: `Failed unlock attempt (attempt ${status.attempts})`,
+          session_id: '',
+          client_id: 'cli',
+          client_type: 'terminal',
+          ip: '127.0.0.1'
+        });
+        
+        if (status.permanent_locked) {
+          console.log(chalk.red.bold('PERMANENT LOCKOUT TRIGGERED: Too many failed attempts.'));
+          console.log(chalk.red('Recovery key or administrator intervention required.'));
+          
+          // Log permanent lockout event
+          await logManager.log({
+            timestamp: new Date().toISOString(),
+            operation: 'permanent_lockout',
+            variable: '',
+            source: 'cli',
+            success: false,
+            message: `Permanent lockout triggered after ${status.permanent_lockout_count} lockouts`,
+            session_id: '',
+            client_id: 'cli',
+            client_type: 'terminal',
+            ip: '127.0.0.1'
+          });
+        } else if (status.locked) {
           console.log(chalk.red(`Invalid password. Too many failed attempts — locked out for ${status.remaining_seconds} second(s).`));
+          
+          // Log lockout event
+          await logManager.log({
+            timestamp: new Date().toISOString(),
+            operation: 'lockout_triggered',
+            variable: '',
+            source: 'cli',
+            success: false,
+            message: `Lockout triggered for ${status.remaining_seconds}s (lockout #${status.lockout_count})`,
+            session_id: '',
+            client_id: 'cli',
+            client_type: 'terminal',
+            ip: '127.0.0.1'
+          });
         } else {
           const remaining = lockoutThreshold - status.attempts;
-          console.log(chalk.red(`Invalid password. ${remaining} attempt(s) remaining before lockout.`));
+          let message = `Invalid password. ${remaining} attempt(s) remaining before lockout.`;
+          
+          // Show progressive delay if applied
+          if (status.delay_seconds && status.delay_seconds > 0) {
+            message += ` (Delayed ${status.delay_seconds}s)`;
+          }
+          
+          console.log(chalk.red(message));
         }
       } else {
         console.log(chalk.red('Invalid password'));
@@ -474,6 +582,20 @@ program
     await lockoutManager.reset();
 
     const session = await sessionManager.create(password);
+
+    // Log successful unlock
+    await logManager.log({
+      timestamp: new Date().toISOString(),
+      operation: 'unlock',
+      variable: '',
+      source: 'cli',
+      success: true,
+      message: 'Session unlocked successfully',
+      session_id: session.id,
+      client_id: 'cli',
+      client_type: 'terminal',
+      ip: '127.0.0.1'
+    });
 
     console.log(chalk.green('Session unlocked!'));
     console.log(chalk.gray(`  Session ID: ${session.id}`));

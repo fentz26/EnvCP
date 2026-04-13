@@ -57,6 +57,16 @@ const DEFAULT_CONFIG: Partial<EnvCPConfig> = {
   security: {
     mode: 'recoverable',
     recovery_file: '.envcp/.recovery',
+    brute_force_protection: {
+      enabled: true,
+      max_attempts: 5,
+      lockout_duration: 300,
+      progressive_delay: true,
+      max_delay: 60,
+      permanent_lockout_threshold: 50,
+      permanent_lockout_action: 'require_recovery_key',
+      notifications: {},
+    },
   },
   password: {
     min_length: 8,
