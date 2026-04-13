@@ -127,7 +127,7 @@ async startServer(port: number, host: string, apiKey?: string, rateLimitConfig?:
 
   // Initialize lockout manager for API key authentication failures
   const bfpConfig = this.config.security?.brute_force_protection;
-  if (bfpConfig?.enabled !== false) {
+  if (bfpConfig && bfpConfig.enabled !== false) {
     const sessionDir = path.join(this.projectPath, path.dirname(this.config.session?.path || '.envcp/.session'));
     const lockoutPath = path.join(sessionDir, '.lockout-api');
     
