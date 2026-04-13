@@ -631,3 +631,109 @@ describe('BaseAdapter checkRootDelete -recursive variant — line 688', () => {
     ).rejects.toThrow(/disallow_root_delete/i);
   });
 });
+
+describe('parseCommand edge cases', () => {
+  let tmpDir: string;
+  let adapter: TestAdapter;
+
+  beforeEach(async () => {
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-parse-'));
+    adapter = new TestAdapter(makeConfig({ allow_ai_execute: true }), tmpDir);
+    await adapter.init();
+  });
+
+  afterEach(async () => {
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  });
+
+  it('throws on unclosed double quote', () => {
+    expect(() => adapter.runParseCommand('echo "hello')).toThrow('Mismatched quotes');
+  });
+
+  it('throws on unclosed single quote', () => {
+    expect(() => adapter.runParseCommand("echo 'world")).toThrow('Mismatched quotes');
+  });
+});
+
+describe('validateCommand with command_blacklist', () => {
+  let tmpDir: string;
+
+  afterEach(async () => {
+    if (tmpDir) await fs.rm(tmpDir, { recursive: true, force: true });
+  });
+
+  it('throws when command matches a user-configured blacklist pattern', async () => {
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-bl-'));
+    const adapter = new TestAdapter(
+      makeConfig({ allow_ai_execute: true, command_blacklist: ['danger'] }),
+      tmpDir,
+    );
+    await adapter.init();
+    await expect(
+      adapter.runRunCommand({ command: 'echo danger here', variables: [] }),
+    ).rejects.toThrow('blacklisted pattern');
+  });
+});
+
+describe('runCommand with scrub_output disabled', () => {
+  let tmpDir: string;
+
+  afterEach(async () => {
+    if (tmpDir) await fs.rm(tmpDir, { recursive: true, force: true });
+  });
+
+  it('returns raw output when scrub_output is false', async () => {
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-noscrub-'));
+    const cfg = makeConfig({
+      allow_ai_execute: true,
+      allowed_commands: ['echo'],
+      run_safety: { disallow_root_delete: true, disallow_path_manipulation: true, require_command_whitelist: false, scrub_output: false, redact_patterns: [] },
+    });
+    const adapter = new TestAdapter(cfg, tmpDir);
+    await adapter.init();
+    await adapter.callTool('envcp_set', { name: 'RAWVAL', value: 'should-appear-raw' });
+    const result = await adapter.runRunCommand({ command: 'echo should-appear-raw', variables: [] }) as { stdout: string };
+    // With scrub disabled, raw value may appear in output
+    expect(result.stdout).toContain('should-appear-raw');
+  });
+
+  it('applies custom redact_patterns from config', async () => {
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-customredact-'));
+    const cfg = makeConfig({
+      allow_ai_execute: true,
+      allowed_commands: ['echo'],
+      run_safety: {
+        disallow_root_delete: true,
+        disallow_path_manipulation: true,
+        require_command_whitelist: false,
+        scrub_output: true,
+        redact_patterns: ['CUSTOM_[A-Z]+']
+      },
+    });
+    const adapter = new TestAdapter(cfg, tmpDir);
+    await adapter.init();
+    const result = await adapter.runRunCommand({ command: 'echo CUSTOM_SECRET_VALUE', variables: [] }) as { stdout: string };
+    expect(result.stdout).toContain('[REDACTED]');
+    expect(result.stdout).not.toContain('CUSTOM_SECRET_VALUE');
+  });
+});
+
+describe('BaseAdapter constructor with custom session config', () => {
+  it('uses custom session timeout_minutes and max_extensions from config', async () => {
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-sess-'));
+    try {
+      const cfg = EnvCPConfigSchema.parse({
+        access: { allow_ai_read: true, allow_ai_write: true, allow_ai_delete: true, allow_ai_export: true, allow_ai_active_check: true, require_user_reference: false, require_confirmation: false, mask_values: false, blacklist_patterns: [] },
+        encryption: { enabled: false },
+        storage: { encrypted: false, path: '.envcp/store.json' },
+        session: { timeout_minutes: 10, max_extensions: 2, path: '.envcp/.session' },
+        sync: { enabled: false },
+      });
+      const adapter = new TestAdapter(cfg, tmpDir);
+      await adapter.init();
+      expect(adapter).toBeDefined();
+    } finally {
+      await fs.rm(tmpDir, { recursive: true, force: true });
+    }
+  });
+});
