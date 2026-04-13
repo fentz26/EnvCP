@@ -70,6 +70,14 @@ describe('NotificationManager', () => {
     const wrongLength = 'abc';
     const isValidWrongLength = NotificationManager.verifySignature(payload, wrongLength, secret);
     expect(isValidWrongLength).toBe(false);
+    
+    // Test with empty signature
+    const isValidEmpty = NotificationManager.verifySignature(payload, '', secret);
+    expect(isValidEmpty).toBe(false);
+    
+    // Test with null signature (should handle gracefully)
+    const isValidNull = NotificationManager.verifySignature(payload, null as any, secret);
+    expect(isValidNull).toBe(false);
   });
   
   it('should not send notification without config', async () => {
