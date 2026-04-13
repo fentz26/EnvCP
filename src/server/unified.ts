@@ -537,5 +537,6 @@ const whitelist = rl?.whitelist ?? [];
     if (this.geminiAdapter) {
       this.geminiAdapter.stopServer();
     }
+    this.rateLimiter?.destroy();
   }
 }
