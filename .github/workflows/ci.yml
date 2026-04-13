@@ -28,6 +28,10 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Security lint
+        if: matrix.node-version == 20
+        run: npm run lint
+
       - name: Build
         run: npm run build
 

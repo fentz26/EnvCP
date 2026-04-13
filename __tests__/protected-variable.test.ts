@@ -323,4 +323,40 @@ describe('protected variables via BaseAdapter', () => {
       expect(result.success).toBe(true);
     });
   });
+
+  describe('setVariable — protected update edge cases', () => {
+    it('throws when updating a protected variable without providing variable_password', async () => {
+      const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-prot-'));
+      try {
+        const adapter = new TestAdapter(makeConfig(), tmpDir);
+        await adapter.init();
+        // Create protected variable
+        await adapter.runSetVariable({ name: 'PROTECTED', value: 'secret', protect: true, variable_password: 'pw123' });
+        // Try to update without password — should throw
+        await expect(
+          adapter.runSetVariable({ name: 'PROTECTED', value: 'new-value' }),
+        ).rejects.toThrow('protected');
+      } finally {
+        await fs.rm(tmpDir, { recursive: true, force: true });
+      }
+    });
+
+    it('unprotect uses decryptedValue when no new value provided', async () => {
+      const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-unprot-'));
+      try {
+        const adapter = new TestAdapter(makeConfig(), tmpDir);
+        await adapter.init();
+        // Create protected variable
+        await adapter.runSetVariable({ name: 'MYKEY', value: 'original-secret', protect: true, variable_password: 'pw123' });
+        // Unprotect WITHOUT providing a new value — should recover decryptedValue
+        const result = await adapter.runSetVariable({ name: 'MYKEY', unprotect: true, value: undefined as unknown as string, variable_password: 'pw123' });
+        expect(result.success).toBe(true);
+        // Value should be the original decrypted value
+        const gotten = await adapter.runGetVariable({ name: 'MYKEY', show_value: true });
+        expect((gotten as any).value).toBe('original-secret');
+      } finally {
+        await fs.rm(tmpDir, { recursive: true, force: true });
+      }
+    });
+  });
 });

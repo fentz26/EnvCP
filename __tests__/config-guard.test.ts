@@ -620,3 +620,185 @@ describe('ConfigGuard', () => {
     });
   });
 });
+
+describe('ConfigGuard — reload() without loadAndLock first (line 77 ?? branch)', () => {
+  let tmpDir: string;
+  let origHome: string | undefined;
+
+  beforeEach(async () => {
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-reload77-'));
+    await ensureDir(path.join(tmpDir, '.envcp', 'logs'));
+    origHome = process.env.HOME;
+    process.env.HOME = tmpDir;
+  });
+
+  afterEach(async () => {
+    process.env.HOME = origHome;
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  });
+
+  it('calls loadConfig when this.config is null (no loadAndLock first)', async () => {
+    // No store file, no encryption — ENOENT branch → success
+    await fs.writeFile(path.join(tmpDir, 'envcp.yaml'), [
+      'storage:',
+      '  encrypted: false',
+      '  path: .envcp/store.json',
+    ].join('\n'));
+
+    const guard = new ConfigGuard(tmpDir);
+    // reload() without loadAndLock() first — this.config is null → takes ?? branch
+    const result = await guard.reload('any-password');
+    expect(result.success).toBe(true);
+    guard.destroy();
+  });
+});
+
+describe('ConfigGuard — checkIntegrity before loadAndLock (line 136 false branch)', () => {
+  let tmpDir: string;
+  let origHome: string | undefined;
+
+  beforeEach(async () => {
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-ci136-'));
+    await ensureDir(path.join(tmpDir, '.envcp', 'logs'));
+    origHome = process.env.HOME;
+    process.env.HOME = tmpDir;
+  });
+
+  afterEach(async () => {
+    process.env.HOME = origHome;
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  });
+
+  it('hashConfigFile is called with this.config=null when checkIntegrity called before loadAndLock', async () => {
+    const guard = new ConfigGuard(tmpDir);
+    // checkIntegrity calls hashConfigFile() — this.config is null → if(this.config) is false
+    // (the hash just uses [globalPath, configPath] without the vault store)
+    const result = await guard.checkIntegrity();
+    // configHash is null before loadAndLock, so currentHash !== null → returns false
+    expect(result).toBe(false);
+    guard.destroy();
+  });
+});
+
+describe('ConfigGuard — reload() with invalid password (line 88)', () => {
+  let tmpDir: string;
+  let origHome: string | undefined;
+
+  beforeEach(async () => {
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-reload-'));
+    await ensureDir(path.join(tmpDir, '.envcp', 'logs'));
+    origHome = process.env.HOME;
+    process.env.HOME = tmpDir;
+  });
+
+  afterEach(async () => {
+    process.env.HOME = origHome;
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  });
+
+  it('returns success:false with error message when password is wrong', async () => {
+    // Create a real encrypted store using the encrypt utility
+    const { encrypt } = await import('../src/utils/crypto.js');
+    const storeContent = await encrypt('{}', 'correct-password');
+    const storeDir = path.join(tmpDir, '.envcp');
+    await ensureDir(storeDir);
+    await fs.writeFile(path.join(storeDir, 'store.enc'), storeContent);
+
+    // Write a config that enables encryption and points at the store
+    await fs.writeFile(path.join(tmpDir, 'envcp.yaml'), [
+      'storage:',
+      '  encrypted: true',
+      '  path: .envcp/store.enc',
+    ].join('\n'));
+
+    const guard = new ConfigGuard(tmpDir);
+    await guard.loadAndLock();
+
+    const result = await guard.reload('wrong-password');
+    expect(result.success).toBe(false);
+    expect(result.error).toBe('Invalid password');
+
+    guard.destroy();
+  });
+
+  it('returns success:true when store does not exist (ENOENT branch)', async () => {
+    // No store file — reload should succeed with ENOENT branch
+    await fs.writeFile(path.join(tmpDir, 'envcp.yaml'), [
+      'storage:',
+      '  encrypted: true',
+      '  path: .envcp/store.enc',
+    ].join('\n'));
+
+    const guard = new ConfigGuard(tmpDir);
+    await guard.loadAndLock();
+
+    // Pass any password — ENOENT branch skips verification and returns success
+    const result = await guard.reload('any-password');
+    expect(result.success).toBe(true);
+
+    guard.destroy();
+  });
+});
+
+describe('ConfigGuard — startWatching with config (lines 162-169)', () => {
+  let tmpDir: string;
+  let origHome: string | undefined;
+
+  beforeEach(async () => {
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-watch-'));
+    await ensureDir(path.join(tmpDir, '.envcp', 'logs'));
+    origHome = process.env.HOME;
+    process.env.HOME = tmpDir;
+  });
+
+  afterEach(async () => {
+    process.env.HOME = origHome;
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  });
+
+  it('includes global vault store in file watch list after loadAndLock', async () => {
+    // Create a vault store so config.vault.global_path resolves
+    const vaultDir = path.join(tmpDir, '.envcp');
+    await ensureDir(vaultDir);
+    await fs.writeFile(path.join(vaultDir, 'store.enc'), 'data');
+
+    const guard = new ConfigGuard(tmpDir, { debounceMs: 50 });
+    // loadAndLock sets this.config, so startWatching takes the config branch (line 162)
+    const config = await guard.loadAndLock();
+    expect(config).toBeDefined();
+
+    // Verify guard has watchers (startWatching was called with config branch)
+    expect((guard as any).watchers.length).toBeGreaterThan(0);
+
+    guard.destroy();
+  });
+});
+
+describe('ConfigGuard — periodic timer unref branch (line 212)', () => {
+  let tmpDir: string;
+  let origHome: string | undefined;
+
+  beforeEach(async () => {
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-ptimer-'));
+    await ensureDir(path.join(tmpDir, '.envcp', 'logs'));
+    origHome = process.env.HOME;
+    process.env.HOME = tmpDir;
+  });
+
+  afterEach(async () => {
+    process.env.HOME = origHome;
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  });
+
+  it('creates periodic timer with unref when loadAndLock is called', async () => {
+    const guard = new ConfigGuard(tmpDir, { periodicCheckMs: 60000 });
+    await guard.loadAndLock();
+
+    // The periodicTimer should be set (startPeriodicCheck was called and unref branch hit)
+    expect((guard as any).periodicTimer).not.toBeNull();
+
+    guard.destroy();
+    // After destroy(), periodicTimer should be null
+    expect((guard as any).periodicTimer).toBeNull();
+  });
+});

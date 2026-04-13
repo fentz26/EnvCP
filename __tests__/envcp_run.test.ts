@@ -98,7 +98,8 @@ describe('envcp_run policy filtering', () => {
 
     const result = await adapter.callTool('envcp_run', { command: 'env', variables: ['APP_TOKEN'] }) as { stdout: string; stderr: string };
 
-    expect(result.stdout).toContain('APP_TOKEN=allowed-value');
+    // Value is scrubbed from output (scrub_output: true by default)
+    expect(result.stdout).toContain('APP_TOKEN=[REDACTED]');
     expect(result.stderr).toBe('');
   });
 
@@ -130,7 +131,8 @@ describe('envcp_run policy filtering', () => {
       variables: ['APP_TOKEN', 'DENY_SECRET', 'SECRET_API_KEY'],
     }) as { stdout: string; stderr: string };
 
-    expect(result.stdout).toContain('APP_TOKEN=allowed-value');
+    // Injected value is scrubbed from output (scrub_output: true by default)
+    expect(result.stdout).toContain('APP_TOKEN=[REDACTED]');
     expect(result.stdout).not.toContain('DENY_SECRET=denied-value');
     expect(result.stdout).not.toContain('SECRET_API_KEY=blacklisted-value');
     expect(result.stderr).toContain('DENY_SECRET');
@@ -361,7 +363,8 @@ describe('envcp_run disallow_path_manipulation', () => {
     await adapter.callTool('envcp_set', { name: 'APP_PATH', value: '/usr/local/bin:/usr/bin' });
 
     // APP_PATH is not a critical key — should inject fine
+    // Value is scrubbed from output (scrub_output: true by default)
     const result = await adapter.callTool('envcp_run', { command: 'env', variables: ['APP_PATH'] }) as { stdout: string };
-    expect(result.stdout).toContain('APP_PATH=/usr/local/bin:/usr/bin');
+    expect(result.stdout).toContain('APP_PATH=[REDACTED]');
   });
 });

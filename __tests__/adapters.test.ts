@@ -806,3 +806,147 @@ describe('GeminiAdapter edge cases', () => {
     (adapter as any).callTool = orig;
   });
 });
+
+describe('Auth failure — REST adapter', () => {
+  let tmpDir: string;
+  let port: number;
+  let adapter: RESTAdapter;
+
+  beforeAll(async () => {
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-rest-auth-'));
+    adapter = new RESTAdapter(makeConfig(), tmpDir);
+    port = await getFreePort();
+    await adapter.startServer(port, '127.0.0.1', 'correct-key');
+  });
+
+  afterAll(async () => {
+    adapter.stopServer();
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  });
+
+  it('returns 401 with wrong API key', async () => {
+    const { status } = await fetch(port, 'GET', '/api/variables', undefined, { 'x-api-key': 'wrong-key' });
+    expect(status).toBe(401);
+  });
+});
+
+describe('Auth failure — OpenAI adapter', () => {
+  let tmpDir: string;
+  let port: number;
+  let adapter: OpenAIAdapter;
+
+  beforeAll(async () => {
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-oai-auth-'));
+    adapter = new OpenAIAdapter(makeConfig(), tmpDir);
+    port = await getFreePort();
+    await adapter.startServer(port, '127.0.0.1', 'correct-key');
+  });
+
+  afterAll(async () => {
+    adapter.stopServer();
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  });
+
+  it('returns 401 with wrong API key', async () => {
+    const { status } = await fetch(port, 'GET', '/v1/models', undefined, { 'authorization': 'Bearer wrong-key' });
+    expect(status).toBe(401);
+  });
+});
+
+describe('Auth failure — Gemini adapter', () => {
+  let tmpDir: string;
+  let port: number;
+  let adapter: GeminiAdapter;
+
+  beforeAll(async () => {
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-gem-auth-'));
+    adapter = new GeminiAdapter(makeConfig(), tmpDir);
+    port = await getFreePort();
+    await adapter.startServer(port, '127.0.0.1', 'correct-key');
+  });
+
+  afterAll(async () => {
+    adapter.stopServer();
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  });
+
+  it('returns 401 with wrong API key', async () => {
+    const { status } = await fetch(port, 'GET', '/v1/tools', undefined, { 'x-goog-api-key': 'wrong-key' });
+    expect(status).toBe(401);
+  });
+});
+
+describe('REST adapter — non-Error throw in catch (lines 249-250)', () => {
+  let tmpDir: string;
+  let port: number;
+  let adapter: RESTAdapter;
+
+  beforeAll(async () => {
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-rest-noe-'));
+    adapter = new RESTAdapter(makeConfig(), tmpDir);
+    port = await getFreePort();
+    await adapter.startServer(port, '127.0.0.1');
+  });
+
+  afterAll(async () => {
+    adapter.stopServer();
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  });
+
+  it('returns 500 when tool throws a non-Error string (String(error) branch)', async () => {
+    // Patch listVariables to throw a plain string
+    (adapter as any).listVariables = async () => { throw 'string error from list'; };
+    const { status } = await fetch(port, 'GET', '/api/variables');
+    expect(status).toBe(500);
+    // Restore
+    delete (adapter as any).listVariables;
+  });
+});
+
+describe('OpenAI adapter — non-Error throw in catch (line 91 branch)', () => {
+  let tmpDir: string;
+  let port: number;
+  let adapter: OpenAIAdapter;
+
+  beforeAll(async () => {
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-oai-noe-'));
+    adapter = new OpenAIAdapter(makeConfig(), tmpDir);
+    port = await getFreePort();
+    await adapter.startServer(port, '127.0.0.1');
+  });
+
+  afterAll(async () => {
+    adapter.stopServer();
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  });
+
+  it('returns 500 when callTool throws a non-Error string', async () => {
+    (adapter as any).callTool = async () => { throw 'string openai error'; };
+    const { status } = await fetch(port, 'POST', '/v1/functions/call', { name: 'envcp_list', arguments: {} });
+    expect(status).toBe(500);
+  });
+});
+
+describe('Gemini adapter — non-Error throw in catch (line 218 branch)', () => {
+  let tmpDir: string;
+  let port: number;
+  let adapter: GeminiAdapter;
+
+  beforeAll(async () => {
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-gem-noe-'));
+    adapter = new GeminiAdapter(makeConfig(), tmpDir);
+    port = await getFreePort();
+    await adapter.startServer(port, '127.0.0.1');
+  });
+
+  afterAll(async () => {
+    adapter.stopServer();
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  });
+
+  it('returns 500 when callTool throws a non-Error string', async () => {
+    (adapter as any).callTool = async () => { throw 'string gemini error'; };
+    const { status } = await fetch(port, 'POST', '/v1/functions/call', { name: 'envcp_list', args: {} });
+    expect(status).toBe(500);
+  });
+});

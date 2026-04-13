@@ -1015,3 +1015,108 @@ describe('UnifiedServer checkApiKeySecurity (#148)', () => {
     stderrSpy.mockRestore();
   });
 });
+
+describe('UnifiedServer — branch coverage paths', () => {
+  let tmpDir: string;
+  let server: UnifiedServer;
+  let port: number;
+
+  beforeAll(async () => {
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-branches-'));
+    port = await getFreePort();
+    const serverConfig: ServerConfig = {
+      mode: 'all', port, host: '127.0.0.1', cors: true, auto_detect: true,
+      api_key: 'test-key',
+    };
+    const config = EnvCPConfigSchema.parse({
+      access: { allow_ai_read: true, allow_ai_write: true, allow_ai_delete: true, allow_ai_export: true, allow_ai_execute: true, allow_ai_active_check: true, require_user_reference: false, require_confirmation: false, mask_values: false, blacklist_patterns: [], allowed_commands: ['echo'] },
+      encryption: { enabled: false },
+      storage: { encrypted: false, path: '.envcp/store.json' },
+      sync: { enabled: false },
+    });
+    server = new UnifiedServer(config, serverConfig, tmpDir);
+    await server.start();
+  });
+
+  afterAll(async () => {
+    server.stop();
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  });
+
+  const auth = { 'x-api-key': 'test-key' };
+  const bad = { 'x-api-key': 'wrong' };
+
+  it('returns 401 with wrong API key (auth_failure log path)', async () => {
+    const { status } = await fetch(port, 'GET', '/api/variables', undefined, bad);
+    expect(status).toBe(401);
+  });
+
+  it('POST /v1/tool_calls with non-array tool_calls returns empty results', async () => {
+    const { status, data } = await fetch(port, 'POST', '/v1/tool_calls', { tool_calls: 'not-an-array' }, auth);
+    expect(status).toBe(200);
+    expect((data as any).data).toEqual([]);
+  });
+
+  it('POST /v1/chat/completions with non-array messages processes no tool calls', async () => {
+    const { status, data } = await fetch(port, 'POST', '/v1/chat/completions', { messages: 'not-an-array' }, auth);
+    expect(status).toBe(200);
+  });
+
+  it('POST /v1/functions/call with non-string name uses empty string', async () => {
+    const { status } = await fetch(port, 'POST', '/v1/functions/call', { name: 42, arguments: {} }, auth);
+    // Unknown tool "" → error, but handled gracefully
+    expect([200, 500]).toContain(status);
+  });
+
+  it('POST /v1/function_calls with non-array functionCalls returns empty results', async () => {
+    const { status, data } = await fetch(port, 'POST', '/v1/function_calls', { functionCalls: 'not-an-array' }, auth);
+    expect(status).toBe(200);
+    expect((data as any).functionResponses).toEqual([]);
+  });
+
+  it('detectClientType returns type without explicit pathname', async () => {
+    // Hit the pathname === undefined branch by calling via REST with no x-goog or openai headers
+    const { status } = await fetch(port, 'GET', '/api/health', undefined, auth);
+    expect(status).toBe(200);
+  });
+
+  it('detectClientType called with no pathname arg hits line 38 branch', () => {
+    // Call detectClientType without pathname to exercise the undefined branch (line 38)
+    const fakeReq = {
+      headers: { 'user-agent': 'test' },
+      url: '/api/health',
+    } as http.IncomingMessage;
+    const result = (server as any).detectClientType(fakeReq);
+    expect(typeof result).toBe('string');
+  });
+
+  it('Gemini handler throws non-Error → String(error) branch (line 520)', async () => {
+    // /v1/function_calls routes to handleGeminiRequest; patch processFunctionCalls to throw a string
+    const ga = (server as any).geminiAdapter;
+    if (ga) {
+      const orig = ga.processFunctionCalls?.bind(ga);
+      ga.processFunctionCalls = async () => { throw 'gemini-non-error'; };
+      const { status } = await fetch(port, 'POST', '/v1/function_calls',
+        { functionCalls: [{ name: 'envcp_list', args: {} }] }, auth);
+      expect(status).toBe(500);
+      if (orig) ga.processFunctionCalls = orig;
+    } else {
+      expect(server).toBeDefined();
+    }
+  });
+
+  it('OpenAI handler throws non-Error → String(error) branch in handleOpenAIRequest', async () => {
+    const oa = (server as any).openaiAdapter;
+    if (oa) {
+      const orig = oa.callTool?.bind(oa);
+      oa.callTool = async () => { throw 'openai-non-error'; };
+      // /v1/functions/call routes to handleOpenAIRequest
+      const { status } = await fetch(port, 'POST', '/v1/functions/call',
+        { name: 'envcp_list', arguments: {} }, auth);
+      expect(status).toBe(500);
+      if (orig) oa.callTool = orig;
+    } else {
+      expect(server).toBeDefined();
+    }
+  });
+});

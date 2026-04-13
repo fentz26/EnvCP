@@ -550,3 +550,92 @@ describe('loadConfig — FAILSAFE_SCHEMA rejects !!js/ tags (issue #151)', () =>
   });
 });
 
+describe('deepMerge — nested object recursion (line 88)', () => {
+  let tmpDir: string;
+  let origHome: string | undefined;
+
+  beforeEach(async () => {
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-deepmerge-'));
+    origHome = process.env.HOME;
+    process.env.HOME = tmpDir;
+  });
+
+  afterEach(async () => {
+    process.env.HOME = origHome;
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  });
+
+  it('deeply merges global and project configs (nested objects)', async () => {
+    // Global config sets some nested fields
+    const globalDir = path.join(tmpDir, '.envcp');
+    await ensureDir(globalDir);
+    await fs.writeFile(path.join(globalDir, 'config.yaml'),
+      'access:\n  allow_ai_read: true\n  allow_ai_write: false\n');
+    // Project config overrides allow_ai_write only — deepMerge should keep allow_ai_read
+    await fs.writeFile(path.join(tmpDir, 'envcp.yaml'),
+      'access:\n  allow_ai_write: true\n');
+    const config = await loadConfig(tmpDir);
+    // Both nested fields should be present — confirms recursive deepMerge was exercised
+    expect(config.access.allow_ai_read).toBe(true);
+    expect(config.access.allow_ai_write).toBe(true);
+  });
+});
+
+describe('writeToConfig — alreadyExists path (line 257)', () => {
+  let tmpDir: string;
+  let origHome: string | undefined;
+
+  beforeEach(async () => {
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-already-'));
+    origHome = process.env.HOME;
+    process.env.HOME = tmpDir;
+  });
+
+  afterEach(async () => {
+    process.env.HOME = origHome;
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  });
+
+  it('reports alreadyConfigured when envcp already exists in mcpServers config', async () => {
+    // Create a fake ~/.claude/mcp.json that already has envcp registered
+    const claudeDir = path.join(tmpDir, '.claude');
+    await ensureDir(claudeDir);
+    const mcpPath = path.join(claudeDir, 'mcp.json');
+    await fs.writeFile(mcpPath, JSON.stringify({ mcpServers: { envcp: { command: 'npx' } } }));
+
+    const result = await registerMcpConfig(tmpDir);
+    expect(result.alreadyConfigured).toContain('Claude Code');
+  });
+});
+
+describe('registerMcpConfig — write path (line 332)', () => {
+  let tmpDir: string;
+  let origHome: string | undefined;
+
+  beforeEach(async () => {
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-regmcp-'));
+    origHome = process.env.HOME;
+    process.env.HOME = tmpDir;
+  });
+
+  afterEach(async () => {
+    process.env.HOME = origHome;
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  });
+
+  it('writes new mcp.json when Claude Code dir exists but file does not yet', async () => {
+    // Create ~/.claude dir so the Claude Code target detects it
+    const claudeDir = path.join(tmpDir, '.claude');
+    await ensureDir(claudeDir);
+    // Create the mcp.json file (requireExisting=true needs the file to exist)
+    await fs.writeFile(path.join(claudeDir, 'mcp.json'), JSON.stringify({}));
+
+    const result = await registerMcpConfig(tmpDir);
+    // Should have registered Claude Code (written to mcp.json)
+    expect(result.registered).toContain('Claude Code');
+    // The file should now contain the envcp entry
+    const written = JSON.parse(await fs.readFile(path.join(claudeDir, 'mcp.json'), 'utf8'));
+    expect(written.mcpServers?.envcp).toBeDefined();
+  });
+});
+

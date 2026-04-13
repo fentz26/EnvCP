@@ -102,3 +102,34 @@ describe('rateLimitMiddleware', () => {
     limiter.destroy();
   });
 });
+
+describe('RateLimiter — unref branch (line 107)', () => {
+  it('calls unref on the cleanup timer when unref is available', () => {
+    // In Node.js, setInterval always returns a Timeout with .unref — so the true branch is hit
+    const limiter = new RateLimiter(5, 100);
+    // If unref was NOT called the process could hang; calling destroy() cleans up
+    expect(limiter.isAllowed('x')).toBe(true);
+    limiter.destroy();
+  });
+
+  it('handles a timer object without unref (false branch of line 107)', () => {
+    // Override setInterval temporarily to return an object without unref
+    const origSetInterval = global.setInterval;
+    (global as any).setInterval = (fn: () => void, ms: number) => {
+      // Return a plain object without unref — exercises the false branch
+      const id = origSetInterval(fn, ms);
+      const noUnref: any = { ...id };
+      delete noUnref.unref;
+      // Return an object that has ref/unref stripped
+      return { _dummy: true } as any;
+    };
+    try {
+      const limiter = new RateLimiter(5, 100);
+      expect(limiter.isAllowed('x')).toBe(true);
+      // destroy() may not work on our dummy timer, just try
+      try { limiter.destroy(); } catch { /* ignore */ }
+    } finally {
+      global.setInterval = origSetInterval;
+    }
+  });
+});

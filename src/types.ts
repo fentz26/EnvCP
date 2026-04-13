@@ -74,6 +74,8 @@ export const EnvCPConfigSchema = z.object({
       disallow_root_delete: z.boolean().default(true),
       disallow_path_manipulation: z.boolean().default(true),
       require_command_whitelist: z.boolean().default(false),
+      scrub_output: z.boolean().default(true),
+      redact_patterns: z.array(z.string()).default([]),
     }).default({}),
   }).default({}),
 

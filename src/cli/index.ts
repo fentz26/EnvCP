@@ -8,6 +8,7 @@ import { ensureDir, pathExists } from '../utils/fs.js';
 import { loadConfig, initConfig, saveConfig, parseEnvFile, registerMcpConfig, isBlacklisted, canAccess } from '../config/manager.js';
 import { ConfigGuard } from '../config/config-guard.js';
 import { StorageManager, LogManager } from '../storage/index.js';
+import { VERSION } from '../version.js';
 import { SessionManager } from '../utils/session.js';
 import { maskValue, validatePassword, encrypt, decrypt, generateRecoveryKey, createRecoveryData, recoverPassword } from '../utils/crypto.js';
 import { KeychainManager } from '../utils/keychain.js';
@@ -147,7 +148,7 @@ const program = new Command();
 program
   .name('envcp')
   .description('Secure environment variable management for AI-assisted coding')
-  .version('1.0.0');
+  .version(VERSION);
 
 program
   .command('init')
@@ -212,6 +213,7 @@ program
         { type: 'password', name: 'confirm', message: 'Confirm password:', mask: '*' }
       ]);
 
+      // eslint-disable-next-line security/detect-possible-timing-attacks -- comparing two user-typed confirm fields, not a secret-vs-known value
       if (password !== confirm) {
         console.log(chalk.red('Passwords do not match. Aborting.'));
         return;
@@ -427,6 +429,7 @@ program
       const confirm = await inquirer.prompt([
         { type: 'password', name: 'password', message: 'Confirm password:', mask: '*' }
       ]);
+      // eslint-disable-next-line security/detect-possible-timing-attacks -- comparing two user-typed confirm fields, not a secret-vs-known value
       if (confirm.password !== password) {
         console.log(chalk.red('Passwords do not match'));
         return;
@@ -912,7 +915,8 @@ program
         if (!variable.sync_to_env) continue;
 
         const excluded = config.sync.exclude?.some((pattern: string) => {
-          const regex = new RegExp('^' + pattern.replace(/\*/g, '.*') + '$');
+          // eslint-disable-next-line security/detect-non-literal-regexp -- glob pattern from config; metacharacters escaped above
+          const regex = new RegExp('^' + pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*') + '$');
           return regex.test(name);
         });
         if (excluded) continue;
@@ -939,7 +943,8 @@ program
           if (!variable.sync_to_env) continue;
 
           const excluded = config.sync.exclude?.some((pattern: string) => {
-            const regex = new RegExp('^' + pattern.replace(/\*/g, '.*') + '$');
+            // eslint-disable-next-line security/detect-non-literal-regexp -- glob pattern from config; metacharacters escaped above
+            const regex = new RegExp('^' + pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*') + '$');
             return regex.test(name);
           });
           if (excluded) continue;
