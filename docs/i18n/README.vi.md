@@ -15,7 +15,7 @@
 
 ---
 
-[English](../../README.md) | [Français](README.fr.md) | [Español](README.es.md) | [한국어](README.ko.md) | [中文](README.zh.md) | **Tiếng dziệt** | [日本語](README.ja.md)
+[English](../../README.md) | [Français](README.fr.md) | [Español](README.es.md) | [한국어](README.ko.md) | [中文](README.zh.md) | **Tiếng Việt** | [日本語](README.ja.md)
 
 ---
 
