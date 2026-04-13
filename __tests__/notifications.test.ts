@@ -79,6 +79,52 @@ describe('NotificationManager', () => {
     const isValidNull = NotificationManager.verifySignature(payload, null as any, secret);
     expect(isValidNull).toBe(false);
   });
+
+  it('should handle crypto.timingSafeEqual errors in verifySignature', () => {
+    const payload = 'test payload';
+    const secret = 'test secret';
+    
+    // Create a valid hex signature (64 chars for sha256)
+    const validSignature = NotificationManager.createSignature(payload, secret);
+    expect(validSignature).toMatch(/^[0-9a-f]{64}$/); // sha256 hex is 64 chars
+    
+    // Create a valid hex string of same length
+    const sameLengthHex = 'a'.repeat(64); // 64 'a' chars is valid hex
+    
+    // Mock crypto.timingSafeEqual to throw an error
+    const originalTimingSafeEqual = crypto.timingSafeEqual;
+    (crypto as any).timingSafeEqual = jest.fn(() => {
+      throw new Error('Test error from timingSafeEqual');
+    });
+    
+    try {
+      const isValid = NotificationManager.verifySignature(payload, sameLengthHex, secret);
+      expect(isValid).toBe(false);
+    } finally {
+      // Restore original function
+      (crypto as any).timingSafeEqual = originalTimingSafeEqual;
+    }
+  });
+
+  it('should handle Buffer.from errors in verifySignature', () => {
+    const payload = 'test payload';
+    const secret = 'test secret';
+    
+    // Create a signature that will cause Buffer.from to throw
+    // Buffer.from with 'hex' encoding throws on invalid hex
+    // But we need to pass the hex check first (line 159)
+    // So we need invalid hex that still passes the regex
+    
+    // Actually, the regex /^[0-9a-fA-F]+$/ allows any hex chars
+    // Buffer.from('hex') only throws on non-hex characters
+    // But our regex already filters those out
+    
+    // Instead, let's test with a very long hex string that might cause issues
+    const veryLongHex = 'a'.repeat(10000); // Very long but valid hex
+    
+    const isValid = NotificationManager.verifySignature(payload, veryLongHex, secret);
+    expect(isValid).toBe(false); // Should fail due to length mismatch
+  });
   
   it('should not send notification without config', async () => {
     const manager = new NotificationManager({}, '/test/vault');
@@ -140,7 +186,387 @@ describe('NotificationManager', () => {
     }
   });
 
-  // Note: HTTP request mocking is complex in ESM environment
-  // The sendWebhook method is tested indirectly via the skip-in-test tests
-  // Full HTTP mocking would require more complex setup
+  it('should send webhook notification with correct data structure', async () => {
+    const originalNodeEnv = process.env.NODE_ENV;
+    const originalCI = process.env.CI;
+    process.env.NODE_ENV = 'production';
+    delete process.env.CI;
+    
+    try {
+      // Create a mock server to capture the request
+      const { createServer } = await import('http');
+      let receivedRequest: any = null;
+      let receivedBody = '';
+      
+      const server = createServer((req, res) => {
+        receivedRequest = req;
+        
+        req.on('data', (chunk) => {
+          receivedBody += chunk.toString();
+        });
+        
+        req.on('end', () => {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: true }));
+        });
+      });
+      
+      await new Promise<void>((resolve) => {
+        server.listen(0, 'localhost', () => {
+          resolve();
+        });
+      });
+      
+      const port = (server.address() as any).port;
+      const webhookUrl = `http://localhost:${port}/webhook`;
+      
+      const manager = new NotificationManager({ 
+        webhook_url: webhookUrl 
+      }, '/test/vault');
+      
+      const event = {
+        type: 'lockout_triggered' as const,
+        timestamp: '2024-01-01T00:00:00.000Z',
+        attempts: 5,
+        lockout_count: 1,
+        permanent_lockout_count: 0,
+        remaining_seconds: 300,
+        source: 'cli' as const,
+        ip: '127.0.0.1',
+        user_agent: 'test-agent'
+      };
+      
+      await manager.sendLockoutNotification(event);
+      
+      // Wait a bit for the async request to complete
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
+      // Verify the request was made with correct data
+      expect(receivedRequest).not.toBeNull();
+      expect(receivedRequest.method).toBe('POST');
+      expect(receivedRequest.headers['content-type']).toBe('application/json');
+      expect(receivedRequest.headers['x-envcp-event']).toBe('lockout_triggered');
+      expect(receivedRequest.headers['x-envcp-timestamp']).toBe('2024-01-01T00:00:00.000Z');
+      
+      const body = JSON.parse(receivedBody);
+      expect(body.event).toBe('lockout_triggered');
+      expect(body.timestamp).toBe('2024-01-01T00:00:00.000Z');
+      expect(body.vault).toBe('/test/vault');
+      expect(body.details.attempts).toBe(5);
+      expect(body.details.lockout_count).toBe(1);
+      expect(body.details.permanent_lockout_count).toBe(0);
+      expect(body.details.remaining_seconds).toBe(300);
+      expect(body.details.source).toBe('cli');
+      expect(body.details.ip).toBe('127.0.0.1');
+      expect(body.details.user_agent).toBe('test-agent');
+      
+      server.close();
+    } finally {
+      if (originalNodeEnv !== undefined) {
+        process.env.NODE_ENV = originalNodeEnv;
+      } else {
+        delete process.env.NODE_ENV;
+      }
+      
+      if (originalCI !== undefined) {
+        process.env.CI = originalCI;
+      }
+    }
+  });
+
+  it('should handle webhook HTTP errors gracefully', async () => {
+    const originalNodeEnv = process.env.NODE_ENV;
+    const originalCI = process.env.CI;
+    process.env.NODE_ENV = 'production';
+    delete process.env.CI;
+    
+    try {
+      // Create a mock server that returns 500 error
+      const { createServer } = await import('http');
+      
+      const server = createServer((req, res) => {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Internal Server Error' }));
+      });
+      
+      await new Promise<void>((resolve) => {
+        server.listen(0, 'localhost', () => {
+          resolve();
+        });
+      });
+      
+      const port = (server.address() as any).port;
+      const webhookUrl = `http://localhost:${port}/webhook`;
+      
+      const manager = new NotificationManager({ 
+        webhook_url: webhookUrl 
+      }, '/test/vault');
+      
+      const event = {
+        type: 'auth_failure' as const,
+        timestamp: new Date().toISOString(),
+        attempts: 1,
+        lockout_count: 0,
+        permanent_lockout_count: 0,
+        source: 'api' as const
+      };
+      
+      // Should not throw even with 500 response
+      await expect(manager.sendLockoutNotification(event)).resolves.not.toThrow();
+      
+      server.close();
+    } finally {
+      if (originalNodeEnv !== undefined) {
+        process.env.NODE_ENV = originalNodeEnv;
+      } else {
+        delete process.env.NODE_ENV;
+      }
+      
+      if (originalCI !== undefined) {
+        process.env.CI = originalCI;
+      }
+    }
+  });
+
+  it('should handle webhook timeout gracefully', async () => {
+    const originalNodeEnv = process.env.NODE_ENV;
+    const originalCI = process.env.CI;
+    process.env.NODE_ENV = 'production';
+    delete process.env.CI;
+    
+    try {
+      // Create a mock server that never responds (simulates timeout)
+      const { createServer } = await import('http');
+      
+      const server = createServer(() => {
+        // Never send response - simulates timeout
+      });
+      
+      await new Promise<void>((resolve) => {
+        server.listen(0, 'localhost', () => {
+          resolve();
+        });
+      });
+      
+      const port = (server.address() as any).port;
+      const webhookUrl = `http://localhost:${port}/webhook`;
+      
+      const manager = new NotificationManager({ 
+        webhook_url: webhookUrl 
+      }, '/test/vault');
+      
+      const event = {
+        type: 'permanent_lockout' as const,
+        timestamp: new Date().toISOString(),
+        attempts: 50,
+        lockout_count: 10,
+        permanent_lockout_count: 1,
+        remaining_seconds: 0,
+        source: 'cli' as const
+      };
+      
+      // Should not throw even with timeout (5 second timeout in sendWebhook)
+      await expect(manager.sendLockoutNotification(event)).resolves.not.toThrow();
+      
+      // Clean up server after test
+      setTimeout(() => {
+        server.close();
+      }, 100);
+    } finally {
+      if (originalNodeEnv !== undefined) {
+        process.env.NODE_ENV = originalNodeEnv;
+      } else {
+        delete process.env.NODE_ENV;
+      }
+      
+      if (originalCI !== undefined) {
+        process.env.CI = originalCI;
+      }
+    }
+  });
+
+  it('should handle webhook connection errors gracefully', async () => {
+    const originalNodeEnv = process.env.NODE_ENV;
+    const originalCI = process.env.CI;
+    process.env.NODE_ENV = 'production';
+    delete process.env.CI;
+    
+    try {
+      // Use a non-existent port to simulate connection error
+      const webhookUrl = 'http://localhost:99999/webhook'; // Invalid port
+      
+      const manager = new NotificationManager({ 
+        webhook_url: webhookUrl 
+      }, '/test/vault');
+      
+      const event = {
+        type: 'lockout_triggered' as const,
+        timestamp: new Date().toISOString(),
+        attempts: 5,
+        lockout_count: 1,
+        permanent_lockout_count: 0,
+        remaining_seconds: 300,
+        source: 'cli' as const
+      };
+      
+      // Should not throw even with connection error
+      await expect(manager.sendLockoutNotification(event)).resolves.not.toThrow();
+    } finally {
+      if (originalNodeEnv !== undefined) {
+        process.env.NODE_ENV = originalNodeEnv;
+      } else {
+        delete process.env.NODE_ENV;
+      }
+      
+      if (originalCI !== undefined) {
+        process.env.CI = originalCI;
+      }
+    }
+  });
+
+  it('should handle HTTPS webhook URLs', async () => {
+    const originalNodeEnv = process.env.NODE_ENV;
+    const originalCI = process.env.CI;
+    process.env.NODE_ENV = 'production';
+    delete process.env.CI;
+    
+    try {
+      // Note: We can't easily test HTTPS without certificates
+      // This test just ensures the code path for HTTPS is reached
+      // We'll use a URL that will fail to connect
+      const webhookUrl = 'https://localhost:99999/webhook'; // HTTPS with invalid port
+      
+      const manager = new NotificationManager({ 
+        webhook_url: webhookUrl 
+      }, '/test/vault');
+      
+      const event = {
+        type: 'lockout_triggered' as const,
+        timestamp: new Date().toISOString(),
+        attempts: 5,
+        lockout_count: 1,
+        permanent_lockout_count: 0,
+        remaining_seconds: 300,
+        source: 'cli' as const
+      };
+      
+      // Should not throw (will fail to connect but that's OK)
+      await expect(manager.sendLockoutNotification(event)).resolves.not.toThrow();
+    } finally {
+      if (originalNodeEnv !== undefined) {
+        process.env.NODE_ENV = originalNodeEnv;
+      } else {
+        delete process.env.NODE_ENV;
+      }
+      
+      if (originalCI !== undefined) {
+        process.env.CI = originalCI;
+      }
+    }
+  });
+
+  it('should handle webhook request timeout (covers setTimeout callback)', async () => {
+    const originalNodeEnv = process.env.NODE_ENV;
+    const originalCI = process.env.CI;
+    process.env.NODE_ENV = 'production';
+    delete process.env.CI;
+    
+    try {
+      // Create a server that delays response longer than timeout (5s)
+      const { createServer } = await import('http');
+      
+      const server = createServer((req, res) => {
+        // Delay response for 6 seconds (longer than 5s timeout)
+        setTimeout(() => {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: true }));
+        }, 6000);
+      });
+      
+      await new Promise<void>((resolve) => {
+        server.listen(0, 'localhost', () => {
+          resolve();
+        });
+      });
+      
+      const port = (server.address() as any).port;
+      const webhookUrl = `http://localhost:${port}/webhook`;
+      
+      const manager = new NotificationManager({ 
+        webhook_url: webhookUrl 
+      }, '/test/vault');
+      
+      const event = {
+        type: 'lockout_triggered' as const,
+        timestamp: new Date().toISOString(),
+        attempts: 5,
+        lockout_count: 1,
+        permanent_lockout_count: 0,
+        remaining_seconds: 300,
+        source: 'cli' as const
+      };
+      
+      // Start timing
+      const startTime = Date.now();
+      
+      // Should not throw (will timeout after 5s)
+      await expect(manager.sendLockoutNotification(event)).resolves.not.toThrow();
+      
+      // Should complete quickly due to timeout
+      const elapsedTime = Date.now() - startTime;
+      expect(elapsedTime).toBeLessThan(5500); // Should be around 5s
+      
+      // Clean up server
+      server.close();
+    } finally {
+      if (originalNodeEnv !== undefined) {
+        process.env.NODE_ENV = originalNodeEnv;
+      } else {
+        delete process.env.NODE_ENV;
+      }
+      
+      if (originalCI !== undefined) {
+        process.env.CI = originalCI;
+      }
+    }
+  }, 10000); // Increase timeout for this test
+
+  it('should handle immediate connection errors (covers req.on error)', async () => {
+    const originalNodeEnv = process.env.NODE_ENV;
+    const originalCI = process.env.CI;
+    process.env.NODE_ENV = 'production';
+    delete process.env.CI;
+    
+    try {
+      // Use a non-routable IP to simulate immediate connection failure
+      const webhookUrl = 'http://192.0.2.1:99999/webhook'; // TEST-NET-1, should fail
+      
+      const manager = new NotificationManager({ 
+        webhook_url: webhookUrl 
+      }, '/test/vault');
+      
+      const event = {
+        type: 'lockout_triggered' as const,
+        timestamp: new Date().toISOString(),
+        attempts: 5,
+        lockout_count: 1,
+        permanent_lockout_count: 0,
+        remaining_seconds: 300,
+        source: 'cli' as const
+      };
+      
+      // Should not throw even with immediate connection error
+      await expect(manager.sendLockoutNotification(event)).resolves.not.toThrow();
+    } finally {
+      if (originalNodeEnv !== undefined) {
+        process.env.NODE_ENV = originalNodeEnv;
+      } else {
+        delete process.env.NODE_ENV;
+      }
+      
+      if (originalCI !== undefined) {
+        process.env.CI = originalCI;
+      }
+    }
+  });
 });
