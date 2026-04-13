@@ -2,14 +2,32 @@ import { BaseAdapter } from './base.js';
 import { EnvCPConfig, RESTResponse, ToolDefinition, RateLimitConfig } from '../types.js';
 import { VERSION } from '../version.js';
 import { setCorsHeaders, sendJson, parseBody, validateApiKey, RateLimiter, rateLimitMiddleware } from '../utils/http.js';
+import { LockoutManager, LockoutNotificationCallback } from '../utils/lockout.js';
+import { NotificationManager } from '../utils/notifications.js';
 import * as http from 'http';
+import * as path from 'path';
 
 export class RESTAdapter extends BaseAdapter {
   private server: http.Server | null = null;
   private rateLimiter = new RateLimiter(60, 60000);
+  private lockoutManager?: LockoutManager;
 
   constructor(config: EnvCPConfig, projectPath: string, password?: string, vaultPath?: string) {
     super(config, projectPath, password, vaultPath);
+    
+    // If password is provided (vault already unlocked), clear any API key lockout
+    if (password) {
+      this.clearApiKeyLockout().catch(() => {
+        // Silently ignore errors
+      });
+    }
+  }
+
+  private async clearApiKeyLockout(): Promise<void> {
+    const sessionDir = path.join(this.projectPath, path.dirname(this.config.session?.path || '.envcp/.session'));
+    const lockoutPath = path.join(sessionDir, '.lockout-api');
+    const lockoutManager = new LockoutManager(lockoutPath);
+    await lockoutManager.reset();
   }
 
   protected registerTools(): void {
@@ -107,6 +125,27 @@ async startServer(port: number, host: string, apiKey?: string, rateLimitConfig?:
   }
   const whitelist = rateLimitConfig?.whitelist ?? [];
 
+  // Initialize lockout manager for API key authentication failures
+  const bfpConfig = this.config.security?.brute_force_protection;
+  if (bfpConfig?.enabled !== false) {
+    const sessionDir = path.join(this.projectPath, path.dirname(this.config.session?.path || '.envcp/.session'));
+    const lockoutPath = path.join(sessionDir, '.lockout-api');
+    
+    // Set up notifications if configured
+    const notificationConfig = bfpConfig.notifications;
+    if (notificationConfig && (notificationConfig.webhook_url || notificationConfig.email)) {
+      const notificationManager = new NotificationManager(notificationConfig, this.projectPath);
+      const notificationCallback: LockoutNotificationCallback = (event) => {
+        notificationManager.sendLockoutNotification(event).catch(() => {
+          // Silently ignore notification errors
+        });
+      };
+      this.lockoutManager = new LockoutManager(lockoutPath, notificationCallback);
+    } else {
+      this.lockoutManager = new LockoutManager(lockoutPath);
+    }
+  }
+
     this.server = http.createServer(async (req, res) => {
       setCorsHeaders(res, undefined, req.headers.origin);
 
@@ -120,10 +159,65 @@ async startServer(port: number, host: string, apiKey?: string, rateLimitConfig?:
         return;
       }
 
-      // API key validation
+      // API key validation with lockout protection
       if (apiKey) {
+        // Check lockout first if enabled
+        if (this.lockoutManager) {
+          const lockoutStatus = await this.lockoutManager.check();
+          if (lockoutStatus.locked) {
+            if (lockoutStatus.permanent_locked) {
+              await this.logs.log({ timestamp: new Date().toISOString(), operation: 'auth_failure', variable: '', source: 'api', success: false, message: `API authentication blocked - permanent lockout from ${req.socket.remoteAddress ?? 'unknown'}` });
+              sendJson(res, 403, this.createResponse(false, undefined, 'Authentication permanently locked - recovery required'));
+              return;
+            } else {
+              await this.logs.log({ timestamp: new Date().toISOString(), operation: 'auth_failure', variable: '', source: 'api', success: false, message: `API authentication blocked - lockout for ${lockoutStatus.remaining_seconds}s from ${req.socket.remoteAddress ?? 'unknown'}` });
+              res.setHeader('Retry-After', lockoutStatus.remaining_seconds.toString());
+              sendJson(res, 429, this.createResponse(false, undefined, `Too many failed attempts - try again in ${lockoutStatus.remaining_seconds} seconds`));
+              return;
+            }
+          }
+          
+          // Set notification source for this request
+          const ip = req.socket.remoteAddress || 'unknown';
+          const userAgent = req.headers['user-agent'] || 'unknown';
+          this.lockoutManager.setNotificationSource('api', ip, userAgent);
+        }
+        
         const providedKey = (req.headers['x-api-key'] || req.headers['authorization']?.replace('Bearer ', '')) as string | undefined;
         if (!validateApiKey(providedKey, apiKey)) {
+          // Record failed attempt if lockout is enabled
+          if (this.lockoutManager) {
+            const bfpConfig = this.config.security?.brute_force_protection;
+            const lockoutThreshold = bfpConfig?.max_attempts ?? this.config.session?.lockout_threshold ?? 5;
+            const lockoutBaseSeconds = bfpConfig?.lockout_duration ?? this.config.session?.lockout_base_seconds ?? 60;
+            const progressiveDelay = bfpConfig?.progressive_delay ?? true;
+            const maxDelay = bfpConfig?.max_delay ?? 60;
+            const permanentThreshold = bfpConfig?.permanent_lockout_threshold ?? 0;
+            
+            const status = await this.lockoutManager.recordFailure(
+              lockoutThreshold,
+              lockoutBaseSeconds,
+              progressiveDelay,
+              maxDelay,
+              permanentThreshold
+            );
+            
+            if (status.locked) {
+              const message = status.permanent_locked 
+                ? 'Authentication permanently locked - recovery required'
+                : `Too many failed attempts - try again in ${status.remaining_seconds} seconds`;
+              
+              const statusCode = status.permanent_locked ? 403 : 429;
+              if (!status.permanent_locked) {
+                res.setHeader('Retry-After', status.remaining_seconds.toString());
+              }
+              
+              await this.logs.log({ timestamp: new Date().toISOString(), operation: 'auth_failure', variable: '', source: 'api', success: false, message: `Invalid API key - ${status.permanent_locked ? 'permanent lockout' : `lockout for ${status.remaining_seconds}s`} from ${req.socket.remoteAddress ?? 'unknown'}` });
+              sendJson(res, statusCode, this.createResponse(false, undefined, message));
+              return;
+            }
+          }
+          
           await this.logs.log({ timestamp: new Date().toISOString(), operation: 'auth_failure', variable: '', source: 'api', success: false, message: `Invalid API key from ${req.socket.remoteAddress ?? 'unknown'}` });
           sendJson(res, 401, this.createResponse(false, undefined, 'Invalid API key'));
           return;
