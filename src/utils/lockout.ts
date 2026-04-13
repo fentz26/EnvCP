@@ -175,7 +175,7 @@ export class LockoutManager {
         locked_until: null
       });
       
-      this.sendNotification('permanent_lockout', data);
+      this.sendNotification('permanent_lockout', data, undefined, attempts);
       
       return { 
         locked: true, 
@@ -200,7 +200,7 @@ export class LockoutManager {
         permanent_locked: false
       });
       
-      this.sendNotification('lockout_triggered', data, cooldown);
+      this.sendNotification('lockout_triggered', data, cooldown, attempts);
       
       return { 
         locked: true, 

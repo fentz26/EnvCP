@@ -30,11 +30,6 @@ export class NotificationManager {
   }
 
   async sendLockoutNotification(event: Omit<LockoutEvent, 'vault_path'>): Promise<void> {
-    // Always skip notifications in test/CI environment
-    if (process.env.NODE_ENV === 'test' || process.env.CI === 'true') {
-      return;
-    }
-
     const fullEvent: LockoutEvent = {
       ...event,
       vault_path: this.vaultPath
@@ -159,9 +154,19 @@ export class NotificationManager {
    */
   static verifySignature(payload: string, signature: string, secret: string): boolean {
     const expected = this.createSignature(payload, secret);
-    return crypto.timingSafeEqual(
-      Buffer.from(signature, 'hex'),
-      Buffer.from(expected, 'hex')
-    );
+    
+    // Check if signature is valid hex and has correct length
+    if (!signature || !/^[0-9a-fA-F]+$/.test(signature) || signature.length !== expected.length) {
+      return false;
+    }
+    
+    try {
+      return crypto.timingSafeEqual(
+        Buffer.from(signature, 'hex'),
+        Buffer.from(expected, 'hex')
+      );
+    } catch {
+      return false;
+    }
   }
 }
