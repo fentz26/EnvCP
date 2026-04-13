@@ -242,6 +242,38 @@ describe('BaseAdapter tool operations', () => {
       await expect(adapter.runAddToEnv({ name: 'MY_VAR', env_file: '../../etc/evil' })).rejects.toThrow('within the project directory');
     });
 
+    it('blocks sibling-directory bypass in env_file', async () => {
+      await adapter.seedVariable({ name: 'MY_VAR', value: 'x', encrypted: false, created: now, updated: now, sync_to_env: true });
+      const relative = path.relative(tmpDir, tmpDir + '-evil/.env');
+      await expect(adapter.runAddToEnv({ name: 'MY_VAR', env_file: relative })).rejects.toThrow('within the project directory');
+    });
+
+    it('blocks absolute path outside project in env_file', async () => {
+      await adapter.seedVariable({ name: 'MY_VAR', value: 'x', encrypted: false, created: now, updated: now, sync_to_env: true });
+      await expect(adapter.runAddToEnv({ name: 'MY_VAR', env_file: '/tmp/evil.env' })).rejects.toThrow('within the project directory');
+    });
+
+    it('allows nested env_file within project', async () => {
+      await adapter.seedVariable({ name: 'MY_VAR', value: 'nested', encrypted: false, created: now, updated: now, sync_to_env: true });
+      await fs.mkdir(path.join(tmpDir, 'config'), { recursive: true });
+      const result = await adapter.runAddToEnv({ name: 'MY_VAR', env_file: 'config/.env.local' });
+      expect(result.success).toBe(true);
+      const content = await fs.readFile(path.join(tmpDir, 'config', '.env.local'), 'utf8');
+      expect(content).toContain('MY_VAR=nested');
+    });
+
+    it('blocks in-project symlink pointing outside project', async () => {
+      await adapter.seedVariable({ name: 'MY_VAR', value: 'x', encrypted: false, created: now, updated: now, sync_to_env: true });
+      const outsideDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-outside-'));
+      try {
+        await fs.symlink(path.join(outsideDir, 'leaked.env'), path.join(tmpDir, 'leak'));
+        await expect(adapter.runAddToEnv({ name: 'MY_VAR', env_file: 'leak' })).rejects.toThrow('within the project directory');
+        await expect(pathExists(path.join(outsideDir, 'leaked.env'))).resolves.toBe(false);
+      } finally {
+        await fs.rm(outsideDir, { recursive: true, force: true });
+      }
+    });
+
     it('quotes values that need quoting', async () => {
       await adapter.seedVariable({ name: 'SPACED', value: 'hello world', encrypted: false, created: now, updated: now, sync_to_env: true });
       await adapter.runAddToEnv({ name: 'SPACED' });
