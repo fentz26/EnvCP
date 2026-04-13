@@ -131,4 +131,8 @@ describe('NotificationManager', () => {
       }
     }
   });
+
+  // Note: HTTP request mocking is complex in ESM environment
+  // The sendWebhook method is tested indirectly via the skip-in-test tests
+  // Full HTTP mocking would require more complex setup
 });
