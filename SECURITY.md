@@ -150,6 +150,16 @@ For security concerns: **contact@envcp.org**
 
 For general issues: https://github.com/fentz26/EnvCP/issues
 
+## Security Documentation
+
+| Document | Description |
+|----------|-------------|
+| [Security Guide](docs/SECURITY_GUIDE.md) | Deployment best practices, AI access control, incident response runbooks |
+| [Threat Model](docs/THREAT_MODEL.md) | STRIDE analysis, attack trees, open risks |
+| [Verification Guide](VERIFICATION.md) | SLSA 3 provenance verification |
+
+---
+
 ## Supply Chain Security
 
 Every release ships with a signed SLSA Level 3 provenance attestation.
