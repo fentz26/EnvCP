@@ -58,11 +58,13 @@ export function compareVersions(a: string, b: string): number {
   return 0;
 }
 
-export function parseRelease(data: any): ReleaseInfo {
-  const tag = (data.tag_name || '').replace(/^v/, '');
-  const body = data.body || '';
+export function parseRelease(data: unknown): ReleaseInfo {
+  const obj = data as Record<string, unknown>;
+  const tag = (typeof obj.tag_name === 'string' ? obj.tag_name : '').replace(/^v/, '');
+  const body = typeof obj.body === 'string' ? obj.body : '';
   const critical = /\[critical\]|severity:\s*critical|🚨/i.test(body);
-  return { tag, critical, body, url: data.html_url || '' };
+  const url = typeof obj.html_url === 'string' ? obj.html_url : '';
+  return { tag, critical, body, url };
 }
 
 export function extractAdvisory(body: string, url: string): { id: string; summary: string; severity: string; url: string } | undefined {
