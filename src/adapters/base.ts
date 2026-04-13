@@ -498,6 +498,32 @@ export abstract class BaseAdapter {
     };
   }
 
+  // Canonicalize via realpath so containment check can't be bypassed by an in-project symlink (fs.writeFile follows symlinks).
+  private async canonicalizeEnvPath(envPath: string): Promise<{ envPathReal: string; projectRootReal: string }> {
+    const projectRootReal = await fs.realpath(this.projectPath);
+    let envPathReal = envPath;
+    try {
+      envPathReal = await fs.realpath(envPath);
+    } catch {
+      try {
+        const lst = await fs.lstat(envPath);
+        if (lst.isSymbolicLink()) {
+          const target = await fs.readlink(envPath);
+          envPathReal = path.resolve(path.dirname(envPath), target);
+        }
+      } catch {
+        const envDir = path.dirname(envPath);
+        try {
+          const envDirReal = await fs.realpath(envDir);
+          envPathReal = path.join(envDirReal, path.basename(envPath));
+        } catch {
+          // Parent doesn't exist; leave lexical. The subsequent write will fail.
+        }
+      }
+    }
+    return { envPathReal, projectRootReal };
+  }
+
   protected async syncToEnv(): Promise<{ success: boolean; message: string }> {
     if (!this.config.access.allow_ai_export) {
       throw new Error('AI export access is disabled');
@@ -531,9 +557,9 @@ export abstract class BaseAdapter {
     }
 
     const envPath = path.resolve(this.projectPath, this.config.sync.target);
-    const projectRoot = path.resolve(this.projectPath);
+    const { envPathReal, projectRootReal } = await this.canonicalizeEnvPath(envPath);
 
-    if (envPath !== projectRoot && !envPath.startsWith(`${projectRoot}${path.sep}`)) {
+    if (envPathReal !== projectRootReal && !envPathReal.startsWith(`${projectRootReal}${path.sep}`)) {
       throw new Error('sync.target must be within the project directory');
     }
 
@@ -562,8 +588,8 @@ export abstract class BaseAdapter {
     }
 
     const envPath = path.resolve(this.projectPath, args.env_file || '.env');
-    const projectRoot = path.resolve(this.projectPath);
-    if (!envPath.startsWith(`${projectRoot}${path.sep}`)) {
+    const { envPathReal, projectRootReal } = await this.canonicalizeEnvPath(envPath);
+    if (envPathReal !== projectRootReal && !envPathReal.startsWith(`${projectRootReal}${path.sep}`)) {
       throw new Error('env_file must be within the project directory');
     }
 
