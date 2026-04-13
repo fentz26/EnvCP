@@ -155,3 +155,56 @@ describe('encryption versioning', () => {
     expect(await decrypt(encrypted, 'pass')).toBe('modern-secret');
   });
 });
+
+describe('scrubOutput', () => {
+  let scrubOutput: (output: string, secrets: string[], extraPatterns?: string[]) => string;
+
+  beforeAll(async () => {
+    ({ scrubOutput } = await import('../src/utils/crypto'));
+  });
+
+  it('replaces injected secret values with [REDACTED]', () => {
+    const result = scrubOutput('output: sk-abcdefgh1234', ['sk-abcdefgh1234']);
+    expect(result).toBe('output: [REDACTED]');
+  });
+
+  it('skips secrets shorter than 4 chars', () => {
+    const result = scrubOutput('output: abc xyz', ['abc']);
+    expect(result).toBe('output: abc xyz');
+  });
+
+  it('redacts longest secrets first to avoid partial matches', () => {
+    const result = scrubOutput('token: secretvalue-extra', ['secretvalue', 'secretvalue-extra']);
+    expect(result).toBe('token: [REDACTED]');
+  });
+
+  it('applies built-in pattern: OpenAI API key', () => {
+    const result = scrubOutput('key=sk-abcdefghijklmnopqrstu', []);
+    expect(result).toBe('key=[REDACTED]');
+  });
+
+  it('applies built-in pattern: GitHub PAT', () => {
+    const result = scrubOutput('pat=ghp_' + 'a'.repeat(36), []);
+    expect(result).toContain('[REDACTED]');
+  });
+
+  it('applies built-in pattern: JWT token', () => {
+    const result = scrubOutput('token=eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1c2VyIn0.abc123', []);
+    expect(result).toContain('[REDACTED]');
+  });
+
+  it('applies extra patterns from config', () => {
+    const result = scrubOutput('mytoken: tok_abc123', [], ['tok_[a-z0-9]+']);
+    expect(result).toBe('mytoken: [REDACTED]');
+  });
+
+  it('ignores invalid regex patterns gracefully without throwing', () => {
+    const result = scrubOutput('output text here', [], ['[invalid(regex']);
+    expect(result).toBe('output text here');
+  });
+
+  it('returns output unchanged when no secrets or patterns', () => {
+    const result = scrubOutput('hello world', []);
+    expect(result).toBe('hello world');
+  });
+});

@@ -553,3 +553,177 @@ describe('StorageManager backup rotation', () => {
     await expect(storage2.load()).rejects.toThrow();
   });
 });
+
+describe('LogManager HMAC', () => {
+  let tmpDir: string;
+  let logDir: string;
+
+  beforeEach(async () => {
+    tmpDir = nativeFs.mkdtempSync(path.join(os.tmpdir(), 'envcp-hmac-'));
+    logDir = path.join(tmpDir, '.envcp', 'logs');
+  });
+
+  afterEach(async () => {
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  });
+
+  it('reads existing HMAC key on second init (line 273 coverage)', async () => {
+    // First init — creates the HMAC key file
+    const { AuditConfigSchema } = await import('../src/types');
+    const auditConfig = AuditConfigSchema.parse({ hmac: true, hmac_key_path: '.envcp/.audit-hmac-key' });
+    const log1 = new LogManager(logDir, auditConfig);
+    await log1.init();
+
+    // Second init — reads the existing key (hits line 273)
+    const log2 = new LogManager(logDir, auditConfig);
+    await log2.init();
+
+    // Both managers should be able to sign and verify consistently
+    await log2.log({ timestamp: new Date().toISOString(), operation: 'get', variable: 'X', source: 'api', success: true });
+  });
+
+  it('verifyEntry returns false when hmac buffer length mismatch (line 298 coverage)', async () => {
+    const { AuditConfigSchema } = await import('../src/types');
+    const auditConfig = AuditConfigSchema.parse({ hmac: true, hmac_key_path: '.envcp/.audit-hmac-key' });
+    const log = new LogManager(logDir, auditConfig);
+    await log.init();
+
+    // A truncated hmac (1 byte) vs expected 32 bytes → timingSafeEqual throws → catch → false
+    const entry = {
+      timestamp: new Date().toISOString(),
+      operation: 'get' as const,
+      variable: 'X',
+      source: 'api' as const,
+      success: true,
+      hmac: 'ab', // 1 byte — mismatched length causes timingSafeEqual to throw
+    };
+    const result = log.verifyEntry(entry);
+    expect(result).toBe(false);
+  });
+
+  it('verifyEntry returns true when hmacKey is null (line 292 false branch)', async () => {
+    // LogManager with hmac disabled — hmacKey stays null
+    const log = new LogManager(logDir);
+    // Do NOT call init() — hmacKey remains null
+    const entry = {
+      timestamp: new Date().toISOString(),
+      operation: 'get' as const,
+      variable: 'X',
+      source: 'api' as const,
+      success: true,
+    };
+    // When !this.hmacKey, verifyEntry returns true (no HMAC configured)
+    const result = log.verifyEntry(entry);
+    expect(result).toBe(true);
+  });
+});
+
+describe('LogManager — getLogs filters (lines 365-366)', () => {
+  let tmpDir: string;
+  let logDir: string;
+
+  beforeEach(async () => {
+    tmpDir = nativeFs.mkdtempSync(path.join(os.tmpdir(), 'envcp-logfilter-'));
+    logDir = path.join(tmpDir, '.envcp', 'logs');
+  });
+
+  afterEach(async () => {
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  });
+
+  it('filters by variable (line 365)', async () => {
+    const log = new LogManager(logDir);
+    await log.init();
+    await log.log({ timestamp: new Date().toISOString(), operation: 'get', variable: 'MY_VAR', source: 'api', success: true });
+    await log.log({ timestamp: new Date().toISOString(), operation: 'set', variable: 'OTHER_VAR', source: 'api', success: true });
+
+    const results = await log.getLogs({ variable: 'MY_VAR' });
+    expect(results.every(e => e.variable === 'MY_VAR')).toBe(true);
+    expect(results.length).toBe(1);
+  });
+
+  it('filters by source (line 366)', async () => {
+    const log = new LogManager(logDir);
+    await log.init();
+    await log.log({ timestamp: new Date().toISOString(), operation: 'get', variable: 'V', source: 'cli', success: true });
+    await log.log({ timestamp: new Date().toISOString(), operation: 'set', variable: 'V', source: 'api', success: false });
+
+    const results = await log.getLogs({ source: 'cli' });
+    expect(results.every(e => e.source === 'cli')).toBe(true);
+    expect(results.length).toBe(1);
+  });
+});
+
+describe('LogManager — pruneOldLogs catch branch (line 323)', () => {
+  let tmpDir: string;
+
+  beforeEach(async () => {
+    tmpDir = nativeFs.mkdtempSync(path.join(os.tmpdir(), 'envcp-prune-'));
+  });
+
+  afterEach(async () => {
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  });
+
+  it('silently returns when logDir does not exist (readdir catch)', async () => {
+    const nonExistentLogDir = path.join(tmpDir, 'no-such-dir', 'logs');
+    const log = new LogManager(nonExistentLogDir);
+    // pruneOldLogs should silently return without throwing when logDir does not exist
+    await expect(log.pruneOldLogs(30)).resolves.toBeUndefined();
+  });
+
+  it('prunes log files older than retainDays', async () => {
+    const logDir = path.join(tmpDir, 'logs');
+    await ensureDir(logDir);
+    const log = new LogManager(logDir);
+    await log.init();
+
+    // Create a fake old log file (use a past date name)
+    const oldLogPath = path.join(logDir, 'operations-2020-01-01.log');
+    await fs.writeFile(oldLogPath, '{"test": true}\n');
+    // Set its mtime to very old
+    const pastTime = new Date('2020-01-01').getTime() / 1000;
+    await fs.utimes(oldLogPath, pastTime, pastTime);
+
+    await log.pruneOldLogs(30);
+    expect(await pathExists(oldLogPath)).toBe(false);
+  });
+});
+
+describe('StorageManager — tryRestoreFromBackup (lines 132-159)', () => {
+  let tmpDir: string;
+  let storePath: string;
+
+  beforeEach(async () => {
+    tmpDir = nativeFs.mkdtempSync(path.join(os.tmpdir(), 'envcp-restore-'));
+    storePath = path.join(tmpDir, '.envcp', 'store.enc');
+    await ensureDir(path.dirname(storePath));
+  });
+
+  afterEach(async () => {
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  });
+
+  it('restores from .bak.1 when main store is corrupt (encrypted)', async () => {
+    const { encrypt } = await import('../src/utils/crypto.js');
+    const now = new Date().toISOString();
+    const validData = JSON.stringify({
+      MY_KEY: { name: 'MY_KEY', value: 'restored', encrypted: false, created: now, updated: now, sync_to_env: true },
+    });
+    const password = 'test-restore-pw';
+    const encryptedBackup = await encrypt(validData, password);
+
+    // Write a valid encrypted backup at .bak.1
+    await fs.writeFile(`${storePath}.bak.1`, encryptedBackup);
+    // Write corrupt data as the main store (triggers restore)
+    await fs.writeFile(storePath, 'CORRUPT-NOT-VALID-CIPHERTEXT');
+
+    const storage = new StorageManager(storePath, true, 3);
+    storage.setPassword(password);
+
+    // load() should succeed by restoring from .bak.1
+    const vars = await storage.load();
+    expect(vars['MY_KEY']).toBeDefined();
+    expect(vars['MY_KEY'].value).toBe('restored');
+  });
+});

@@ -806,3 +806,72 @@ describe('GeminiAdapter edge cases', () => {
     (adapter as any).callTool = orig;
   });
 });
+
+describe('Auth failure — REST adapter', () => {
+  let tmpDir: string;
+  let port: number;
+  let adapter: RESTAdapter;
+
+  beforeAll(async () => {
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-rest-auth-'));
+    adapter = new RESTAdapter(makeConfig(), tmpDir);
+    port = await getFreePort();
+    await adapter.startServer(port, '127.0.0.1', 'correct-key');
+  });
+
+  afterAll(async () => {
+    adapter.stopServer();
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  });
+
+  it('returns 401 with wrong API key', async () => {
+    const { status } = await fetch(port, 'GET', '/api/variables', undefined, { 'x-api-key': 'wrong-key' });
+    expect(status).toBe(401);
+  });
+});
+
+describe('Auth failure — OpenAI adapter', () => {
+  let tmpDir: string;
+  let port: number;
+  let adapter: OpenAIAdapter;
+
+  beforeAll(async () => {
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-oai-auth-'));
+    adapter = new OpenAIAdapter(makeConfig(), tmpDir);
+    port = await getFreePort();
+    await adapter.startServer(port, '127.0.0.1', 'correct-key');
+  });
+
+  afterAll(async () => {
+    adapter.stopServer();
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  });
+
+  it('returns 401 with wrong API key', async () => {
+    const { status } = await fetch(port, 'GET', '/v1/models', undefined, { 'authorization': 'Bearer wrong-key' });
+    expect(status).toBe(401);
+  });
+});
+
+describe('Auth failure — Gemini adapter', () => {
+  let tmpDir: string;
+  let port: number;
+  let adapter: GeminiAdapter;
+
+  beforeAll(async () => {
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-gem-auth-'));
+    adapter = new GeminiAdapter(makeConfig(), tmpDir);
+    port = await getFreePort();
+    await adapter.startServer(port, '127.0.0.1', 'correct-key');
+  });
+
+  afterAll(async () => {
+    adapter.stopServer();
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  });
+
+  it('returns 401 with wrong API key', async () => {
+    const { status } = await fetch(port, 'GET', '/v1/tools', undefined, { 'x-goog-api-key': 'wrong-key' });
+    expect(status).toBe(401);
+  });
+});

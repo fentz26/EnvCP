@@ -82,6 +82,13 @@ describe('vault manager', () => {
       expect(vaultPath).toBe(path.join(tmpDir, '.envcp/store.enc'));
     });
 
+    it('returns project vault when active vault is set to project', async () => {
+      const config = makeConfig();
+      await setActiveVault(tmpDir, 'project');
+      const vaultPath = await resolveVaultPath(tmpDir, config);
+      expect(vaultPath).toBe(path.join(tmpDir, '.envcp/store.enc'));
+    });
+
     it('returns named vault when active vault is named', async () => {
       const config = makeConfig();
       const namedPath = await initNamedVault(tmpDir, 'myvault');

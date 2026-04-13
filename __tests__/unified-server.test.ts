@@ -1015,3 +1015,68 @@ describe('UnifiedServer checkApiKeySecurity (#148)', () => {
     stderrSpy.mockRestore();
   });
 });
+
+describe('UnifiedServer — branch coverage paths', () => {
+  let tmpDir: string;
+  let server: UnifiedServer;
+  let port: number;
+
+  beforeAll(async () => {
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-branches-'));
+    port = await getFreePort();
+    const serverConfig: ServerConfig = {
+      mode: 'all', port, host: '127.0.0.1', cors: true, auto_detect: true,
+      api_key: 'test-key',
+    };
+    const config = EnvCPConfigSchema.parse({
+      access: { allow_ai_read: true, allow_ai_write: true, allow_ai_delete: true, allow_ai_export: true, allow_ai_execute: true, allow_ai_active_check: true, require_user_reference: false, require_confirmation: false, mask_values: false, blacklist_patterns: [], allowed_commands: ['echo'] },
+      encryption: { enabled: false },
+      storage: { encrypted: false, path: '.envcp/store.json' },
+      sync: { enabled: false },
+    });
+    server = new UnifiedServer(config, serverConfig, tmpDir);
+    await server.start();
+  });
+
+  afterAll(async () => {
+    server.stop();
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  });
+
+  const auth = { 'x-api-key': 'test-key' };
+  const bad = { 'x-api-key': 'wrong' };
+
+  it('returns 401 with wrong API key (auth_failure log path)', async () => {
+    const { status } = await fetch(port, 'GET', '/api/variables', undefined, bad);
+    expect(status).toBe(401);
+  });
+
+  it('POST /v1/tool_calls with non-array tool_calls returns empty results', async () => {
+    const { status, data } = await fetch(port, 'POST', '/v1/tool_calls', { tool_calls: 'not-an-array' }, auth);
+    expect(status).toBe(200);
+    expect((data as any).data).toEqual([]);
+  });
+
+  it('POST /v1/chat/completions with non-array messages processes no tool calls', async () => {
+    const { status, data } = await fetch(port, 'POST', '/v1/chat/completions', { messages: 'not-an-array' }, auth);
+    expect(status).toBe(200);
+  });
+
+  it('POST /v1/functions/call with non-string name uses empty string', async () => {
+    const { status } = await fetch(port, 'POST', '/v1/functions/call', { name: 42, arguments: {} }, auth);
+    // Unknown tool "" → error, but handled gracefully
+    expect([200, 500]).toContain(status);
+  });
+
+  it('POST /v1/function_calls with non-array functionCalls returns empty results', async () => {
+    const { status, data } = await fetch(port, 'POST', '/v1/function_calls', { functionCalls: 'not-an-array' }, auth);
+    expect(status).toBe(200);
+    expect((data as any).functionResponses).toEqual([]);
+  });
+
+  it('detectClientType returns type without explicit pathname', async () => {
+    // Hit the pathname === undefined branch by calling via REST with no x-goog or openai headers
+    const { status } = await fetch(port, 'GET', '/api/health', undefined, auth);
+    expect(status).toBe(200);
+  });
+});
