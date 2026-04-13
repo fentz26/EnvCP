@@ -213,6 +213,7 @@ program
         { type: 'password', name: 'confirm', message: 'Confirm password:', mask: '*' }
       ]);
 
+      // eslint-disable-next-line security/detect-possible-timing-attacks -- comparing two user-typed confirm fields, not a secret-vs-known value
       if (password !== confirm) {
         console.log(chalk.red('Passwords do not match. Aborting.'));
         return;
@@ -428,6 +429,7 @@ program
       const confirm = await inquirer.prompt([
         { type: 'password', name: 'password', message: 'Confirm password:', mask: '*' }
       ]);
+      // eslint-disable-next-line security/detect-possible-timing-attacks -- comparing two user-typed confirm fields, not a secret-vs-known value
       if (confirm.password !== password) {
         console.log(chalk.red('Passwords do not match'));
         return;
@@ -913,7 +915,8 @@ program
         if (!variable.sync_to_env) continue;
 
         const excluded = config.sync.exclude?.some((pattern: string) => {
-          const regex = new RegExp('^' + pattern.replace(/\*/g, '.*') + '$');
+          // eslint-disable-next-line security/detect-non-literal-regexp -- glob pattern from config; metacharacters escaped above
+          const regex = new RegExp('^' + pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*') + '$');
           return regex.test(name);
         });
         if (excluded) continue;
@@ -940,7 +943,8 @@ program
           if (!variable.sync_to_env) continue;
 
           const excluded = config.sync.exclude?.some((pattern: string) => {
-            const regex = new RegExp('^' + pattern.replace(/\*/g, '.*') + '$');
+            // eslint-disable-next-line security/detect-non-literal-regexp -- glob pattern from config; metacharacters escaped above
+            const regex = new RegExp('^' + pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*') + '$');
             return regex.test(name);
           });
           if (excluded) continue;

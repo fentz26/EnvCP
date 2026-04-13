@@ -1,6 +1,6 @@
 import { StorageManager, LogManager } from '../storage/index.js';
 import { EnvCPConfig, Variable, ToolDefinition } from '../types.js';
-import { maskValue, hashVariablePassword, verifyVariablePassword, encryptVariableValue, decryptVariableValue } from '../utils/crypto.js';
+import { maskValue, hashVariablePassword, verifyVariablePassword, encryptVariableValue, decryptVariableValue, scrubOutput } from '../utils/crypto.js';
 import { canAccess, isBlacklisted, canAIActiveCheck, validateVariableName, matchesPattern } from '../config/manager.js';
 import { SessionManager } from '../utils/session.js';
 import * as fs from 'fs/promises';
@@ -845,6 +845,18 @@ export abstract class BaseAdapter {
     });
 
     const result = await processPromise;
+
+    // Scrub injected secret values and common secret patterns from output
+    // before returning to the AI agent (default: on).
+    const scrub = this.config.access.run_safety?.scrub_output !== false;
+    if (scrub) {
+      const injectedValues = injectedNames
+        .map(name => env[name])
+        .filter((v): v is string => typeof v === 'string');
+      const extraPatterns = this.config.access.run_safety?.redact_patterns ?? [];
+      result.stdout = scrubOutput(result.stdout, injectedValues, extraPatterns);
+      result.stderr = scrubOutput(result.stderr, injectedValues, extraPatterns);
+    }
 
     // Audit log: command exit (exit code only — no stdout/stderr values)
     await this.logs.log({

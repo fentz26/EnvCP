@@ -28,6 +28,7 @@ export class StorageManager {
   }
 
   setPassword(password: string): void {
+    // eslint-disable-next-line security/detect-possible-timing-attacks -- comparing new password value to detect changes, not authenticating
     if (this.password !== password) {
       this.password = password;
       this.cache = null;
