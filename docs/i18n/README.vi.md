@@ -9,8 +9,8 @@
 </p>
 
 <p align="center">
-  Quản lý biến môi trường an toàn cho lập trình hỗ trợ AI.<br>
-  MCP server giúp AI tham chiếu bí mật của bạn theo tên — không bao giờ theo giá trị.
+Quản lý biến môi trường an toàn cho lập trình hỗ trợ AI.<br />
+MCP server giúp AI tham chiếu bí mật của bạn theo tên — không bao giờ theo giá trị.
 </p>
 
 ---
