@@ -8,14 +8,14 @@ import { ensureDir, pathExists } from '../utils/fs.js';
 import { loadConfig, initConfig, saveConfig, parseEnvFile, registerMcpConfig, isBlacklisted, canAccess } from '../config/manager.js';
 import { ConfigGuard } from '../config/config-guard.js';
 import { VERSION } from '../version.js';
-import { StorageManager } from '../storage/index.js';
+import { StorageManager, LogManager } from '../storage/index.js';
 import { SessionManager } from '../utils/session.js';
 import { maskValue, validatePassword, encrypt, decrypt, generateRecoveryKey, createRecoveryData, recoverPassword } from '../utils/crypto.js';
 import { KeychainManager } from '../utils/keychain.js';
 import { HsmManager } from '../utils/hsm.js';
 import { checkForUpdate, formatUpdateMessage, logUpdateCheck } from '../utils/update-checker.js';
 import { LockoutManager } from '../utils/lockout.js';
-import { Variable, EnvCPConfig } from '../types.js';
+import { Variable, EnvCPConfig, OperationLog } from '../types.js';
 import {
   getGlobalVaultPath,
   getProjectVaultPath,
@@ -1784,7 +1784,7 @@ program
         console.log(chalk.gray('No log files found.'));
       } else {
         console.log(chalk.bold('Available log dates:'));
-        dates.forEach(d => console.log(chalk.gray(`  ${d}`)));
+        dates.forEach((d: string) => console.log(chalk.gray(`  ${d}`)));
       }
       return;
     }
@@ -1806,7 +1806,7 @@ program
     }
 
     let failed = 0;
-    entries.forEach(entry => {
+    entries.forEach((entry: OperationLog) => {
       const ts = chalk.gray(entry.timestamp);
       const op = entry.success ? chalk.green(entry.operation) : chalk.red(entry.operation);
       const src = chalk.blue(entry.source);
