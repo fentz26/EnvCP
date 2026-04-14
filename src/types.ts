@@ -138,10 +138,7 @@ export const EnvCPConfigSchema = z.object({
       max_delay: z.number().int().min(0).default(60),
       permanent_lockout_threshold: z.number().int().min(0).default(50),
       permanent_lockout_action: z.enum(['require_recovery_key', 'require_admin', 'permanent_lock']).default('require_recovery_key'),
-      notifications: z.object({
-        webhook_url: z.string().optional(),
-        email: z.string().email().optional(),
-      }).default({}),
+      notifications: z.object({}).default({}),
     }).default({}),
   }).default({}),
 

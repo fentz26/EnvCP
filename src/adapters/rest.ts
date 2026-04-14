@@ -2,8 +2,7 @@ import { BaseAdapter } from './base.js';
 import { EnvCPConfig, RESTResponse, ToolDefinition, RateLimitConfig } from '../types.js';
 import { VERSION } from '../version.js';
 import { setCorsHeaders, sendJson, parseBody, validateApiKey, RateLimiter, rateLimitMiddleware } from '../utils/http.js';
-import { LockoutManager, LockoutNotificationCallback } from '../utils/lockout.js';
-import { NotificationManager } from '../utils/notifications.js';
+import { LockoutManager } from '../utils/lockout.js';
 import * as http from 'http';
 import * as path from 'path';
 
@@ -131,19 +130,7 @@ async startServer(port: number, host: string, apiKey?: string, rateLimitConfig?:
     const sessionDir = path.join(this.projectPath, path.dirname(this.config.session?.path || '.envcp/.session'));
     const lockoutPath = path.join(sessionDir, '.lockout-api');
     
-    // Set up notifications if configured
-    const notificationConfig = bfpConfig.notifications;
-    if (notificationConfig && (notificationConfig.webhook_url || notificationConfig.email)) {
-      const notificationManager = new NotificationManager(notificationConfig, this.projectPath);
-      const notificationCallback: LockoutNotificationCallback = (event) => {
-        notificationManager.sendLockoutNotification(event).catch(() => {
-          // Silently ignore notification errors
-        });
-      };
-      this.lockoutManager = new LockoutManager(lockoutPath, notificationCallback);
-    } else {
-      this.lockoutManager = new LockoutManager(lockoutPath);
-    }
+    this.lockoutManager = new LockoutManager(lockoutPath);
   }
 
     this.server = http.createServer(async (req, res) => {
