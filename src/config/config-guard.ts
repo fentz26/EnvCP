@@ -209,6 +209,7 @@ export class ConfigGuard {
         await this.auditLog('PERIODIC_TAMPER', message);
       }
     }, intervalMs);
+    /* c8 ignore next -- setInterval always returns a Timeout with .unref() in Node.js; the else branch is unreachable */
     if (this.periodicTimer && typeof this.periodicTimer === 'object' && 'unref' in this.periodicTimer) {
       this.periodicTimer.unref();
     }

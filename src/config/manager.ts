@@ -85,6 +85,7 @@ function deepMerge(target: Record<string, unknown>, source: Record<string, unkno
     const tgtVal = result[key];
     if (srcVal && typeof srcVal === 'object' && !Array.isArray(srcVal) && tgtVal && typeof tgtVal === 'object' && !Array.isArray(tgtVal)) {
       result[key] = deepMerge(tgtVal as Record<string, unknown>, srcVal as Record<string, unknown>);
+    /* c8 ignore next -- YAML parsing never yields undefined-value keys; this guard is unreachable in practice */
     } else if (srcVal !== undefined) {
       result[key] = srcVal;
     }
@@ -329,6 +330,7 @@ export async function registerMcpConfig(projectPath: string): Promise<{ register
         continue;
       }
 
+      /* c8 ignore else -- writeToConfig always returns written=true when alreadyExists=false; false branch unreachable */
       if (result.written) {
         await ensureDir(path.dirname(configPath));
         await fs.writeFile(configPath, JSON.stringify(config, null, 2), 'utf8');

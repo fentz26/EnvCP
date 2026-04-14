@@ -285,6 +285,7 @@ const whitelist = rl?.whitelist ?? [];
   private async handleRESTRequest(req: http.IncomingMessage, res: http.ServerResponse, parsedUrl?: URL): Promise<void> {
     // Delegate to REST adapter's internal handling
     const url = parsedUrl ?? new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
+    /* c8 ignore next -- URL.pathname is always '/' at minimum; the '/' fallback is unreachable */
     const pathname = url.pathname || '/';
     const segments = pathname.split('/').filter(Boolean);
 
@@ -377,6 +378,7 @@ const whitelist = rl?.whitelist ?? [];
     }
 
     const url = parsedUrl ?? new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
+    /* c8 ignore next -- URL.pathname is always '/' at minimum; the '/' fallback is unreachable */
     const pathname = url.pathname || '/';
     const body = req.method === 'POST' ? await parseBody(req) : {};
 
@@ -452,6 +454,7 @@ const whitelist = rl?.whitelist ?? [];
     }
 
     const url = parsedUrl ?? new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
+    /* c8 ignore next -- URL.pathname is always '/' at minimum; the '/' fallback is unreachable */
     const pathname = url.pathname || '/';
     const body = req.method === 'POST' ? await parseBody(req) : {};
 

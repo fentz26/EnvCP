@@ -515,6 +515,7 @@ export abstract class BaseAdapter {
     } catch {
       try {
         const lst = await fs.lstat(envPath);
+        /* c8 ignore else -- lstat succeeds on a dangling symlink; non-symlink case unreachable in practice */
         if (lst.isSymbolicLink()) {
           const target = await fs.readlink(envPath);
           envPathReal = path.resolve(path.dirname(envPath), target);
@@ -719,10 +720,12 @@ export abstract class BaseAdapter {
    * path-equivalent variants like //, /./, /../ (normalized before comparison).
    */
   private checkRootDelete(prog: string, cmdArgs: string[]): void {
+    /* c8 ignore next -- split('/').pop() never returns undefined for any valid path string */
     const basename = prog.split('/').pop() ?? prog;
     if (basename !== 'rm') return;
 
     const hasRecursive = cmdArgs.some(a =>
+      /* c8 ignore next -- '-recursive' always matches the regex above it, making this branch unreachable */
       /^-[^-]*[rR]/.test(a) || a === '--recursive' || a === '-recursive'
     );
 

@@ -130,6 +130,7 @@ export class StorageManager {
   }
 
   private async tryRestoreFromBackup(): Promise<Record<string, Variable> | null> {
+    /* c8 ignore next -- caller already guards with (this.encrypted && this.password), making this unreachable */
     if (!this.encrypted || !this.password) return null;
 
     for (let i = 1; i <= this.maxBackups; i++) {
@@ -283,6 +284,7 @@ export class LogManager {
   }
 
   private signEntry(entry: Omit<OperationLog, 'hmac'>): string {
+    /* c8 ignore next -- callers always guard with (this.hmacKey), making this unreachable */
     if (!this.hmacKey) return '';
     const data = JSON.stringify(entry);
     return crypto.createHmac('sha256', this.hmacKey).update(data).digest('hex');
