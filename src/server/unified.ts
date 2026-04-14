@@ -23,6 +23,7 @@ export class UnifiedServer {
   private httpServer: http.Server | null = null;
   private rateLimiter: RateLimiter = new RateLimiter(60, 60000);
   private logs: LogManager | null = null;
+  private shutdownHandlers: { sigterm: () => void; sigint: () => void } | null = null;
 
   constructor(config: EnvCPConfig, serverConfig: ServerConfig, projectPath: string, password?: string) {
     this.config = config;
@@ -268,12 +269,20 @@ const whitelist = rl?.whitelist ?? [];
       }
     });
 
+    // Remove any existing shutdown handlers first
+    if (this.shutdownHandlers) {
+      process.off('SIGTERM', this.shutdownHandlers.sigterm);
+      process.off('SIGINT', this.shutdownHandlers.sigint);
+      this.shutdownHandlers = null;
+    }
+
     const shutdown = () => {
       this.stop();
       process.exit(0);
     };
     process.on('SIGTERM', shutdown);
     process.on('SIGINT', shutdown);
+    this.shutdownHandlers = { sigterm: shutdown, sigint: shutdown };
 
     return new Promise((resolve) => {
       this.httpServer!.listen(port, host, () => {
@@ -538,5 +547,12 @@ const whitelist = rl?.whitelist ?? [];
       this.geminiAdapter.stopServer();
     }
     this.rateLimiter?.destroy();
+    
+    // Remove shutdown handlers
+    if (this.shutdownHandlers) {
+      process.off('SIGTERM', this.shutdownHandlers.sigterm);
+      process.off('SIGINT', this.shutdownHandlers.sigint);
+      this.shutdownHandlers = null;
+    }
   }
 }
