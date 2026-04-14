@@ -627,6 +627,11 @@ describe('UnifiedServer.detectClientType', () => {
     expect(server.detectClientType(makeReq('/something'))).toBe('unknown');
   });
 
+  it('handles missing url and host via default fallbacks', () => {
+    const req = { url: undefined, headers: {} } as http.IncomingMessage;
+    expect(server.detectClientType(req)).toBe('unknown');
+  });
+
   it('routes /api/* to REST when client type is MCP (fallback)', async () => {
     const port = await getFreePort();
     const serverConfig: ServerConfig = { mode: 'auto', port, host: '127.0.0.1', cors: true, auto_detect: true };
@@ -878,6 +883,60 @@ describe('UnifiedServer direct handler calls with null/edge-case urls', () => {
     expect(res.end).toHaveBeenCalled();
   });
 
+  it('handleRESTRequest falls back when host header is missing', async () => {
+    const handle = (server as any).handleRESTRequest.bind(server);
+    const req = makeMockReq('/api/health', 'GET');
+    req.headers = { 'content-type': 'application/json' };
+    const { res } = makeMockRes();
+    await handle(req, res);
+    expect(res.end).toHaveBeenCalled();
+  });
+
+  it('handleOpenAIRequest falls back when host header is missing', async () => {
+    const handle = (server as any).handleOpenAIRequest.bind(server);
+    const req = makeMockReq('/v1/models', 'GET');
+    req.headers = { 'content-type': 'application/json' };
+    const { res } = makeMockRes();
+    await handle(req, res);
+    expect(res.end).toHaveBeenCalled();
+  });
+
+  it('handleGeminiRequest falls back when host header is missing', async () => {
+    const handle = (server as any).handleGeminiRequest.bind(server);
+    const req = makeMockReq('/v1/tools', 'GET');
+    req.headers = { 'content-type': 'application/json' };
+    const { res } = makeMockRes();
+    await handle(req, res);
+    expect(res.end).toHaveBeenCalled();
+  });
+
+  it('handleRESTRequest falls back to "/" when parsedUrl.pathname is empty', async () => {
+    const handle = (server as any).handleRESTRequest.bind(server);
+    const req = makeMockReq('/api/health', 'GET');
+    const parsedUrl = { pathname: '', searchParams: new URLSearchParams() } as unknown as URL;
+    const { res } = makeMockRes();
+    await handle(req, res, parsedUrl);
+    expect(res.end).toHaveBeenCalled();
+  });
+
+  it('handleOpenAIRequest falls back to "/" when parsedUrl.pathname is empty', async () => {
+    const handle = (server as any).handleOpenAIRequest.bind(server);
+    const req = makeMockReq('/v1/models', 'GET');
+    const parsedUrl = { pathname: '', searchParams: new URLSearchParams() } as unknown as URL;
+    const { res } = makeMockRes();
+    await handle(req, res, parsedUrl);
+    expect(res.end).toHaveBeenCalled();
+  });
+
+  it('handleGeminiRequest falls back to "/" when parsedUrl.pathname is empty', async () => {
+    const handle = (server as any).handleGeminiRequest.bind(server);
+    const req = makeMockReq('/v1/tools', 'GET');
+    const parsedUrl = { pathname: '', searchParams: new URLSearchParams() } as unknown as URL;
+    const { res } = makeMockRes();
+    await handle(req, res, parsedUrl);
+    expect(res.end).toHaveBeenCalled();
+  });
+
   it('handleGeminiRequest with generateContent and no contents field', async () => {
     const handle = (server as any).handleGeminiRequest.bind(server);
     const bodyStr = JSON.stringify({});
@@ -910,6 +969,26 @@ describe('UnifiedServer direct handler calls with null/edge-case urls', () => {
     process.nextTick(() => { req.emit('data', Buffer.from(bodyStr)); req.emit('end'); });
     await p;
     expect(res.end).toHaveBeenCalled();
+  });
+
+  it('handleGeminiRequest /v1/functions/call with non-string name uses empty string', async () => {
+    const handle = (server as any).handleGeminiRequest.bind(server);
+    const ga = (server as any).geminiAdapter;
+    const originalCallTool = ga.callTool?.bind(ga);
+    ga.callTool = async (name: string) => ({ receivedName: name });
+
+    const bodyStr = JSON.stringify({ name: 123, args: {} });
+    const req = makeMockReq('/v1/functions/call', 'POST');
+    const { res, chunks } = makeMockRes();
+    const p = handle(req, res);
+    process.nextTick(() => { req.emit('data', Buffer.from(bodyStr)); req.emit('end'); });
+    await p;
+
+    const payload = JSON.parse(chunks[0]?.toString() ?? '{}');
+    expect(payload.name).toBe('');
+    expect(payload.response?.result?.receivedName).toBe('');
+
+    ga.callTool = originalCallTool;
   });
 
   it('handleRESTRequest DELETE /api/variables/ with no name returns 404 — unified.ts:297', async () => {
@@ -1049,6 +1128,56 @@ describe('UnifiedServer — branch coverage paths', () => {
   it('returns 401 with wrong API key (auth_failure log path)', async () => {
     const { status } = await fetch(port, 'GET', '/api/variables', undefined, bad);
     expect(status).toBe(401);
+  });
+
+  it('logs auth failures with unknown remote address fallback', async () => {
+    const logs = (server as any).logs;
+    const logSpy = jest.spyOn(logs, 'log').mockResolvedValue(undefined);
+    const mockReq = {
+      method: 'GET',
+      url: '/api/variables',
+      headers: {
+        host: 'localhost',
+        origin: 'http://localhost',
+        'x-api-key': 'wrong',
+      },
+      socket: { remoteAddress: undefined },
+    } as unknown as http.IncomingMessage;
+    const mockRes = {
+      setHeader: jest.fn(),
+      writeHead: jest.fn(),
+      end: jest.fn(),
+      removeHeader: jest.fn(),
+    } as unknown as http.ServerResponse;
+
+    await (server as any).httpServer.listeners('request')[0](mockReq, mockRes);
+
+    expect(logSpy).toHaveBeenCalled();
+    expect(logSpy.mock.calls[0][0].message).toContain('unknown');
+    logSpy.mockRestore();
+  });
+
+  it('uses url and host fallbacks in request URL parsing', async () => {
+    const mockReq = {
+      method: 'GET',
+      url: undefined,
+      headers: {
+        origin: 'http://localhost',
+        'x-api-key': 'test-key',
+      },
+      socket: { remoteAddress: undefined },
+    } as unknown as http.IncomingMessage;
+    const mockRes = {
+      setHeader: jest.fn(),
+      writeHead: jest.fn(),
+      end: jest.fn(),
+      removeHeader: jest.fn(),
+    } as unknown as http.ServerResponse;
+
+    await (server as any).httpServer.listeners('request')[0](mockReq, mockRes);
+
+    expect((mockRes.writeHead as jest.Mock).mock.calls[0]?.[0]).toBe(200);
+    expect(mockRes.end).toHaveBeenCalled();
   });
 
   it('POST /v1/tool_calls with non-array tool_calls returns empty results', async () => {

@@ -1,3 +1,4 @@
+import { jest } from '@jest/globals';
 import * as fs from 'fs/promises';
 import { ensureDir, pathExists } from '../src/utils/fs.js';
 import * as os from 'os';
@@ -800,5 +801,88 @@ describe('ConfigGuard — periodic timer unref branch (line 212)', () => {
     guard.destroy();
     // After destroy(), periodicTimer should be null
     expect((guard as any).periodicTimer).toBeNull();
+  });
+});
+
+describe('ConfigGuard — remaining branch/function coverage', () => {
+  let tmpDir: string;
+  let origHome: string | undefined;
+
+  beforeEach(async () => {
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-guard-extra-'));
+    await ensureDir(path.join(tmpDir, '.envcp', 'logs'));
+    origHome = process.env.HOME;
+    process.env.HOME = tmpDir;
+  });
+
+  afterEach(async () => {
+    process.env.HOME = origHome;
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  });
+
+  it('reload uses default store path when storage.path is empty', async () => {
+    await fs.writeFile(
+      path.join(tmpDir, 'envcp.yaml'),
+      'storage:\n  encrypted: false\n  path: ""\n'
+    );
+
+    const guard = new ConfigGuard(tmpDir);
+    const result = await guard.reload('any-password');
+
+    expect(result.success).toBe(true);
+    guard.destroy();
+  });
+
+  it('startWatching handles null config path branch', () => {
+    const guard = new ConfigGuard(tmpDir);
+
+    (guard as any).startWatching();
+
+    expect((guard as any).watchers.length).toBeGreaterThan(0);
+    guard.destroy();
+  });
+
+  it('startWatching skips missing directories', () => {
+    const missingHome = path.join(tmpDir, 'missing-home-dir');
+    process.env.HOME = missingHome;
+    const guard = new ConfigGuard(tmpDir);
+
+    (guard as any).startWatching();
+
+    expect((guard as any).watchers.length).toBeGreaterThanOrEqual(1);
+    guard.destroy();
+  });
+
+  it('startPeriodicCheck handles interval without unref', async () => {
+    const setIntervalSpy = jest.spyOn(global, 'setInterval').mockImplementation(
+      (() => 123 as unknown as ReturnType<typeof setInterval>) as typeof setInterval
+    );
+    const clearIntervalSpy = jest.spyOn(global, 'clearInterval').mockImplementation(
+      (() => undefined) as typeof clearInterval
+    );
+
+    try {
+      const guard = new ConfigGuard(tmpDir, { periodicCheckMs: 50 });
+      await guard.loadAndLock();
+
+      expect((guard as any).periodicTimer).toBe(123);
+      guard.destroy();
+    } finally {
+      setIntervalSpy.mockRestore();
+      clearIntervalSpy.mockRestore();
+    }
+  });
+
+  it('watcher error callback executes without throwing', async () => {
+    const guard = new ConfigGuard(tmpDir);
+    await guard.loadAndLock();
+
+    for (const watcher of (guard as any).watchers as Array<{ emit?: (event: string, ...args: unknown[]) => void }>) {
+      if (watcher && typeof watcher.emit === 'function') {
+        expect(() => watcher.emit!('error', new Error('synthetic watcher error'))).not.toThrow();
+      }
+    }
+
+    guard.destroy();
   });
 });
