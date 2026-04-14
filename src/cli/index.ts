@@ -7,6 +7,7 @@ import * as fs from 'fs/promises';
 import { ensureDir, pathExists } from '../utils/fs.js';
 import { loadConfig, initConfig, saveConfig, parseEnvFile, registerMcpConfig, isBlacklisted, canAccess } from '../config/manager.js';
 import { ConfigGuard } from '../config/config-guard.js';
+import { VERSION } from '../version.js';
 import { StorageManager } from '../storage/index.js';
 import { SessionManager } from '../utils/session.js';
 import { maskValue, validatePassword, encrypt, decrypt, generateRecoveryKey, createRecoveryData, recoverPassword } from '../utils/crypto.js';
@@ -141,7 +142,7 @@ const program = new Command();
 program
   .name('envcp')
   .description('Secure environment variable management for AI-assisted coding')
-  .version('1.0.0');
+  .version(VERSION);
 
 program
   .command('init')
@@ -197,6 +198,7 @@ program
       const password = await promptPassword('Set encryption password:');
       const confirm = await promptPassword('Confirm password:');
 
+      // eslint-disable-next-line security/detect-possible-timing-attacks -- comparing two user-typed confirm fields, not a secret-vs-known value
       if (password !== confirm) {
         console.log(chalk.red('Passwords do not match. Aborting.'));
         return;
@@ -402,6 +404,7 @@ program
 
     if (!storeExists) {
       const confirmPwd = await promptPassword('Confirm password:');
+      // eslint-disable-next-line security/detect-possible-timing-attacks -- comparing two user-typed confirm fields, not a secret-vs-known value
       if (confirmPwd !== password) {
         console.log(chalk.red('Passwords do not match'));
         return;
@@ -667,6 +670,7 @@ program
     const newPassword = await promptPassword('Set new password:');
     const confirmPassword = await promptPassword('Confirm new password:');
 
+    // eslint-disable-next-line security/detect-possible-timing-attacks -- comparing two user-typed confirm fields, not a secret-vs-known value
     if (newPassword !== confirmPassword) {
       console.log(chalk.red('Passwords do not match'));
       return;
@@ -1088,6 +1092,7 @@ program
         const exportPassword = await promptPassword('Set export password:');
         const confirmExport = await promptPassword('Confirm export password:');
 
+        // eslint-disable-next-line security/detect-possible-timing-attacks -- comparing two user-typed confirm fields, not a secret-vs-known value
         if (exportPassword !== confirmExport) {
           console.log(chalk.red('Passwords do not match'));
           return;
