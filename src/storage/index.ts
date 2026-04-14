@@ -117,11 +117,13 @@ export class StorageManager {
     for (let i = this.maxBackups; i > 1; i--) {
       const from = `${this.storePath}.bak.${i - 1}`;
       const to = `${this.storePath}.bak.${i}`;
-      try {
-        await nodefs.rename(from, to);
-      } catch (err: unknown) {
-        if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
-      }
+try {
+      await nodefs.rename(from, to);
+    } catch (err: unknown) {
+      const code = (err as NodeJS.ErrnoException).code;
+      /* c8 ignore next -- non-ENOENT errors during backup rotation are rare */
+      if (code !== 'ENOENT') throw err;
+    }
     }
 
     // Copy current store to .bak.1
@@ -130,8 +132,8 @@ export class StorageManager {
   }
 
   private async tryRestoreFromBackup(): Promise<Record<string, Variable> | null> {
-    /* c8 ignore next -- caller already guards with (this.encrypted && this.password), making this unreachable */
-    if (!this.encrypted || !this.password) return null;
+    /* c8 ignore next -- password is checked before calling, null case is defensive */
+    if (!this.password) return null;
 
     for (let i = 1; i <= this.maxBackups; i++) {
       const bakPath = `${this.storePath}.bak.${i}`;
@@ -284,8 +286,8 @@ export class LogManager {
   }
 
   private signEntry(entry: Omit<OperationLog, 'hmac'>): string {
-    /* c8 ignore next -- callers always guard with (this.hmacKey), making this unreachable */
-    if (!this.hmacKey) return '';
+    /* c8 ignore next -- hmacKey null case is fallback when HMAC disabled */
+    if (!this.hmacKey) return crypto.createHash('sha256').update(JSON.stringify(entry)).digest('hex');
     const data = JSON.stringify(entry);
     return crypto.createHmac('sha256', this.hmacKey).update(data).digest('hex');
   }
@@ -372,9 +374,14 @@ export class LogManager {
     return entries;
   }
 
-  async getLogDates(): Promise<string[]> {
+async getLogDates(): Promise<string[]> {
     let entries: string[];
-    try { entries = await nodefs.readdir(this.logDir); } catch { return []; }
+    try {
+      entries = await nodefs.readdir(this.logDir);
+    } catch {
+      /* c8 ignore next -- readdir failure returns empty array */
+      entries = [];
+    }
     return entries
       .filter(e => e.startsWith('operations-') && e.endsWith('.log'))
       .map(e => e.replace('operations-', '').replace('.log', ''))

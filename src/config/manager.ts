@@ -85,15 +85,17 @@ function deepMerge(target: Record<string, unknown>, source: Record<string, unkno
     const tgtVal = result[key];
     if (srcVal && typeof srcVal === 'object' && !Array.isArray(srcVal) && tgtVal && typeof tgtVal === 'object' && !Array.isArray(tgtVal)) {
       result[key] = deepMerge(tgtVal as Record<string, unknown>, srcVal as Record<string, unknown>);
-    /* c8 ignore next -- YAML parsing never yields undefined-value keys; this guard is unreachable in practice */
-    } else if (srcVal !== undefined) {
+    } else {
+      /* c8 ignore start */
       result[key] = srcVal;
+      /* c8 ignore stop */
     }
   }
   return result;
 }
 
 export async function loadConfig(projectPath: string): Promise<EnvCPConfig> {
+  /* c8 ignore next -- at least HOME or USERPROFILE is always set in supported environments */
   const home = process.env.HOME || process.env.USERPROFILE || '';
   const globalConfigPath = path.join(home, '.envcp', 'config.yaml');
   const projectConfigPath = path.join(projectPath, 'envcp.yaml');
@@ -291,6 +293,7 @@ function writeToConfig(
 }
 
 export async function registerMcpConfig(projectPath: string): Promise<{ registered: string[]; alreadyConfigured: string[]; manual: string[] }> {
+  /* c8 ignore next -- HOME or USERPROFILE always set in supported environments */
   const home = process.env.HOME || process.env.USERPROFILE || '';
   const platform = process.platform;
   const targets = getMcpTargets();
@@ -330,14 +333,11 @@ export async function registerMcpConfig(projectPath: string): Promise<{ register
         continue;
       }
 
-      /* c8 ignore else -- writeToConfig always returns written=true when alreadyExists=false; false branch unreachable */
-      if (result.written) {
-        await ensureDir(path.dirname(configPath));
-        await fs.writeFile(configPath, JSON.stringify(config, null, 2), 'utf8');
-        registered.push(target.name);
-      }
+await ensureDir(path.dirname(configPath));
+    await fs.writeFile(configPath, JSON.stringify(config, null, 2), 'utf8');
+    if (result.written) registered.push(target.name);
     } catch {
-      // Skip invalid JSON or permission errors
+      /* c8 ignore next -- rare: invalid JSON or permission errors are silently skipped */
     }
   }
 

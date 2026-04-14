@@ -566,19 +566,38 @@ describe('deepMerge — nested object recursion (line 88)', () => {
   });
 
   it('deeply merges global and project configs (nested objects)', async () => {
-    // Global config sets some nested fields
     const globalDir = path.join(tmpDir, '.envcp');
     await ensureDir(globalDir);
     await fs.writeFile(path.join(globalDir, 'config.yaml'),
-      'access:\n  allow_ai_read: true\n  allow_ai_write: false\n');
-    // Project config overrides allow_ai_write only — deepMerge should keep allow_ai_read
+      'access:\n allow_ai_read: true\n allow_ai_write: false\n');
     await fs.writeFile(path.join(tmpDir, 'envcp.yaml'),
-      'access:\n  allow_ai_write: true\n');
+      'access:\n allow_ai_write: true\n');
     const config = await loadConfig(tmpDir);
-    // Both nested fields should be present — confirms recursive deepMerge was exercised
     expect(config.access.allow_ai_read).toBe(true);
     expect(config.access.allow_ai_write).toBe(true);
   });
+
+  it('replaces arrays (else branch in deepMerge)', async () => {
+    const globalDir = path.join(tmpDir, '.envcp');
+    await ensureDir(globalDir);
+    await fs.writeFile(path.join(globalDir, 'config.yaml'),
+      'access:\n blacklist_patterns:\n   - "*_SECRET"\n   - "*_PRIVATE"\n');
+    await fs.writeFile(path.join(tmpDir, 'envcp.yaml'),
+      'access:\n blacklist_patterns:\n   - "CUSTOM_*"\n');
+    const config = await loadConfig(tmpDir);
+    expect(config.access.blacklist_patterns).toEqual(['CUSTOM_*']);
+  });
+
+  it('replaces primitive values (else branch in deepMerge)', async () => {
+    const globalDir = path.join(tmpDir, '.envcp');
+    await ensureDir(globalDir);
+    await fs.writeFile(path.join(globalDir, 'config.yaml'),
+      'storage:\n encrypted: true\n');
+    await fs.writeFile(path.join(tmpDir, 'envcp.yaml'),
+      'storage:\n encrypted: false\n');
+    const config = await loadConfig(tmpDir);
+    expect(config.storage.encrypted).toBe(false);
+});
 });
 
 describe('writeToConfig — alreadyExists path (line 257)', () => {
@@ -624,18 +643,22 @@ describe('registerMcpConfig — write path (line 332)', () => {
   });
 
   it('writes new mcp.json when Claude Code dir exists but file does not yet', async () => {
-    // Create ~/.claude dir so the Claude Code target detects it
     const claudeDir = path.join(tmpDir, '.claude');
     await ensureDir(claudeDir);
-    // Create the mcp.json file (requireExisting=true needs the file to exist)
     await fs.writeFile(path.join(claudeDir, 'mcp.json'), JSON.stringify({}));
 
     const result = await registerMcpConfig(tmpDir);
-    // Should have registered Claude Code (written to mcp.json)
     expect(result.registered).toContain('Claude Code');
-    // The file should now contain the envcp entry
     const written = JSON.parse(await fs.readFile(path.join(claudeDir, 'mcp.json'), 'utf8'));
     expect(written.mcpServers?.envcp).toBeDefined();
+  });
+
+  it('catches and skips when config file has invalid JSON', async () => {
+    await ensureDir(path.join(tmpDir, '.vscode'));
+    await fs.writeFile(path.join(tmpDir, '.vscode', 'mcp.json'), 'not valid json {{{');
+    const result = await registerMcpConfig(tmpDir);
+    expect(result.registered).not.toContain('VS Code');
+    expect(result.alreadyConfigured).not.toContain('VS Code');
   });
 });
 

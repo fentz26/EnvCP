@@ -50,6 +50,26 @@ function fetchHttp(
   });
 }
 
+function makeMockResponse() {
+  let statusCode: number | undefined;
+  let body = '';
+
+  const res = {
+    setHeader: (_name: string, _value: unknown) => undefined,
+    removeHeader: (_name: string) => undefined,
+    writeHead: (status: number) => { statusCode = status; },
+    end: (chunk?: unknown) => {
+      if (chunk !== undefined) body += String(chunk);
+    },
+  } as unknown as http.ServerResponse;
+
+  return {
+    res,
+    getStatus: () => statusCode,
+    getBody: () => body,
+  };
+}
+
 const makeConfig = (overrides: Record<string, unknown> = {}): EnvCPConfig =>
   EnvCPConfigSchema.parse({
     access: {
@@ -412,5 +432,154 @@ describe('RESTAdapter HTTP server — disabled error returns 403', () => {
     const { status, data } = await fetchHttp(port, 'GET', '/api/variables');
     expect(status).toBe(403);
     expect((data as any).error).toMatch(/disabled/i);
+  });
+});
+
+describe('Adapter auth and URL fallback branches', () => {
+  it('OpenAI: uses unknown remoteAddress fallback during auth failure', async () => {
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-oai-fallback-'));
+    const adapter = new OpenAIAdapter(makeConfig(), tmpDir);
+    const port = await getFreePort();
+    await adapter.startServer(port, '127.0.0.1', 'openai-secret');
+
+    try {
+      const req = {
+        method: 'GET',
+        url: '/v1/models',
+        headers: { authorization: 'Bearer wrong' },
+        socket: { remoteAddress: undefined },
+      } as unknown as http.IncomingMessage;
+      const mock = makeMockResponse();
+
+      await (adapter as any).server.listeners('request')[0](req, mock.res);
+
+      expect(mock.getStatus()).toBe(401);
+      expect(mock.getBody()).toContain('Invalid API key');
+    } finally {
+      adapter.stopServer();
+      await fs.rm(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it('OpenAI: falls back when req.url and host are missing', async () => {
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-oai-urlhost-'));
+    const adapter = new OpenAIAdapter(makeConfig(), tmpDir);
+    const port = await getFreePort();
+    await adapter.startServer(port, '127.0.0.1', 'openai-secret');
+
+    try {
+      const req = {
+        method: 'GET',
+        url: undefined,
+        headers: { authorization: 'Bearer openai-secret' },
+        socket: { remoteAddress: '127.0.0.1' },
+      } as unknown as http.IncomingMessage;
+      const mock = makeMockResponse();
+
+      await (adapter as any).server.listeners('request')[0](req, mock.res);
+
+      expect(mock.getStatus()).toBe(200);
+    } finally {
+      adapter.stopServer();
+      await fs.rm(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it('Gemini: uses unknown remoteAddress fallback during auth failure', async () => {
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-gem-fallback-'));
+    const adapter = new GeminiAdapter(makeConfig(), tmpDir);
+    const port = await getFreePort();
+    await adapter.startServer(port, '127.0.0.1', 'gem-secret');
+
+    try {
+      const req = {
+        method: 'GET',
+        url: '/v1/models',
+        headers: { 'x-goog-api-key': 'wrong' },
+        socket: { remoteAddress: undefined },
+      } as unknown as http.IncomingMessage;
+      const mock = makeMockResponse();
+
+      await (adapter as any).server.listeners('request')[0](req, mock.res);
+
+      expect(mock.getStatus()).toBe(401);
+      expect(mock.getBody()).toContain('Invalid API key');
+    } finally {
+      adapter.stopServer();
+      await fs.rm(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it('Gemini: falls back when req.url and host are missing', async () => {
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-gem-urlhost-'));
+    const adapter = new GeminiAdapter(makeConfig(), tmpDir);
+    const port = await getFreePort();
+    await adapter.startServer(port, '127.0.0.1', 'gem-secret');
+
+    try {
+      const req = {
+        method: 'GET',
+        url: undefined,
+        headers: { 'x-goog-api-key': 'gem-secret' },
+        socket: { remoteAddress: '127.0.0.1' },
+      } as unknown as http.IncomingMessage;
+      const mock = makeMockResponse();
+
+      await (adapter as any).server.listeners('request')[0](req, mock.res);
+
+      expect(mock.getStatus()).toBe(200);
+    } finally {
+      adapter.stopServer();
+      await fs.rm(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it('REST: uses unknown remoteAddress fallback during auth failure', async () => {
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-rest-fallback-'));
+    const adapter = new RESTAdapter(makeConfig(), tmpDir);
+    const port = await getFreePort();
+    await adapter.startServer(port, '127.0.0.1', 'rest-secret');
+
+    try {
+      const req = {
+        method: 'GET',
+        url: '/api/health',
+        headers: { 'x-api-key': 'wrong' },
+        socket: { remoteAddress: undefined },
+      } as unknown as http.IncomingMessage;
+      const mock = makeMockResponse();
+
+      await (adapter as any).server.listeners('request')[0](req, mock.res);
+
+      expect(mock.getStatus()).toBe(401);
+      expect(mock.getBody()).toContain('Invalid API key');
+    } finally {
+      adapter.stopServer();
+      await fs.rm(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it('REST: falls back when req.url and host are missing', async () => {
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-rest-urlhost-'));
+    const adapter = new RESTAdapter(makeConfig(), tmpDir);
+    const port = await getFreePort();
+    await adapter.startServer(port, '127.0.0.1', 'rest-secret');
+
+    try {
+      const req = {
+        method: 'GET',
+        url: undefined,
+        headers: { 'x-api-key': 'rest-secret' },
+        socket: { remoteAddress: '127.0.0.1' },
+      } as unknown as http.IncomingMessage;
+      const mock = makeMockResponse();
+
+      await (adapter as any).server.listeners('request')[0](req, mock.res);
+
+      expect(mock.getStatus()).toBe(404);
+    } finally {
+      adapter.stopServer();
+      await fs.rm(tmpDir, { recursive: true, force: true });
+    }
   });
 });

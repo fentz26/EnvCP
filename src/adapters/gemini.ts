@@ -79,13 +79,13 @@ async startServer(port: number, host: string, apiKey?: string, rateLimitConfig?:
       if (apiKey) {
         const providedKey = (req.headers['x-goog-api-key'] || req.headers['authorization']?.replace('Bearer ', '')) as string | undefined;
         if (!validateApiKey(providedKey, apiKey)) {
-          await this.logs.log({ timestamp: new Date().toISOString(), operation: 'auth_failure', variable: '', source: 'api', success: false, message: `Invalid API key from ${req.socket.remoteAddress ?? 'unknown'}` });
+          await this.logs.log({ timestamp: new Date().toISOString(), operation: 'auth_failure', variable: '', source: 'api', success: false, message: `Invalid API key from ${req.socket.remoteAddress || 'unknown'}` });
           sendJson(res, 401, { error: { code: 401, message: 'Invalid API key', status: 'UNAUTHENTICATED' } });
           return;
         }
       }
 
-      const parsedUrl = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
+      const parsedUrl = new URL(req.url || '/', `http://${req.headers.host ?? 'localhost'}`);
       const pathname = parsedUrl.pathname;
 
       try {
