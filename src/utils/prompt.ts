@@ -2,36 +2,45 @@ import * as readline from 'readline';
 
 /** Prompt for masked input (passwords). Characters echo as '*'. */
 export async function promptPassword(message: string): Promise<string> {
-  return new Promise((resolve) => {
-    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  return new Promise((resolve, reject) => {
+    const rl = readline.createInterface({ input: process.stdin, output: process.stdout, terminal: false });
+    rl.on('close', () => {
+      if (!resolved) {
+        reject(new Error('EOF: stdin closed without input'));
+      }
+    });
     process.stdout.write(`${message} `);
 
     // Switch stdin to raw mode for character-by-character reading
     const input = process.stdin;
     let value = '';
+    let resolved = false;
 
     const onData = (char: Buffer | string) => {
-      const ch = char.toString();
-      if (ch === '\n' || ch === '\r' || ch === '\u0004') {
-        // Enter or Ctrl-D
-        process.stdout.write('\n');
-        cleanup();
-        resolve(value);
-      } else if (ch === '\u0003') {
-        // Ctrl-C
-        process.stdout.write('\n');
-        cleanup();
-        process.exit(1);
-      } else if (ch === '\u007f' || ch === '\b') {
-        // Backspace
-        if (value.length > 0) {
-          value = value.slice(0, -1);
-          process.stdout.write('\b \b');
+      for (const ch of char.toString()) {
+        if (ch === '\n' || ch === '\r' || ch === '\u0004') {
+          // Enter or Ctrl-D
+          process.stdout.write('\n');
+          cleanup();
+          resolved = true; resolve(value);
+          return;
+        } else if (ch === '\u0003') {
+          // Ctrl-C
+          process.stdout.write('\n');
+          cleanup();
+          process.exit(1);
+          return;
+        } else if (ch === '\u007f' || ch === '\b') {
+          // Backspace
+          if (value.length > 0) {
+            value = value.slice(0, -1);
+            process.stdout.write('\b \b');
+          }
+        } else if (ch >= ' ') {
+          // Printable character
+          value += ch;
+          process.stdout.write('*');
         }
-      } else if (ch >= ' ') {
-        // Printable character
-        value += ch;
-        process.stdout.write('*');
       }
     };
 
@@ -51,7 +60,7 @@ export async function promptPassword(message: string): Promise<string> {
       // Non-TTY fallback (piped input, CI) — read a full line without masking
       rl.once('line', (line) => {
         rl.close();
-        resolve(line);
+        resolved = true; resolve(line);
       });
     }
   });
@@ -59,11 +68,18 @@ export async function promptPassword(message: string): Promise<string> {
 
 /** Prompt for plain text input. */
 export async function promptInput(message: string): Promise<string> {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+    let answered = false;
     rl.question(`${message} `, (answer) => {
+      answered = true;
       rl.close();
       resolve(answer);
+    });
+    rl.on('close', () => {
+      if (!answered) {
+        reject(new Error('EOF: stdin closed without input'));
+      }
     });
   });
 }
@@ -83,6 +99,9 @@ export interface ListChoice {
 
 /** Prompt to select from a list of choices (numbered menu). */
 export async function promptList(message: string, choices: ListChoice[], defaultValue?: string): Promise<string> {
+  if (choices.length === 0) {
+    throw new Error('No choices provided');
+  }
   process.stdout.write(`${message}\n`);
   choices.forEach((c, i) => {
     const isDefault = c.value === defaultValue;
@@ -94,6 +113,11 @@ export async function promptList(message: string, choices: ListChoice[], default
 
   while (true) {
     const answer = await promptInput(`Enter choice${hint}:`);
+    // Handle EOF (empty responses when stdin is exhausted)
+    if (answer === '' && defaultIndex < 0 && !process.stdin.isTTY) {
+      // No default and no input - could indicate EOF; avoid infinite loop
+      throw new Error('No selection made and no default available');
+    }
     if (answer.trim() === '' && defaultIndex >= 0) {
       return choices[defaultIndex].value;
     }

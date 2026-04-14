@@ -66,7 +66,7 @@ async function withSession(fn: (storage: StorageManager, password: string, confi
             const factors = config.auth?.multi_factors ?? ['password', 'hsm'];
             let userPassword = '';
             if (factors.includes('password')) {
-              userPassword = await promptPassword('Enter password (multi-factor):', );
+              userPassword = await promptPassword('Enter password (multi-factor):');
             } else if (factors.includes('keychain')) {
               const keychain = new KeychainManager(config.keychain?.service || 'envcp');
               const stored = await keychain.retrievePassword(projectPath);
@@ -1506,7 +1506,7 @@ program
         const vaultOverride = parentOpts.global ? 'global' : parentOpts.project ? 'project' : undefined;
         
         await withSession(async (storage) => {
-          const value = options.value || (await promptInput('Value:'));
+          const value = options.value || (await promptPassword('Value:'));
           const tags = options.tags ? options.tags.split(',').map((t: string) => t.trim()) : [];
           
           const now = new Date().toISOString();
