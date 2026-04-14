@@ -1,5 +1,6 @@
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import { VERSION } from '../version.js';
 import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
@@ -23,7 +24,7 @@ export class EnvCPServer {
     this.adapter = new McpAdapter(config, projectPath, password, vaultPath);
 
     this.server = new Server(
-      { name: 'envcp', version: '1.0.0' },
+      { name: 'envcp', version: VERSION },
       { capabilities: { tools: {} } }
     );
 

@@ -1,0 +1,33 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "envcp-plugins",
+  "version": "1.1.0",
+  "description": "EnvCP — secure environment variable management for AI agents",
+  "owner": {
+    "name": "fentz26",
+    "url": "https://github.com/fentz26/EnvCP"
+  },
+  "plugins": [
+    {
+      "name": "envcp",
+      "description": "Encrypted vault with MCP tools — lets Claude reference secrets by name without seeing values. Includes /envcp:setup and /envcp:status skills.",
+      "source": "./plugins/envcp",
+      "category": "security",
+      "version": "1.1.0",
+      "author": {
+        "name": "fentz26"
+      },
+      "homepage": "https://github.com/fentz26/EnvCP",
+      "repository": "https://github.com/fentz26/EnvCP",
+      "keywords": [
+        "secrets",
+        "environment",
+        "vault",
+        "mcp",
+        "security",
+        "encryption",
+        "ai-safety"
+      ]
+    }
+  ]
+}

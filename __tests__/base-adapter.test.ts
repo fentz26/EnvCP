@@ -110,6 +110,11 @@ describe('BaseAdapter tool operations', () => {
       await expect(a.runGetVariable({ name: 'X' })).rejects.toThrow('AI read access is disabled');
     });
 
+    it('rejects invalid variable names', async () => {
+      await expect(adapter.runGetVariable({ name: '123bad' })).rejects.toThrow('Invalid variable name');
+      await expect(adapter.runGetVariable({ name: '../etc/passwd' })).rejects.toThrow('Invalid variable name');
+    });
+
     it('throws when variable not found', async () => {
       await expect(adapter.runGetVariable({ name: 'MISSING' })).rejects.toThrow("Variable 'MISSING' not found");
     });
@@ -187,6 +192,10 @@ describe('BaseAdapter tool operations', () => {
       await expect(a.runDeleteVariable({ name: 'X' })).rejects.toThrow('AI delete access is disabled');
     });
 
+    it('rejects invalid variable names', async () => {
+      await expect(adapter.runDeleteVariable({ name: '123bad' })).rejects.toThrow('Invalid variable name');
+    });
+
     it('deletes existing variable', async () => {
       await adapter.seedVariable({ name: 'DEL', value: 'x', encrypted: false, created: now, updated: now, sync_to_env: true });
       const result = await adapter.runDeleteVariable({ name: 'DEL' });
@@ -233,6 +242,38 @@ describe('BaseAdapter tool operations', () => {
       await expect(adapter.runAddToEnv({ name: 'MY_VAR', env_file: '../../etc/evil' })).rejects.toThrow('within the project directory');
     });
 
+    it('blocks sibling-directory bypass in env_file', async () => {
+      await adapter.seedVariable({ name: 'MY_VAR', value: 'x', encrypted: false, created: now, updated: now, sync_to_env: true });
+      const relative = path.relative(tmpDir, tmpDir + '-evil/.env');
+      await expect(adapter.runAddToEnv({ name: 'MY_VAR', env_file: relative })).rejects.toThrow('within the project directory');
+    });
+
+    it('blocks absolute path outside project in env_file', async () => {
+      await adapter.seedVariable({ name: 'MY_VAR', value: 'x', encrypted: false, created: now, updated: now, sync_to_env: true });
+      await expect(adapter.runAddToEnv({ name: 'MY_VAR', env_file: '/tmp/evil.env' })).rejects.toThrow('within the project directory');
+    });
+
+    it('allows nested env_file within project', async () => {
+      await adapter.seedVariable({ name: 'MY_VAR', value: 'nested', encrypted: false, created: now, updated: now, sync_to_env: true });
+      await fs.mkdir(path.join(tmpDir, 'config'), { recursive: true });
+      const result = await adapter.runAddToEnv({ name: 'MY_VAR', env_file: 'config/.env.local' });
+      expect(result.success).toBe(true);
+      const content = await fs.readFile(path.join(tmpDir, 'config', '.env.local'), 'utf8');
+      expect(content).toContain('MY_VAR=nested');
+    });
+
+    it('blocks in-project symlink pointing outside project', async () => {
+      await adapter.seedVariable({ name: 'MY_VAR', value: 'x', encrypted: false, created: now, updated: now, sync_to_env: true });
+      const outsideDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-outside-'));
+      try {
+        await fs.symlink(path.join(outsideDir, 'leaked.env'), path.join(tmpDir, 'leak'));
+        await expect(adapter.runAddToEnv({ name: 'MY_VAR', env_file: 'leak' })).rejects.toThrow('within the project directory');
+        await expect(pathExists(path.join(outsideDir, 'leaked.env'))).resolves.toBe(false);
+      } finally {
+        await fs.rm(outsideDir, { recursive: true, force: true });
+      }
+    });
+
     it('quotes values that need quoting', async () => {
       await adapter.seedVariable({ name: 'SPACED', value: 'hello world', encrypted: false, created: now, updated: now, sync_to_env: true });
       await adapter.runAddToEnv({ name: 'SPACED' });
@@ -242,6 +283,10 @@ describe('BaseAdapter tool operations', () => {
   });
 
   describe('checkAccess', () => {
+    it('rejects invalid variable names', async () => {
+      await expect(adapter.runCheckAccess({ name: '123bad' })).rejects.toThrow('Invalid variable name');
+    });
+
     it('returns accessible for valid variable', async () => {
       await adapter.seedVariable({ name: 'APP_KEY', value: 'v', encrypted: false, created: now, updated: now, sync_to_env: true });
       const result = await adapter.runCheckAccess({ name: 'APP_KEY' });
@@ -629,5 +674,164 @@ describe('BaseAdapter checkRootDelete -recursive variant — line 688', () => {
     await expect(
       adapter.runRunCommand({ command: 'rm -recursive /', variables: [] }),
     ).rejects.toThrow(/disallow_root_delete/i);
+  });
+});
+
+describe('parseCommand edge cases', () => {
+  let tmpDir: string;
+  let adapter: TestAdapter;
+
+  beforeEach(async () => {
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-parse-'));
+    adapter = new TestAdapter(makeConfig({ allow_ai_execute: true }), tmpDir);
+    await adapter.init();
+  });
+
+  afterEach(async () => {
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  });
+
+  it('throws on unclosed double quote', () => {
+    expect(() => adapter.runParseCommand('echo "hello')).toThrow('Mismatched quotes');
+  });
+
+  it('throws on unclosed single quote', () => {
+    expect(() => adapter.runParseCommand("echo 'world")).toThrow('Mismatched quotes');
+  });
+});
+
+describe('validateCommand with command_blacklist', () => {
+  let tmpDir: string;
+
+  afterEach(async () => {
+    if (tmpDir) await fs.rm(tmpDir, { recursive: true, force: true });
+  });
+
+  it('throws when command matches a user-configured blacklist pattern', async () => {
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-bl-'));
+    const adapter = new TestAdapter(
+      makeConfig({ allow_ai_execute: true, command_blacklist: ['danger'] }),
+      tmpDir,
+    );
+    await adapter.init();
+    await expect(
+      adapter.runRunCommand({ command: 'echo danger here', variables: [] }),
+    ).rejects.toThrow('blacklisted pattern');
+  });
+});
+
+describe('runCommand with scrub_output disabled', () => {
+  let tmpDir: string;
+
+  afterEach(async () => {
+    if (tmpDir) await fs.rm(tmpDir, { recursive: true, force: true });
+  });
+
+  it('returns raw output when scrub_output is false', async () => {
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-noscrub-'));
+    const cfg = makeConfig({
+      allow_ai_execute: true,
+      allowed_commands: ['echo'],
+      run_safety: { disallow_root_delete: true, disallow_path_manipulation: true, require_command_whitelist: false, scrub_output: false, redact_patterns: [] },
+    });
+    const adapter = new TestAdapter(cfg, tmpDir);
+    await adapter.init();
+    await adapter.callTool('envcp_set', { name: 'RAWVAL', value: 'should-appear-raw' });
+    const result = await adapter.runRunCommand({ command: 'echo should-appear-raw', variables: [] }) as { stdout: string };
+    // With scrub disabled, raw value may appear in output
+    expect(result.stdout).toContain('should-appear-raw');
+  });
+
+  it('applies custom redact_patterns from config', async () => {
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-customredact-'));
+    const cfg = makeConfig({
+      allow_ai_execute: true,
+      allowed_commands: ['echo'],
+      run_safety: {
+        disallow_root_delete: true,
+        disallow_path_manipulation: true,
+        require_command_whitelist: false,
+        scrub_output: true,
+        redact_patterns: ['CUSTOM_[A-Z]+']
+      },
+    });
+    const adapter = new TestAdapter(cfg, tmpDir);
+    await adapter.init();
+    const result = await adapter.runRunCommand({ command: 'echo CUSTOM_SECRET_VALUE', variables: [] }) as { stdout: string };
+    expect(result.stdout).toContain('[REDACTED]');
+    expect(result.stdout).not.toContain('CUSTOM_SECRET_VALUE');
+  });
+});
+
+describe('BaseAdapter constructor with custom session config', () => {
+  it('uses custom session timeout_minutes and max_extensions from config', async () => {
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-sess-'));
+    try {
+      const cfg = EnvCPConfigSchema.parse({
+        access: { allow_ai_read: true, allow_ai_write: true, allow_ai_delete: true, allow_ai_export: true, allow_ai_active_check: true, require_user_reference: false, require_confirmation: false, mask_values: false, blacklist_patterns: [] },
+        encryption: { enabled: false },
+        storage: { encrypted: false, path: '.envcp/store.json' },
+        session: { timeout_minutes: 10, max_extensions: 2, path: '.envcp/.session' },
+        sync: { enabled: false },
+      });
+      const adapter = new TestAdapter(cfg, tmpDir);
+      await adapter.init();
+      expect(adapter).toBeDefined();
+    } finally {
+      await fs.rm(tmpDir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('parseCommand — empty command (line 657)', () => {
+  let tmpDir: string;
+  let adapter: TestAdapter;
+
+  beforeEach(async () => {
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-empty-cmd-'));
+    adapter = new TestAdapter(makeConfig({ allow_ai_execute: true }), tmpDir);
+    await adapter.init();
+  });
+
+  afterEach(async () => {
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  });
+
+  it('throws Empty command error for blank string', () => {
+    expect(() => adapter.runParseCommand('')).toThrow('Empty command');
+  });
+
+  it('throws Empty command error for whitespace-only string', () => {
+    expect(() => adapter.runParseCommand('   ')).toThrow('Empty command');
+  });
+});
+
+describe('checkRootDelete — --recursive flag (line 687 branch)', () => {
+  let tmpDir: string;
+  let adapter: TestAdapter;
+
+  beforeEach(async () => {
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-rootdel-'));
+    adapter = new TestAdapter(
+      makeConfig({ allow_ai_execute: true, allowed_commands: ['rm'] }),
+      tmpDir,
+    );
+    await adapter.init();
+  });
+
+  afterEach(async () => {
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  });
+
+  it('blocks rm --recursive / (long flag branch)', async () => {
+    await expect(
+      adapter.runRunCommand({ command: 'rm --recursive /', variables: [] }),
+    ).rejects.toThrow('root filesystem');
+  });
+
+  it('blocks rm -recursive / (single-dash long form)', async () => {
+    await expect(
+      adapter.runRunCommand({ command: 'rm -recursive /', variables: [] }),
+    ).rejects.toThrow('root filesystem');
   });
 });

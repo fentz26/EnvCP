@@ -1,7 +1,7 @@
 # EnvCP
 
 <p align="center">
-  <a href="https://envcp.org/docs"><img src="../../assets/logo-ascii.png" alt="EnvCP" width="100%"></a>
+  <a href="https://envcp.org/docs"><img src="../../assets/logo-ascii.png" alt="EnvCP" width="100%" /></a>
 </p>
 
 <p align="center">
@@ -9,8 +9,8 @@
 </p>
 
 <p align="center">
-  Quản lý biến môi trường an toàn cho lập trình hỗ trợ AI.<br>
-  MCP server giúp AI tham chiếu bí mật của bạn theo tên — không bao giờ theo giá trị.
+Quản lý biến môi trường an toàn cho lập trình hỗ trợ AI.<br />
+MCP server giúp AI tham chiếu bí mật của bạn theo tên — không bao giờ theo giá trị.
 </p>
 
 ---

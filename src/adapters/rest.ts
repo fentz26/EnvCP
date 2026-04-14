@@ -1,5 +1,6 @@
 import { BaseAdapter } from './base.js';
 import { EnvCPConfig, RESTResponse, ToolDefinition, RateLimitConfig } from '../types.js';
+import { VERSION } from '../version.js';
 import { setCorsHeaders, sendJson, parseBody, validateApiKey, RateLimiter, rateLimitMiddleware } from '../utils/http.js';
 import * as http from 'http';
 
@@ -152,7 +153,7 @@ async startServer(port: number, host: string, apiKey?: string, rateLimitConfig?:
           if (pathname === '/api/health' || pathname === '/api') {
             sendJson(res, 200, this.createResponse(true, {
               status: 'ok',
-              version: '1.0.0',
+              version: VERSION,
               mode: 'rest',
             }));
             return;

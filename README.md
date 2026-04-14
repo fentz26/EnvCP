@@ -31,7 +31,14 @@
 </p>
 
 <p align="center">
+  <a href="vscode://anthropic.claude-code/add-mcp?name=envcp&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyIteSIsIkBmZW50ejI2L2VudmNwIiwic2VydmUiLCItLW1vZGUiLCJtY3AiXX0%3D"><img src="https://img.shields.io/badge/VS_Code-Add_MCP-000000?style=flat-square&logo=visualstudiocode&logoColor=white&labelColor=000000" alt="Add to VS Code"></a>
+  &nbsp;
+  <a href="vscode-insiders://anthropic.claude-code/add-mcp?name=envcp&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyIteSIsIkBmZW50ejI2L2VudmNwIiwic2VydmUiLCItLW1vZGUiLCJtY3AiXX0%3D"><img src="https://img.shields.io/badge/VS_Code_Insiders-Add_MCP-000000?style=flat-square&logo=visualstudiocode&logoColor=white&labelColor=000000" alt="Add to VS Code Insiders"></a>
+</p>
+
+<p align="center">
   <a href="https://cursor.com/en/install-mcp?name=envcp&config=eyJjb21tYW5kIjoibnB4IiwiYXJncyI6WyIteSIsIkBmZW50ejI2L2VudmNwIiwic2VydmUiLCItLW1vZGUiLCJtY3AiXX0%3D"><img src="https://cursor.com/deeplink/mcp-install-dark.svg" alt="Add to Cursor"></a>
+  &nbsp;
 </p>
 
 <p align="center">

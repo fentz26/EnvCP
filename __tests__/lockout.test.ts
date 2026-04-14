@@ -114,4 +114,28 @@ describe('LockoutManager', () => {
     expect(result.locked).toBe(true);
     expect(result.remaining_seconds).toBe(30);
   });
+
+  it('recordFailure uses default threshold and baseSeconds when called without args', async () => {
+    // Call with no args to hit default parameter branches (threshold=5, baseSeconds=60)
+    for (let i = 0; i < 4; i++) {
+      await manager.recordFailure();
+    }
+    const result = await manager.recordFailure(); // 5th attempt → lockout
+    expect(result.locked).toBe(true);
+    expect(result.remaining_seconds).toBe(60); // baseSeconds default
+  });
+
+  it('reset() silently ignores ENOENT when lockout file does not exist', async () => {
+    // No file exists — should not throw
+    await expect(manager.reset()).resolves.toBeUndefined();
+  });
+
+  it('reset() rethrows errors that are not ENOENT', async () => {
+    // Put a directory at the lockoutPath — unlink on a directory throws EISDIR (not ENOENT)
+    // so the catch block should rethrow rather than silently ignore it
+    await fs.mkdir(lockoutPath, { recursive: true });
+    await expect(manager.reset()).rejects.toThrow();
+    // Cleanup: remove the directory we just created
+    await fs.rmdir(lockoutPath);
+  });
 });

@@ -33,6 +33,8 @@ const DEFAULT_CONFIG: Partial<EnvCPConfig> = {
       disallow_root_delete: true,
       disallow_path_manipulation: true,
       require_command_whitelist: false,
+      scrub_output: true,
+      redact_patterns: [],
     },
   },
   sync: {
@@ -384,6 +386,7 @@ export function matchesPattern(name: string, pattern: string): boolean {
   let regex = _patternCache.get(pattern);
   if (!regex) {
     const escaped = pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&');
+    // eslint-disable-next-line security/detect-non-literal-regexp -- glob pattern from config; metacharacters escaped above
     regex = new RegExp('^' + escaped.replace(/\*/g, '.*') + '$');
     _patternCache.set(pattern, regex);
   }

@@ -18,6 +18,8 @@ export function setSecurityHeaders(res: http.ServerResponse): void {
   // Prevent caching of sensitive data
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
   res.setHeader('Pragma', 'no-cache');
+  // Prevent referrer leakage
+  res.setHeader('Referrer-Policy', 'no-referrer');
   // Remove server identification
   res.removeHeader('X-Powered-By');
 }

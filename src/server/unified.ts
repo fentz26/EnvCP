@@ -1,4 +1,5 @@
 import { EnvCPConfig, ServerConfig, ClientType } from '../types.js';
+import { VERSION } from '../version.js';
 import { RESTAdapter } from '../adapters/rest.js';
 import { OpenAIAdapter } from '../adapters/openai.js';
 import { GeminiAdapter } from '../adapters/gemini.js';
@@ -111,7 +112,7 @@ export class UnifiedServer {
     const vaultPath = await resolveVaultPath(this.projectPath, this.config);
 
     // Initialize audit log for HTTP modes
-    this.logs = new LogManager(path.join(this.projectPath, '.envcp', 'logs'));
+    this.logs = new LogManager(path.join(this.projectPath, '.envcp', 'logs'), this.config.audit);
     await this.logs.init();
 
     // MCP mode uses stdio, not HTTP
@@ -198,7 +199,7 @@ const whitelist = rl?.whitelist ?? [];
         const detectedType = this.serverConfig.auto_detect ? this.detectClientType(req, pathname) : 'unknown';
         sendJson(res, 200, {
           name: 'EnvCP Unified Server',
-          version: '1.0.0',
+          version: VERSION,
           mode: mode,
           detected_client: detectedType,
           auto_detect: this.serverConfig.auto_detect,

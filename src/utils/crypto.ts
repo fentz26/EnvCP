@@ -212,6 +212,55 @@ export async function decryptVariableValue(encryptedValue: string, variablePassw
   return decrypt(encryptedValue, variablePassword);
 }
 
+// Built-in patterns for common secret formats (applied even without explicit redact_patterns config)
+const BUILTIN_SECRET_PATTERNS: RegExp[] = [
+  /sk-[a-zA-Z0-9]{20,}/g,                                        // OpenAI API keys
+  /ghp_[a-zA-Z0-9]{36}/g,                                        // GitHub personal access tokens
+  /ghs_[a-zA-Z0-9]{36}/g,                                        // GitHub server tokens
+  /eyJ[a-zA-Z0-9_-]*\.[a-zA-Z0-9_-]*\.[a-zA-Z0-9_-]*/g,        // JWTs
+  /xox[baprs]-[0-9a-zA-Z-]+/g,                                   // Slack tokens
+  /AKIA[0-9A-Z]{16}/g,                                            // AWS access key IDs
+];
+
+/**
+ * Scrubs known secret values and common secret patterns from command output.
+ * Applied to stdout/stderr before returning envcp_run results to AI agents.
+ *
+ * @param output - Raw command output string
+ * @param secrets - Plaintext values of injected variables (replaced with [REDACTED])
+ * @param extraPatterns - Additional regex pattern strings from config
+ */
+export function scrubOutput(output: string, secrets: string[], extraPatterns: string[] = []): string {
+  let result = output;
+
+  // Redact known variable values (longest first to avoid partial matches)
+  const sorted = [...secrets].sort((a, b) => b.length - a.length);
+  for (const secret of sorted) {
+    if (secret.length < 4) continue; // too short — would redact noise
+    const escaped = secret.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    // eslint-disable-next-line security/detect-non-literal-regexp -- input is fully escaped above
+    result = result.replace(new RegExp(escaped, 'g'), '[REDACTED]');
+  }
+
+  // Apply built-in patterns
+  for (const pattern of BUILTIN_SECRET_PATTERNS) {
+    pattern.lastIndex = 0; // reset global regex state
+    result = result.replace(pattern, '[REDACTED]');
+  }
+
+  // Apply caller-supplied patterns from config
+  for (const patternStr of extraPatterns) {
+    try {
+      // eslint-disable-next-line security/detect-non-literal-regexp -- user-supplied config pattern; wrapped in try/catch to handle invalid regex
+      result = result.replace(new RegExp(patternStr, 'g'), '[REDACTED]');
+    } catch {
+      // Ignore invalid regex patterns from config
+    }
+  }
+
+  return result;
+}
+
 export function quickHash(input: string): string {
   return crypto.createHash('sha256').update(input).digest('hex').slice(0, 16);
 }

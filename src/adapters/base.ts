@@ -1,6 +1,6 @@
 import { StorageManager, LogManager } from '../storage/index.js';
 import { EnvCPConfig, Variable, ToolDefinition } from '../types.js';
-import { maskValue, hashVariablePassword, verifyVariablePassword, encryptVariableValue, decryptVariableValue } from '../utils/crypto.js';
+import { maskValue, hashVariablePassword, verifyVariablePassword, encryptVariableValue, decryptVariableValue, scrubOutput } from '../utils/crypto.js';
 import { canAccess, isBlacklisted, canAIActiveCheck, validateVariableName, matchesPattern } from '../config/manager.js';
 import { SessionManager } from '../utils/session.js';
 import * as fs from 'fs/promises';
@@ -33,7 +33,7 @@ export abstract class BaseAdapter {
       this.storage.setPassword(password);
     }
 
-    this.logs = new LogManager(path.join(projectPath, '.envcp', 'logs'));
+    this.logs = new LogManager(path.join(projectPath, '.envcp', 'logs'), config.audit);
     this.tools = new Map();
     this.registerTools();
   }
@@ -231,6 +231,10 @@ export abstract class BaseAdapter {
   }> {
     if (!this.config.access.allow_ai_read) {
       throw new Error('AI read access is disabled');
+    }
+
+    if (!validateVariableName(args.name)) {
+      throw new Error(`Invalid variable name '${args.name}'. Must match [A-Za-z_][A-Za-z0-9_]*`);
     }
 
     const variable = await this.storage.get(args.name);
@@ -481,6 +485,10 @@ export abstract class BaseAdapter {
       throw new Error('AI delete access is disabled');
     }
 
+    if (!validateVariableName(args.name)) {
+      throw new Error(`Invalid variable name '${args.name}'. Must match [A-Za-z_][A-Za-z0-9_]*`);
+    }
+
     const deleted = await this.storage.delete(args.name);
 
     await this.logs.log({
@@ -496,6 +504,32 @@ export abstract class BaseAdapter {
       success: deleted,
       message: deleted ? `Variable '${args.name}' deleted` : `Variable '${args.name}' not found`
     };
+  }
+
+  // Canonicalize via realpath so containment check can't be bypassed by an in-project symlink (fs.writeFile follows symlinks).
+  private async canonicalizeEnvPath(envPath: string): Promise<{ envPathReal: string; projectRootReal: string }> {
+    const projectRootReal = await fs.realpath(this.projectPath);
+    let envPathReal = envPath;
+    try {
+      envPathReal = await fs.realpath(envPath);
+    } catch {
+      try {
+        const lst = await fs.lstat(envPath);
+        if (lst.isSymbolicLink()) {
+          const target = await fs.readlink(envPath);
+          envPathReal = path.resolve(path.dirname(envPath), target);
+        }
+      } catch {
+        const envDir = path.dirname(envPath);
+        try {
+          const envDirReal = await fs.realpath(envDir);
+          envPathReal = path.join(envDirReal, path.basename(envPath));
+        } catch {
+          // Parent doesn't exist; leave lexical. The subsequent write will fail.
+        }
+      }
+    }
+    return { envPathReal, projectRootReal };
   }
 
   protected async syncToEnv(): Promise<{ success: boolean; message: string }> {
@@ -531,9 +565,9 @@ export abstract class BaseAdapter {
     }
 
     const envPath = path.resolve(this.projectPath, this.config.sync.target);
-    const projectRoot = path.resolve(this.projectPath);
+    const { envPathReal, projectRootReal } = await this.canonicalizeEnvPath(envPath);
 
-    if (envPath !== projectRoot && !envPath.startsWith(`${projectRoot}${path.sep}`)) {
+    if (envPathReal !== projectRootReal && !envPathReal.startsWith(`${projectRootReal}${path.sep}`)) {
       throw new Error('sync.target must be within the project directory');
     }
 
@@ -562,7 +596,8 @@ export abstract class BaseAdapter {
     }
 
     const envPath = path.resolve(this.projectPath, args.env_file || '.env');
-    if (!envPath.startsWith(path.resolve(this.projectPath))) {
+    const { envPathReal, projectRootReal } = await this.canonicalizeEnvPath(envPath);
+    if (envPathReal !== projectRootReal && !envPathReal.startsWith(`${projectRootReal}${path.sep}`)) {
       throw new Error('env_file must be within the project directory');
     }
 
@@ -609,6 +644,10 @@ export abstract class BaseAdapter {
     accessible: boolean;
     message: string;
   }> {
+    if (!validateVariableName(args.name)) {
+      throw new Error(`Invalid variable name '${args.name}'. Must match [A-Za-z_][A-Za-z0-9_]*`);
+    }
+
     const variable = await this.storage.get(args.name);
     const exists = !!variable;
     const blacklisted = isBlacklisted(args.name, this.config);
@@ -845,6 +884,18 @@ export abstract class BaseAdapter {
     });
 
     const result = await processPromise;
+
+    // Scrub injected secret values and common secret patterns from output
+    // before returning to the AI agent (default: on).
+    const scrub = this.config.access.run_safety?.scrub_output !== false;
+    if (scrub) {
+      const injectedValues = injectedNames
+        .map(name => env[name])
+        .filter((v): v is string => typeof v === 'string');
+      const extraPatterns = this.config.access.run_safety?.redact_patterns ?? [];
+      result.stdout = scrubOutput(result.stdout, injectedValues, extraPatterns);
+      result.stderr = scrubOutput(result.stderr, injectedValues, extraPatterns);
+    }
 
     // Audit log: command exit (exit code only — no stdout/stderr values)
     await this.logs.log({

@@ -1,4 +1,4 @@
-import { validateApiKey, RateLimiter, rateLimitMiddleware } from '../src/utils/http';
+import { validateApiKey, RateLimiter, rateLimitMiddleware, setSecurityHeaders } from '../src/utils/http';
 import * as http from 'http';
 
 describe('validateApiKey', () => {
@@ -58,6 +58,20 @@ describe('RateLimiter default constructor — line 102', () => {
   });
 });
 
+describe('setSecurityHeaders', () => {
+  it('sets all required security headers', () => {
+    const req = { socket: {} } as http.IncomingMessage;
+    const res = new http.ServerResponse(req);
+    setSecurityHeaders(res);
+
+    expect(res.getHeader('X-Content-Type-Options')).toBe('nosniff');
+    expect(res.getHeader('X-Frame-Options')).toBe('DENY');
+    expect(res.getHeader('Cache-Control')).toBe('no-store, no-cache, must-revalidate, private');
+    expect(res.getHeader('Referrer-Policy')).toBe('no-referrer');
+    expect(res.getHeader('Content-Security-Policy')).toContain("default-src 'none'");
+  });
+});
+
 describe('rateLimitMiddleware', () => {
   it('strips ::ffff: prefix from IP', () => {
     const limiter = new RateLimiter(5, 60000);
@@ -86,5 +100,36 @@ describe('rateLimitMiddleware', () => {
     const r2 = rateLimitMiddleware(limiter, req, res);
     expect(r2).toBe(false);
     limiter.destroy();
+  });
+});
+
+describe('RateLimiter — unref branch (line 107)', () => {
+  it('calls unref on the cleanup timer when unref is available', () => {
+    // In Node.js, setInterval always returns a Timeout with .unref — so the true branch is hit
+    const limiter = new RateLimiter(5, 100);
+    // If unref was NOT called the process could hang; calling destroy() cleans up
+    expect(limiter.isAllowed('x')).toBe(true);
+    limiter.destroy();
+  });
+
+  it('handles a timer object without unref (false branch of line 107)', () => {
+    // Override setInterval temporarily to return an object without unref
+    const origSetInterval = global.setInterval;
+    (global as any).setInterval = (fn: () => void, ms: number) => {
+      // Return a plain object without unref — exercises the false branch
+      const id = origSetInterval(fn, ms);
+      const noUnref: any = { ...id };
+      delete noUnref.unref;
+      // Return an object that has ref/unref stripped
+      return { _dummy: true } as any;
+    };
+    try {
+      const limiter = new RateLimiter(5, 100);
+      expect(limiter.isAllowed('x')).toBe(true);
+      // destroy() may not work on our dummy timer, just try
+      try { limiter.destroy(); } catch { /* ignore */ }
+    } finally {
+      global.setInterval = origSetInterval;
+    }
   });
 });

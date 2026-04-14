@@ -338,17 +338,17 @@ describe('update-checker', () => {
     });
   });
 
-  describe('fetchLatestRelease', () => {
-    it('returns a release or handles error', async () => {
-      try {
-        const release = await fetchLatestRelease();
-        expect(release.tag).toBeTruthy();
-        expect(typeof release.critical).toBe('boolean');
-      } catch (error) {
-        expect(error).toBeDefined();
-      }
-    });
-  });
+describe('fetchLatestRelease', () => {
+  it('returns a release or handles error', async () => {
+    try {
+      const release = await fetchLatestRelease();
+      expect(release.tag).toBeTruthy();
+      expect(typeof release.critical).toBe('boolean');
+    } catch (error) {
+      expect(error).toBeDefined();
+    }
+  }, 10000);
+});
 
   describe('logUpdateCheck', () => {
     it('writes audit log', async () => {
