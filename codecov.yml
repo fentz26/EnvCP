@@ -2,28 +2,63 @@ coverage:
   status:
     project:
       default:
-        target: 95%        # match jest coverageThreshold
-        threshold: 1%      # allow up to 1% drop before failing
+        target: 95%
+        threshold: 1%
     patch:
       default:
-        target: 90%        # new code on PRs must be 90% covered
+        target: 90%
         threshold: 2%
 
-  ignore:
-    - "src/cli/index.ts"
-    - "src/index.ts"
-    - "src/utils/keychain.ts"
-    - "src/utils/hsm.ts"
-    - "dist/**"
+ignore:
+  - "src/cli/index.ts"
+  - "src/index.ts"
+  - "src/utils/keychain.ts"
+  - "src/utils/hsm.ts"
+  - "dist/**"
 
 parsers:
   javascript:
     enable_partials: yes
 
 comment:
-  layout: "reach,diff,flags,files"
+  layout: "reach,diff,flags,components,files"
   behavior: default
-  require_changes: true   # only comment on PRs when coverage changes
+  require_changes: true
+
+component_management:
+  default_rules:
+    statuses:
+      - type: project
+        target: auto
+  individual_components:
+    - component_id: adapters
+      name: Adapters
+      paths:
+        - src/adapters/**
+    - component_id: storage
+      name: Storage
+      paths:
+        - src/storage/**
+    - component_id: config
+      name: Config
+      paths:
+        - src/config/**
+    - component_id: server
+      name: Server
+      paths:
+        - src/server/**
+    - component_id: mcp
+      name: MCP
+      paths:
+        - src/mcp/**
+    - component_id: vault
+      name: Vault
+      paths:
+        - src/vault/**
+    - component_id: utils
+      name: Utils
+      paths:
+        - src/utils/**
 
 flags:
   unit:
