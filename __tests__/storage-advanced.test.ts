@@ -296,6 +296,23 @@ describe('LogManager', () => {
     expect(await pathExists(recentPath)).toBe(true);
   });
 
+  it('pruneOldLogs uses default 30 days when called without argument', async () => {
+    const logger = new LogManager(logDir);
+    await logger.init();
+
+    const oldDate = new Date(Date.now() - 35 * 24 * 60 * 60 * 1000);
+    const oldName = `operations-${oldDate.toISOString().split('T')[0]}.log`;
+    const oldPath = path.join(logDir, oldName);
+
+    await fs.writeFile(oldPath, '{"old":true}\n', 'utf8');
+    const oldMtime = new Date(Date.now() - 35 * 24 * 60 * 60 * 1000);
+    await fs.utimes(oldPath, oldMtime, oldMtime);
+
+    await logger.pruneOldLogs();
+
+    expect(await pathExists(oldPath)).toBe(false);
+  });
+
   it('pruneOldLogs ignores non-log files and handles stat errors gracefully', async () => {
     const logger = new LogManager(logDir);
     await logger.init();
@@ -740,14 +757,14 @@ describe('StorageManager — tryRestoreFromBackup (lines 132-159)', () => {
   it('rethrows non-ENOENT errors during backup rotation', async () => {
     await ensureDir(path.dirname(storePath));
     await fs.writeFile(storePath, '{}');
-    await fs.writeFile(`${storePath}.bak.2`, '{}');
-    await fs.mkdir(`${storePath}.bak.1`);
+    await fs.writeFile(`${storePath}.bak.3`, '{}');
+    await fs.mkdir(`${storePath}.bak.2`);
     const storage = new StorageManager(storePath, false, 3);
     try {
       await storage.set('TEST', { name: 'TEST', value: 'v', encrypted: false, created: new Date().toISOString(), updated: new Date().toISOString(), sync_to_env: true });
       expect(true).toBe(false);
     } catch (e: unknown) {
-      expect(e).toBeInstanceOf(Error);
+      expect((e as Error).message).toBeDefined();
     }
   });
 

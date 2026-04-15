@@ -121,7 +121,7 @@ try {
       await nodefs.rename(from, to);
     } catch (err: unknown) {
       const code = (err as NodeJS.ErrnoException).code;
-      /* c8 ignore next -- non-ENOENT errors during backup rotation are rare */
+      /* istanbul ignore else -- non-ENOENT errors during backup rotation are rare */
       if (code !== 'ENOENT') throw err;
     }
     }
@@ -132,7 +132,7 @@ try {
   }
 
   private async tryRestoreFromBackup(): Promise<Record<string, Variable> | null> {
-    /* c8 ignore next -- password is checked before calling, null case is defensive */
+    /* istanbul ignore if -- password is checked before calling, null case is defensive */
     if (!this.password) return null;
 
     for (let i = 1; i <= this.maxBackups; i++) {
@@ -286,7 +286,7 @@ export class LogManager {
   }
 
   private signEntry(entry: Omit<OperationLog, 'hmac'>): string {
-    /* c8 ignore next -- hmacKey null case is fallback when HMAC disabled */
+    /* istanbul ignore if -- hmacKey null case is fallback when HMAC disabled */
     if (!this.hmacKey) return crypto.createHash('sha256').update(JSON.stringify(entry)).digest('hex');
     const data = JSON.stringify(entry);
     return crypto.createHmac('sha256', this.hmacKey).update(data).digest('hex');
@@ -379,7 +379,7 @@ async getLogDates(): Promise<string[]> {
     try {
       entries = await nodefs.readdir(this.logDir);
     } catch {
-      /* c8 ignore next -- readdir failure returns empty array */
+      /* istanbul ignore next -- readdir failure returns empty array */
       entries = [];
     }
     return entries
