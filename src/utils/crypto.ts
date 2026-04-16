@@ -1,6 +1,5 @@
 import * as crypto from 'crypto';
 import argon2 from 'argon2';
-import { secureZero } from './secure-memory.js';
 
 const ALGORITHM = 'aes-256-gcm';
 const IV_LENGTH = 16;
@@ -41,18 +40,12 @@ export async function encrypt(text: string, password: string): Promise<string> {
   const key = await argon2.hash(password, { ...ARGON2_OPTS, salt }) as Buffer;
   const iv = crypto.randomBytes(IV_LENGTH);
 
-  try {
-    const cipher = crypto.createCipheriv(ALGORITHM, key, iv);
-    let encrypted = cipher.update(text, 'utf8', 'hex');
-    encrypted += cipher.final('hex');
-    const authTag = cipher.getAuthTag();
+  const cipher = crypto.createCipheriv(ALGORITHM, key, iv);
+  let encrypted = cipher.update(text, 'utf8', 'hex');
+  encrypted += cipher.final('hex');
+  const authTag = cipher.getAuthTag();
 
-    return VERSION_PREFIX_V2 + salt.toString('hex') + iv.toString('hex') + authTag.toString('hex') + encrypted;
-  } finally {
-    secureZero(key);
-    secureZero(salt);
-    secureZero(iv);
-  }
+  return VERSION_PREFIX_V2 + salt.toString('hex') + iv.toString('hex') + authTag.toString('hex') + encrypted;
 }
 
 /**
@@ -77,19 +70,12 @@ function decryptV1(data: string, password: string): string {
   const encrypted = data.slice(SALT_LENGTH * 2 + IV_LENGTH * 2 + AUTH_TAG_LENGTH * 2);
 
   const key = deriveKey(password, salt);
-  try {
-    const decipher = crypto.createDecipheriv(ALGORITHM, key, iv);
-    decipher.setAuthTag(authTag);
+  const decipher = crypto.createDecipheriv(ALGORITHM, key, iv);
+  decipher.setAuthTag(authTag);
 
-    let decrypted = decipher.update(encrypted, 'hex', 'utf8');
-    decrypted += decipher.final('utf8');
-    return decrypted;
-  } finally {
-    secureZero(key);
-    secureZero(salt);
-    secureZero(iv);
-    secureZero(authTag);
-  }
+  let decrypted = decipher.update(encrypted, 'hex', 'utf8');
+  decrypted += decipher.final('utf8');
+  return decrypted;
 }
 
 async function decryptV2(data: string, password: string): Promise<string> {
@@ -99,19 +85,12 @@ async function decryptV2(data: string, password: string): Promise<string> {
   const encryptedHex = data.slice(V2_SALT_LENGTH * 2 + IV_LENGTH * 2 + AUTH_TAG_LENGTH * 2);
 
   const key = await argon2.hash(password, { ...ARGON2_OPTS, salt }) as Buffer;
-  try {
-    const decipher = crypto.createDecipheriv(ALGORITHM, key, iv);
-    decipher.setAuthTag(authTag);
+  const decipher = crypto.createDecipheriv(ALGORITHM, key, iv);
+  decipher.setAuthTag(authTag);
 
-    let decrypted = decipher.update(encryptedHex, 'hex', 'utf8');
-    decrypted += decipher.final('utf8');
-    return decrypted;
-  } finally {
-    secureZero(key);
-    secureZero(salt);
-    secureZero(iv);
-    secureZero(authTag);
-  }
+  let decrypted = decipher.update(encryptedHex, 'hex', 'utf8');
+  decrypted += decipher.final('utf8');
+  return decrypted;
 }
 
 export function generateId(): string {

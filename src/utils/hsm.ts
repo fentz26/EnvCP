@@ -5,7 +5,6 @@ import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { ensureDir } from './fs.js';
 import { EnvCPConfig } from '../types.js';
-import { secureZero } from './secure-memory.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -122,32 +121,30 @@ export class YubiKeyPivBackend implements HsmBackend {
   }
 
   async encryptData(plaintext: Buffer): Promise<string> {
+    // Export the PIV certificate for slot 9d to get the public key, then use
+    // RSA-OAEP to encrypt an ephemeral AES-256 key.
+    // ciphertext JSON: { iv, encKey (RSA-OAEP, hex), ciphertext (AES-GCM, hex), authTag (hex) }
     const certPem = await this._exportCert();
     const publicKey = crypto.createPublicKey({ key: certPem, format: 'pem' });
 
     const aesKey = crypto.randomBytes(32);
     const iv = crypto.randomBytes(16);
-    try {
-      const cipher = crypto.createCipheriv('aes-256-gcm', aesKey, iv);
-      const ciphertext = Buffer.concat([cipher.update(plaintext), cipher.final()]);
-      const authTag = cipher.getAuthTag();
+    const cipher = crypto.createCipheriv('aes-256-gcm', aesKey, iv);
+    const ciphertext = Buffer.concat([cipher.update(plaintext), cipher.final()]);
+    const authTag = cipher.getAuthTag();
 
-      const encKey = crypto.publicEncrypt(
-        { key: publicKey, padding: crypto.constants.RSA_PKCS1_OAEP_PADDING, oaepHash: 'sha256' },
-        aesKey
-      );
+    const encKey = crypto.publicEncrypt(
+      { key: publicKey, padding: crypto.constants.RSA_PKCS1_OAEP_PADDING, oaepHash: 'sha256' },
+      aesKey
+    );
 
-      const payload = JSON.stringify({
-        iv: iv.toString('hex'),
-        encKey: encKey.toString('hex'),
-        ciphertext: ciphertext.toString('hex'),
-        authTag: authTag.toString('hex'),
-      });
-      return Buffer.from(payload).toString('base64');
-    } finally {
-      secureZero(aesKey);
-      secureZero(iv);
-    }
+    const payload = JSON.stringify({
+      iv: iv.toString('hex'),
+      encKey: encKey.toString('hex'),
+      ciphertext: ciphertext.toString('hex'),
+      authTag: authTag.toString('hex'),
+    });
+    return Buffer.from(payload).toString('base64');
   }
 
   async decryptData(blob: string): Promise<Buffer> {
@@ -162,16 +159,12 @@ export class YubiKeyPivBackend implements HsmBackend {
 
     const aesKey = await this._pivDecrypt(Buffer.from(encKey, 'hex'));
 
-    try {
-      const decipher = crypto.createDecipheriv('aes-256-gcm', aesKey, Buffer.from(iv, 'hex'));
-      decipher.setAuthTag(Buffer.from(authTag, 'hex'));
-      return Buffer.concat([
-        decipher.update(Buffer.from(ciphertext, 'hex')),
-        decipher.final(),
-      ]);
-    } finally {
-      secureZero(aesKey);
-    }
+    const decipher = crypto.createDecipheriv('aes-256-gcm', aesKey, Buffer.from(iv, 'hex'));
+    decipher.setAuthTag(Buffer.from(authTag, 'hex'));
+    return Buffer.concat([
+      decipher.update(Buffer.from(ciphertext, 'hex')),
+      decipher.final(),
+    ]);
   }
 
   private async _exportCert(): Promise<string> {
@@ -408,14 +401,10 @@ export class HsmManager {
       Buffer.from(':', 'utf8'),
       Buffer.from(userPassword, 'utf8'),
     ]);
-    try {
-      // lgtm[js/insufficient-password-hash] - combining secrets, not hashing passwords
-      return crypto
-        .createHmac('sha256', 'envcp-multi-factor')
-        .update(combined)
-        .digest('hex');
-    } finally {
-      secureZero(combined);
-    }
+    // lgtm[js/insufficient-password-hash] - combining secrets, not hashing passwords
+    return crypto
+      .createHmac('sha256', 'envcp-multi-factor')
+      .update(combined)
+      .digest('hex');
   }
 }

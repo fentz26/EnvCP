@@ -16,7 +16,6 @@ import { HsmManager } from '../utils/hsm.js';
 import { checkForUpdate, formatUpdateMessage, logUpdateCheck } from '../utils/update-checker.js';
 import { LockoutManager } from '../utils/lockout.js';
 import { Variable, EnvCPConfig } from '../types.js';
-import { initMemoryProtection } from '../utils/secure-memory.js';
 import {
   getGlobalVaultPath,
   getProjectVaultPath,
@@ -25,9 +24,6 @@ import {
   listVaults,
   initNamedVault,
 } from '../vault/index.js';
-
-// Initialize memory protection on module load
-initMemoryProtection();
 
 async function withSession(fn: (storage: StorageManager, password: string, config: EnvCPConfig, projectPath: string) => Promise<void>, vaultOverride?: 'global' | 'project'): Promise<void> {
   const projectPath = process.cwd();
