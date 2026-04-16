@@ -13,6 +13,7 @@
 <a href="https://github.com/fentz26/EnvCP/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-SAL%20v1.0-000000?style=flat-square&labelColor=000000" alt="license"></a>
 <a href="https://github.com/fentz26/EnvCP/releases"><img src="https://img.shields.io/badge/SLSA-3-000000?style=flat-square&labelColor=000000" alt="SLSA Level 3"></a>
 <a href="https://nodejs.org"><img src="https://img.shields.io/node/v/%40fentz26%2Fenvcp?style=flat-square&color=000000&labelColor=000000&label=node" alt="node version"></a>
+<a href="https://sloc.xyz/github/fentz26/EnvCP"><img src="https://sloc.xyz/github/fentz26/EnvCP?style=flat-square&color=000000&labelColor=000000&label=Total%20lines" alt="total lines"></a>
 </p>
 
 <p align="center">
