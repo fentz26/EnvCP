@@ -217,8 +217,20 @@ describe('LogManager Log Protection (Issue #179)', () => {
       expect(result).toBe(false);
     });
   });
-
+});
 describe('protectLogFiles', () => {
+  let tmpDir: string;
+  let logDir: string;
+
+  beforeEach(async () => {
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-protect-'));
+    logDir = path.join(tmpDir, 'logs');
+  });
+
+  afterEach(async () => {
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  });
+
   it('returns empty results when protection is none', async () => {
     const config = makeConfig({ protection: 'none' });
 
@@ -271,14 +283,25 @@ describe('protectLogFiles', () => {
 });
 
 describe('loadLastChainState from existing logs', () => {
-it('loads chain state from existing log file', async () => {
+  let tmpDir: string;
+  let logDir: string;
+
+  beforeEach(async () => {
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-chain-load-'));
+    logDir = path.join(tmpDir, 'logs');
+  });
+
+  afterEach(async () => {
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  });
+
+  it('loads chain state from existing log file', async () => {
     const config = makeConfig({
       hmac: true,
       hmac_chain: true,
       hmac_key_path: path.join(tmpDir, '.audit-hmac-key'),
     });
 
-    // Pre-create logs directory with an existing log file
     await fs.mkdir(logDir, { recursive: true });
     const existingLog = {
       timestamp: new Date().toISOString(),
@@ -296,7 +319,6 @@ it('loads chain state from existing log file', async () => {
     const logs = new LogManager(logDir, config);
     await logs.init();
 
-    // Log a new entry - it should have prev_hmac from existing entry
     await logs.log({
       timestamp: new Date().toISOString(),
       operation: 'update' as const,
@@ -306,13 +328,108 @@ it('loads chain state from existing log file', async () => {
 
     const entries = await logs.getLogs({});
     expect(entries.length).toBe(2);
-    // The new entry should reference the existing entry's hmac
     expect(entries[1].prev_hmac).toBe('existing-hmac-value');
     expect(entries[1].chain_index).toBe(6);
   });
+
+  it('loads chain state from multiple date files', async () => {
+    const config = makeConfig({
+      hmac: true,
+      hmac_chain: true,
+      hmac_key_path: path.join(tmpDir, '.audit-hmac-key'),
+    });
+
+    await fs.mkdir(logDir, { recursive: true });
+
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    const yesterdayStr = yesterday.toISOString().split('T')[0];
+    const todayStr = new Date().toISOString().split('T')[0];
+
+    const oldLog = {
+      timestamp: yesterday.toISOString(),
+      operation: 'get' as const,
+      source: 'cli' as const,
+      success: true,
+      hmac: 'old-hmac-value',
+      chain_index: 2,
+    };
+    await fs.writeFile(
+      path.join(logDir, `operations-${yesterdayStr}.log`),
+      JSON.stringify(oldLog) + '\n'
+    );
+
+    await fs.writeFile(
+      path.join(logDir, `operations-${todayStr}.log`),
+      ''
+    );
+
+    const logs = new LogManager(logDir, config);
+    await logs.init();
+
+    await logs.log({
+      timestamp: new Date().toISOString(),
+      operation: 'update' as const,
+      source: 'cli' as const,
+      success: true,
+    });
+
+    const entries = await logs.getLogs({});
+    expect(entries.length).toBe(1);
+    expect(entries[0].prev_hmac).toBe('old-hmac-value');
+    expect(entries[0].chain_index).toBe(3);
+  });
+
+  it('loads chain state when entry has no hmac', async () => {
+    const config = makeConfig({
+      hmac: true,
+      hmac_chain: true,
+      hmac_key_path: path.join(tmpDir, '.audit-hmac-key'),
+    });
+
+    await fs.mkdir(logDir, { recursive: true });
+
+    const existingLog = {
+      timestamp: new Date().toISOString(),
+      operation: 'get' as const,
+      source: 'cli' as const,
+      success: true,
+      chain_index: 3,
+    };
+    await fs.writeFile(
+      path.join(logDir, `operations-${new Date().toISOString().split('T')[0]}.log`),
+      JSON.stringify(existingLog) + '\n'
+    );
+
+    const logs = new LogManager(logDir, config);
+    await logs.init();
+
+    await logs.log({
+      timestamp: new Date().toISOString(),
+      operation: 'update' as const,
+      source: 'cli' as const,
+      success: true,
+    });
+
+    const entries = await logs.getLogs({});
+    expect(entries.length).toBe(2);
+    expect(entries[1].chain_index).toBe(4);
+});
 });
 
 describe('verifyLogChain edge cases', () => {
+  let tmpDir: string;
+  let logDir: string;
+
+  beforeEach(async () => {
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-verify-'));
+    logDir = path.join(tmpDir, 'logs');
+  });
+
+  afterEach(async () => {
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  });
+
   it('returns valid when hmac_chain is disabled', async () => {
     const config = makeConfig({
       hmac: true,
@@ -333,16 +450,82 @@ describe('verifyLogChain edge cases', () => {
     expect(result.valid).toBe(true);
     expect(result.entries).toBe(0);
   });
+
+  it('detects broken prev_hmac chain across entries', async () => {
+    const config = makeConfig({
+      hmac: true,
+      hmac_chain: true,
+      hmac_key_path: path.join(tmpDir, '.audit-hmac-key'),
+    });
+
+    const logs = new LogManager(logDir, config);
+    await logs.init();
+
+    for (let i = 0; i < 3; i++) {
+      await logs.log({
+        timestamp: new Date().toISOString(),
+        operation: 'get' as const,
+        source: 'cli' as const,
+        success: true,
+      });
+    }
+
+    const logFile = path.join(logDir, `operations-${new Date().toISOString().split('T')[0]}.log`);
+    const content = await fs.readFile(logFile, 'utf8');
+    const lines = content.trim().split('\n');
+    const secondEntry = JSON.parse(lines[1]);
+    secondEntry.prev_hmac = 'tampered-hmac';
+    lines[1] = JSON.stringify(secondEntry);
+    await fs.writeFile(logFile, lines.join('\n') + '\n');
+
+    const result = await logs.verifyLogChain();
+    expect(result.valid).toBe(false);
+    expect(result.tampered.length).toBeGreaterThan(0);
+  });
+
+  it('verifies chain for a specific date', async () => {
+    const config = makeConfig({
+      hmac: true,
+      hmac_chain: true,
+      hmac_key_path: path.join(tmpDir, '.audit-hmac-key'),
+    });
+
+    const logs = new LogManager(logDir, config);
+    await logs.init();
+
+    await logs.log({
+      timestamp: new Date().toISOString(),
+      operation: 'get' as const,
+      source: 'cli' as const,
+      success: true,
+    });
+
+    const today = new Date().toISOString().split('T')[0];
+    const result = await logs.verifyLogChain(today);
+    expect(result.valid).toBe(true);
+    expect(result.entries).toBe(1);
+  });
 });
 
 describe('removeAppendOnly and removeImmutable', () => {
+  let tmpDir: string;
+  let logDir: string;
+
+  beforeEach(async () => {
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-remove-'));
+    logDir = path.join(tmpDir, 'logs');
+  });
+
+  afterEach(async () => {
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  });
+
   it('removeAppendOnly returns false on non-Linux', async () => {
     if (process.platform === 'linux') {
       return;
     }
 
     const config = makeConfig({ protection: 'append_only' });
-
     const logs = new LogManager(logDir, config);
     await logs.init();
 
@@ -350,13 +533,12 @@ describe('removeAppendOnly and removeImmutable', () => {
     expect(result).toBe(false);
   });
 
-it('removeImmutable returns false on non-Linux', async () => {
+  it('removeImmutable returns false on non-Linux', async () => {
     if (process.platform === 'linux') {
       return;
     }
 
     const config = makeConfig({ protection: 'immutable' });
-
     const logs = new LogManager(logDir, config);
     await logs.init();
 
@@ -364,4 +546,140 @@ it('removeImmutable returns false on non-Linux', async () => {
     expect(result).toBe(false);
   });
 });
+
+describe('log before init (chainLoaded = false)', () => {
+  let tmpDir: string;
+  let logDir: string;
+
+  beforeEach(async () => {
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-noinit-'));
+    logDir = path.join(tmpDir, 'logs');
+  });
+
+  afterEach(async () => {
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  });
+
+  it('loads chain state when logging before init is called', async () => {
+    const config = makeConfig({
+      hmac: true,
+      hmac_chain: true,
+      hmac_key_path: path.join(tmpDir, '.audit-hmac-key'),
+    });
+
+    await fs.mkdir(logDir, { recursive: true });
+    const existingLog = {
+      timestamp: new Date().toISOString(),
+      operation: 'get' as const,
+      source: 'cli' as const,
+      success: true,
+      hmac: 'existing-hmac-value',
+      chain_index: 5,
+    };
+    await fs.writeFile(
+      path.join(logDir, `operations-${new Date().toISOString().split('T')[0]}.log`),
+      JSON.stringify(existingLog) + '\n'
+    );
+
+    const logs = new LogManager(logDir, config);
+    await logs.init();
+
+    await logs.log({
+      timestamp: new Date().toISOString(),
+      operation: 'update' as const,
+      source: 'cli' as const,
+      success: true,
+    });
+
+    const entries = await logs.getLogs({});
+    expect(entries.length).toBe(2);
+    expect(entries[1].prev_hmac).toBe('existing-hmac-value');
+    expect(entries[1].chain_index).toBe(6);
+  });
+});
+
+describe('protectLogFiles with unknown protection type', () => {
+  let tmpDir: string;
+  let logDir: string;
+
+  beforeEach(async () => {
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-unknown-'));
+    logDir = path.join(tmpDir, 'logs');
+  });
+
+  afterEach(async () => {
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  });
+
+  it('skips files with unknown protection type (else branch)', async () => {
+    const config = makeConfig({ protection: 'none' });
+    (config as Record<string, unknown>).protection = 'unknown_type';
+
+    const logs = new LogManager(logDir, config);
+    await logs.init();
+
+    await fs.mkdir(logDir, { recursive: true });
+    await fs.writeFile(path.join(logDir, 'operations-2026-01-01.log'), '{}\n');
+
+    const result = await logs.protectLogFiles();
+    expect(result.protected).toHaveLength(0);
+    expect(result.failed).toHaveLength(0);
+  });
+});
+
+describe('execChattr on Linux (mocked)', () => {
+  let tmpDir: string;
+  let logDir: string;
+
+  beforeEach(async () => {
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-chattr-'));
+    logDir = path.join(tmpDir, 'logs');
+  });
+
+  afterEach(async () => {
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  });
+
+  it('returns false when chattr fails due to permissions', async () => {
+    if (process.platform !== 'linux') {
+      return;
+    }
+
+    const config = makeConfig({ protection: 'append_only' });
+    const logs = new LogManager(logDir, config);
+    await logs.init();
+
+    await fs.mkdir(logDir, { recursive: true });
+    const testFile = path.join(logDir, 'test-chattr.log');
+    await fs.writeFile(testFile, 'test\n');
+
+    const result = await logs.setAppendOnly(testFile);
+    expect(result).toBe(false);
+  });
+
+  it('returns false when chattr fails on protected path', async () => {
+    if (process.platform !== 'linux') {
+      return;
+    }
+
+    const config = makeConfig({ protection: 'append_only' });
+    const logs = new LogManager(logDir, config);
+    await logs.init();
+
+    const result = await logs.setAppendOnly('/proc/nonexistent-test-file.log');
+    expect(result).toBe(false);
+  });
+
+  it('removeImmutable returns false when fails on Linux', async () => {
+    if (process.platform !== 'linux') {
+      return;
+    }
+
+    const config = makeConfig({ protection: 'immutable' });
+    const logs = new LogManager(logDir, config);
+    await logs.init();
+
+    const result = await logs.removeImmutable('/nonexistent/path/file.log');
+    expect(result).toBe(false);
+  });
 });
