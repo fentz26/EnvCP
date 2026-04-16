@@ -27,12 +27,11 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v6
 
-      - name: Initialize CodeQL
-        uses: github/codeql-action/init@v4
-        with:
-          languages: ${{ matrix.language }}
-          # Use extended security queries for more comprehensive analysis
-          queries: security-extended
+- name: Initialize CodeQL
+      uses: github/codeql-action/init@v4
+      with:
+        languages: ${{ matrix.language }}
+        config-file: ./.github/codeql/codeql-config.yml
 
       - name: Setup Node.js
         uses: actions/setup-node@v6

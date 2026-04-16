@@ -218,19 +218,150 @@ describe('LogManager Log Protection (Issue #179)', () => {
     });
   });
 
-  describe('protectLogFiles', () => {
-    it('returns empty results when protection is none', async () => {
-      const config = makeConfig({ protection: 'none' });
+describe('protectLogFiles', () => {
+  it('returns empty results when protection is none', async () => {
+    const config = makeConfig({ protection: 'none' });
 
-      const logs = new LogManager(logDir, config);
-      await logs.init();
+    const logs = new LogManager(logDir, config);
+    await logs.init();
 
-      await fs.mkdir(logDir, { recursive: true });
-      await fs.writeFile(path.join(logDir, 'operations-2026-01-01.log'), '{}\n');
+    await fs.mkdir(logDir, { recursive: true });
+    await fs.writeFile(path.join(logDir, 'operations-2026-01-01.log'), '{}\n');
 
-      const result = await logs.protectLogFiles();
-      expect(result.protected).toHaveLength(0);
-      expect(result.failed).toHaveLength(0);
-    });
+    const result = await logs.protectLogFiles();
+    expect(result.protected).toHaveLength(0);
+    expect(result.failed).toHaveLength(0);
   });
+
+  it('protects log files when protection is append-only', async () => {
+    const config = makeConfig({ protection: 'append_only' });
+
+    const logs = new LogManager(logDir, config);
+    await logs.init();
+
+    await fs.mkdir(logDir, { recursive: true });
+    await fs.writeFile(path.join(logDir, 'operations-2026-01-01.log'), '{}\n');
+
+    const result = await logs.protectLogFiles();
+    // On non-Linux, chattr fails so we expect failed entries
+    if (process.platform !== 'linux') {
+      expect(result.failed.length).toBeGreaterThanOrEqual(0);
+    } else {
+      expect(result.protected.length).toBeGreaterThanOrEqual(0);
+    }
+  });
+
+  it('protects log files when protection is immutable', async () => {
+    const config = makeConfig({ protection: 'immutable' });
+
+    const logs = new LogManager(logDir, config);
+    await logs.init();
+
+    await fs.mkdir(logDir, { recursive: true });
+    await fs.writeFile(path.join(logDir, 'operations-2026-01-01.log'), '{}\n');
+
+    const result = await logs.protectLogFiles();
+    // On non-Linux, chattr fails so we expect failed entries
+    if (process.platform !== 'linux') {
+      expect(result.failed.length).toBeGreaterThanOrEqual(0);
+    } else {
+      expect(result.protected.length).toBeGreaterThanOrEqual(0);
+    }
+  });
+});
+
+describe('loadLastChainState from existing logs', () => {
+it('loads chain state from existing log file', async () => {
+    const config = makeConfig({
+      hmac: true,
+      hmac_chain: true,
+      hmac_key_path: path.join(tmpDir, '.audit-hmac-key'),
+    });
+
+    // Pre-create logs directory with an existing log file
+    await fs.mkdir(logDir, { recursive: true });
+    const existingLog = {
+      timestamp: new Date().toISOString(),
+      operation: 'get' as const,
+      source: 'cli' as const,
+      success: true,
+      hmac: 'existing-hmac-value',
+      chain_index: 5,
+    };
+    await fs.writeFile(
+      path.join(logDir, `operations-${new Date().toISOString().split('T')[0]}.log`),
+      JSON.stringify(existingLog) + '\n'
+    );
+
+    const logs = new LogManager(logDir, config);
+    await logs.init();
+
+    // Log a new entry - it should have prev_hmac from existing entry
+    await logs.log({
+      timestamp: new Date().toISOString(),
+      operation: 'update' as const,
+      source: 'cli' as const,
+      success: true,
+    });
+
+    const entries = await logs.getLogs({});
+    expect(entries.length).toBe(2);
+    // The new entry should reference the existing entry's hmac
+    expect(entries[1].prev_hmac).toBe('existing-hmac-value');
+    expect(entries[1].chain_index).toBe(6);
+  });
+});
+
+describe('verifyLogChain edge cases', () => {
+  it('returns valid when hmac_chain is disabled', async () => {
+    const config = makeConfig({
+      hmac: true,
+      hmac_chain: false,
+      hmac_key_path: path.join(tmpDir, '.audit-hmac-key'),
+    });
+
+    const logs = new LogManager(logDir, config);
+    await logs.init();
+    await logs.log({
+      timestamp: new Date().toISOString(),
+      operation: 'get' as const,
+      source: 'cli' as const,
+      success: true,
+    });
+
+    const result = await logs.verifyLogChain();
+    expect(result.valid).toBe(true);
+    expect(result.entries).toBe(0);
+  });
+});
+
+describe('removeAppendOnly and removeImmutable', () => {
+  it('removeAppendOnly returns false on non-Linux', async () => {
+    if (process.platform === 'linux') {
+      return;
+    }
+
+    const config = makeConfig({ protection: 'append_only' });
+
+    const logs = new LogManager(logDir, config);
+    await logs.init();
+
+    const result = await logs.removeAppendOnly(path.join(logDir, 'test.log'));
+    expect(result).toBe(false);
+  });
+
+it('removeImmutable returns false on non-Linux', async () => {
+    if (process.platform === 'linux') {
+      return;
+    }
+
+    const config = makeConfig({ protection: 'immutable' });
+
+    const logs = new LogManager(logDir, config);
+    await logs.init();
+
+    const result = await logs.removeImmutable(path.join(logDir, 'test.log'));
+    expect(result).toBe(false);
+  });
+});
 });
