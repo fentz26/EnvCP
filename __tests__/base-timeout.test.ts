@@ -14,6 +14,7 @@ jest.unstable_mockModule('child_process', () => ({
     mockProc.killed = false;
     return mockProc;
   }),
+  exec: jest.fn((cmd: string, cb: Function) => cb(null, '', '')),
 }));
 
 // Dynamic imports after mock

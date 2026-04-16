@@ -1831,4 +1831,62 @@ program
     }
   });
 
+program
+  .command('verify-logs')
+  .description('Verify HMAC chain integrity of audit logs')
+  .option('--date <date>', 'Verify specific date (YYYY-MM-DD, default: all dates)')
+  .action(async (options) => {
+    const projectPath = process.cwd();
+    const config = await loadConfig(projectPath);
+    const logDir = path.join(projectPath, '.envcp', 'logs');
+    const logs = new LogManager(logDir, config.audit);
+    await logs.init();
+
+    if (!config.audit.hmac_chain) {
+      console.log(chalk.yellow('HMAC chain is not enabled in audit config.'));
+      return;
+    }
+
+    console.log(chalk.bold('Verifying log chain integrity...'));
+    const result = await logs.verifyLogChain(options.date);
+
+    if (result.valid) {
+      console.log(chalk.green(`✓ Chain integrity verified: ${result.entries} entries OK`));
+    } else {
+      console.log(chalk.red(`✗ Chain integrity FAILED: ${result.tampered.length}/${result.entries} entries tampered`));
+      console.log(chalk.red(`  Tampered indices: ${result.tampered.join(', ')}`));
+    }
+  });
+
+program
+  .command('protect-logs')
+  .description('Apply OS-level protection to audit log files (Linux only)')
+  .action(async () => {
+    const projectPath = process.cwd();
+    const config = await loadConfig(projectPath);
+    const logDir = path.join(projectPath, '.envcp', 'logs');
+    const logs = new LogManager(logDir, config.audit);
+    await logs.init();
+
+    if (config.audit.protection === 'none') {
+      console.log(chalk.yellow('Log protection is disabled in config (protection: none).'));
+      return;
+    }
+
+    console.log(chalk.bold(`Applying ${config.audit.protection} protection to log files...`));
+    const result = await logs.protectLogFiles();
+
+    if (result.protected.length > 0) {
+      console.log(chalk.green(`✓ Protected ${result.protected.length} files:`));
+      result.protected.forEach((f: string) => console.log(chalk.gray(`  ${f}`)));
+    }
+    if (result.failed.length > 0) {
+      console.log(chalk.red(`✗ Failed to protect ${result.failed.length} files:`));
+      result.failed.forEach((f: string) => console.log(chalk.gray(`  ${f}`)));
+    }
+    if (result.protected.length === 0 && result.failed.length === 0) {
+      console.log(chalk.gray('No log files to protect.'));
+    }
+  });
+
 program.parse();
