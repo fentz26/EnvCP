@@ -247,7 +247,7 @@ function createMcpEntry(projectPath: string, isProjectLocal: boolean): Record<st
   return entry;
 }
 
-function writeToConfig(
+export function writeToConfig(
   config: Record<string, unknown>,
   format: McpTarget['format'],
   entry: Record<string, unknown>,
@@ -327,14 +327,14 @@ export async function registerMcpConfig(projectPath: string): Promise<{ register
       const entry = createMcpEntry(projectPath, target.projectLocal);
       const result = writeToConfig(config, target.format, entry);
 
-      if (result.alreadyExists) {
+if (result.alreadyExists) {
         alreadyConfigured.push(target.name);
         continue;
       }
 
-await ensureDir(path.dirname(configPath));
-    await fs.writeFile(configPath, JSON.stringify(config, null, 2), 'utf8');
-    if (result.written) registered.push(target.name);
+      await ensureDir(path.dirname(configPath));
+      await fs.writeFile(configPath, JSON.stringify(config, null, 2), 'utf8');
+      registered.push(target.name);
     } catch {
       /* istanbul ignore next -- rare: invalid JSON or permission errors are silently skipped */
     }

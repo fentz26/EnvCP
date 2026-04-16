@@ -662,3 +662,75 @@ describe('registerMcpConfig — write path (line 332)', () => {
   });
 });
 
+describe('writeToConfig — return value documentation (line 337)', () => {
+  it('always returns written=true when alreadyExists=false (mcpServers format)', async () => {
+    const { writeToConfig } = await import('../src/config/manager.js');
+    const result = writeToConfig({}, 'mcpServers', { command: 'npx' });
+    expect(result.written).toBe(true);
+    expect(result.alreadyExists).toBe(false);
+  });
+
+  it('always returns written=false when alreadyExists=true (mcpServers format)', async () => {
+    const { writeToConfig } = await import('../src/config/manager.js');
+    const result = writeToConfig({ mcpServers: { envcp: {} } }, 'mcpServers', { command: 'npx' });
+    expect(result.written).toBe(false);
+    expect(result.alreadyExists).toBe(true);
+  });
+
+  it('always returns written=true when alreadyExists=false (servers format)', async () => {
+    const { writeToConfig } = await import('../src/config/manager.js');
+    const result = writeToConfig({}, 'servers', { command: 'npx' });
+    expect(result.written).toBe(true);
+    expect(result.alreadyExists).toBe(false);
+  });
+
+  it('always returns written=false when alreadyExists=true (servers format)', async () => {
+    const { writeToConfig } = await import('../src/config/manager.js');
+    const result = writeToConfig({ servers: { envcp: {} } }, 'servers', { command: 'npx' });
+    expect(result.written).toBe(false);
+    expect(result.alreadyExists).toBe(true);
+  });
+
+  it('always returns written=true when alreadyExists=false (context_servers format)', async () => {
+    const { writeToConfig } = await import('../src/config/manager.js');
+    const result = writeToConfig({}, 'context_servers', { command: 'npx', args: [] });
+    expect(result.written).toBe(true);
+    expect(result.alreadyExists).toBe(false);
+  });
+
+  it('always returns written=false when alreadyExists=true (context_servers format)', async () => {
+    const { writeToConfig } = await import('../src/config/manager.js');
+    const result = writeToConfig({ context_servers: { envcp: {} } }, 'context_servers', { command: 'npx', args: [] });
+    expect(result.written).toBe(false);
+    expect(result.alreadyExists).toBe(true);
+  });
+
+  it('always returns written=true when alreadyExists=false (mcp_key format)', async () => {
+    const { writeToConfig } = await import('../src/config/manager.js');
+    const result = writeToConfig({}, 'mcp_key', {});
+    expect(result.written).toBe(true);
+    expect(result.alreadyExists).toBe(false);
+  });
+
+  it('always returns written=false when alreadyExists=true (mcp_key format)', async () => {
+    const { writeToConfig } = await import('../src/config/manager.js');
+    const result = writeToConfig({ mcp: { envcp: {} } }, 'mcp_key', {});
+    expect(result.written).toBe(false);
+    expect(result.alreadyExists).toBe(true);
+  });
+
+  it('always returns written=true when alreadyExists=false (mcp_servers_array format)', async () => {
+    const { writeToConfig } = await import('../src/config/manager.js');
+    const result = writeToConfig({}, 'mcp_servers_array', { command: 'npx' });
+    expect(result.written).toBe(true);
+    expect(result.alreadyExists).toBe(false);
+  });
+
+  it('always returns written=false when alreadyExists=true (mcp_servers_array format)', async () => {
+    const { writeToConfig } = await import('../src/config/manager.js');
+    const result = writeToConfig({ mcp_servers: [{ name: 'envcp' }] }, 'mcp_servers_array', { command: 'npx' });
+    expect(result.written).toBe(false);
+    expect(result.alreadyExists).toBe(true);
+  });
+});
+
