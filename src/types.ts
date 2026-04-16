@@ -1,7 +1,6 @@
 import { z } from 'zod';
 import * as path from 'path';
 
-// Server mode types (defined first for use in EnvCPConfigSchema)
 export const ServerModeSchema = z.enum(['mcp', 'rest', 'openai', 'gemini', 'all', 'auto']);
 export type ServerMode = z.infer<typeof ServerModeSchema>;
 
@@ -16,7 +15,6 @@ export type RateLimitConfig = z.infer<typeof RateLimitConfigSchema>;
 export const VaultModeSchema = z.enum(['project', 'global']);
 export type VaultMode = z.infer<typeof VaultModeSchema>;
 
-// Audit schemas (defined before EnvCPConfigSchema which references AuditConfigSchema)
 export const AuditFieldsSchema = z.object({
   session_id: z.boolean().default(true),
   client_id: z.boolean().default(true),
@@ -35,6 +33,15 @@ export const AuditConfigSchema = z.object({
   fields: AuditFieldsSchema,
   hmac: z.boolean().default(false),
   hmac_key_path: z.string().default('.envcp/.audit-hmac-key'),
+  hmac_chain: z.boolean().default(false),
+  protection: z.enum(['none', 'append_only', 'immutable', 'remote']).default('none'),
+  remote_ship: z.object({
+    type: z.enum(['syslog', 'http', 'file']).optional(),
+    endpoint: z.string().optional(),
+    api_key: z.string().optional(),
+    batch_size: z.number().int().positive().default(100),
+    retry_count: z.number().int().min(0).max(5).default(3),
+  }).optional(),
 }).default({});
 
 export type AuditConfig = z.infer<typeof AuditConfigSchema>;
@@ -189,7 +196,6 @@ export const OperationLogSchema = z.object({
   source: z.enum(['cli', 'mcp', 'api']),
   success: z.boolean(),
   message: z.string().optional(),
-  // Enhanced audit fields
   session_id: z.string().optional(),
   client_id: z.string().optional(),
   client_type: z.string().optional(),
@@ -198,6 +204,8 @@ export const OperationLogSchema = z.object({
   purpose: z.string().optional(),
   duration_ms: z.number().optional(),
   hmac: z.string().optional(),
+  prev_hmac: z.string().optional(),
+  chain_index: z.number().optional(),
 });
 
 export type OperationLog = z.infer<typeof OperationLogSchema>;
@@ -224,7 +232,6 @@ export const ServerConfigSchema = z.object({
 
 export type ServerConfig = z.infer<typeof ServerConfigSchema>;
 
-// Tool definition for adapters
 export interface ToolDefinition {
   name: string;
   description: string;
@@ -232,7 +239,6 @@ export interface ToolDefinition {
   handler: (params: Record<string, unknown>) => Promise<unknown>;
 }
 
-// OpenAI function calling format
 export interface OpenAIFunction {
   name: string;
   description: string;
@@ -259,7 +265,6 @@ export interface OpenAIMessage {
   tool_call_id?: string;
 }
 
-// Gemini function calling format
 export interface GeminiFunctionDeclaration {
   name: string;
   description: string;
@@ -280,7 +285,6 @@ export interface GeminiFunctionResponse {
   response: Record<string, unknown>;
 }
 
-// REST API types
 export interface RESTResponse<T = unknown> {
   success: boolean;
   data?: T;
@@ -288,5 +292,4 @@ export interface RESTResponse<T = unknown> {
   timestamp: string;
 }
 
-// Detected client type
 export type ClientType = 'mcp' | 'openai' | 'gemini' | 'rest' | 'unknown';
