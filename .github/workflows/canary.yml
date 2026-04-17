@@ -1,0 +1,65 @@
+name: Canary Release
+
+on:
+  schedule:
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  packages: write
+  id-token: write
+
+jobs:
+  canary:
+    if: github.ref == 'refs/heads/canary' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          ref: canary
+
+      - uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1d02f # v6
+        with:
+          node-version: '20'
+          registry-url: 'https://registry.npmjs.org'
+
+      - run: npm install
+
+      - run: npm run build
+
+      - name: Bump canary version
+        run: |
+          BASE_VERSION=$(node -p "require('./package.json').version")
+          TIMESTAMP=$(date +%Y%m%d%H%M)
+          SHORT_SHA=$(git rev-parse --short HEAD)
+          CANARY_VERSION="${BASE_VERSION}-canary.${TIMESTAMP}.${SHORT_SHA}"
+          npm version "$CANARY_VERSION" --no-git-tag-version
+          echo "CANARY_VERSION=$CANARY_VERSION" >> $GITHUB_ENV
+
+      - run: npm publish --access=public --tag canary --provenance
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Create canary GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="v${{ env.CANARY_VERSION }}"
+          gh release create "$TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "Canary: $TAG" \
+            --prerelease \
+            --notes "Automated canary release from canary branch at $(git rev-parse --short HEAD)"
+
+      - name: Build and push Docker canary
+        uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7.1.0
+        with:
+          context: .
+          file: ./docker/Dockerfile
+          push: true
+          tags: |
+            ${{ vars.DOCKERHUB_USERNAME }}/envcp:canary
+            ghcr.io/fentz26/envcp:canary
+        env:
+          DOCKER_USERNAME: ${{ vars.DOCKERHUB_USERNAME }}

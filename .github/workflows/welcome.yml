@@ -1,0 +1,38 @@
+name: Welcome First-Time Contributors
+
+on:
+  pull_request:
+    types: [opened]
+  issues:
+    types: [opened]
+
+permissions:
+  issues: write
+  pull-requests: write
+
+jobs:
+  welcome:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/first-interaction@3c71c7c67b4a5e719e791aae8c6e6f8e9ca1d6c5 # v3
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          issue-message: |
+            Thanks for opening your first issue on EnvCP! We appreciate the report.
+
+            A maintainer will review this soon. In the meantime:
+            - Check existing issues to avoid duplicates
+            - Include EnvCP version, Node.js version, and OS if reporting a bug
+            - Redact any secrets or sensitive values
+
+          pr-message: |
+            Thanks for your first contribution to EnvCP!
+
+            Quick checklist before review:
+            - [ ] `npm run build` passes
+            - [ ] `npm test` passes
+            - [ ] No secrets or API keys in the diff
+            - [ ] PR has a `release:*` label (required for CI)
+            - [ ] Related issues are linked (`Closes #123` or `Related #123`)
+
+            A maintainer will review your changes soon.

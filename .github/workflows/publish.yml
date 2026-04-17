@@ -4,14 +4,53 @@ on:
   push:
     tags: ['v*']
   workflow_dispatch:
+    inputs:
+      npm_tag:
+        description: 'npm dist-tag (latest, experimental, canary)'
+        required: false
+        default: 'latest'
+        type: choice
+        options:
+          - latest
+          - experimental
+          - canary
 
 permissions:
   contents: write
   packages: write
   id-token: write
+  issues: write
 
 jobs:
+  determine-channel:
+    runs-on: ubuntu-latest
+    outputs:
+      npm_tag: ${{ steps.channel.outputs.npm_tag }}
+      prerelease: ${{ steps.channel.outputs.prerelease }}
+    steps:
+      - id: channel
+        run: |
+          TAG="${GITHUB_REF#refs/tags/v}"
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "npm_tag=${{ github.event.inputs.npm_tag }}" >> $GITHUB_OUTPUT
+            if [[ "${{ github.event.inputs.npm_tag }}" != "latest" ]]; then
+              echo "prerelease=true" >> $GITHUB_OUTPUT
+            else
+              echo "prerelease=false" >> $GITHUB_OUTPUT
+            fi
+          elif [[ "$TAG" == *"-experimental"* ]]; then
+            echo "npm_tag=experimental" >> $GITHUB_OUTPUT
+            echo "prerelease=true" >> $GITHUB_OUTPUT
+          elif [[ "$TAG" == *"-canary"* ]]; then
+            echo "npm_tag=canary" >> $GITHUB_OUTPUT
+            echo "prerelease=true" >> $GITHUB_OUTPUT
+          else
+            echo "npm_tag=latest" >> $GITHUB_OUTPUT
+            echo "prerelease=false" >> $GITHUB_OUTPUT
+          fi
+
   publish-npm:
+    needs: determine-channel
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
@@ -25,7 +64,7 @@ jobs:
 
       - run: npm run build
 
-      - run: npm publish --access=public --provenance
+      - run: npm publish --access=public --tag ${{ needs.determine-channel.outputs.npm_tag }} --provenance
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
@@ -34,11 +73,12 @@ jobs:
           node-version: '20'
           registry-url: 'https://npm.pkg.github.com'
 
-      - run: npm publish --access=public --provenance
+      - run: npm publish --access=public --tag ${{ needs.determine-channel.outputs.npm_tag }} --provenance
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   publish-pypi:
+    needs: determine-channel
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
@@ -70,6 +110,7 @@ jobs:
           packages-dir: python/dist/
 
   publish-docker:
+    needs: determine-channel
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
@@ -102,6 +143,19 @@ jobs:
         id: version
         run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
 
+      - name: Determine Docker tags
+        id: dockertags
+        run: |
+          NPM_TAG="${{ needs.determine-channel.outputs.npm_tag }}"
+          VERSION="${{ steps.version.outputs.VERSION }}"
+          if [[ "$NPM_TAG" == "latest" ]]; then
+            echo "extra_tags=${{ vars.DOCKERHUB_USERNAME }}/envcp:latest,ghcr.io/fentz26/envcp:latest" >> $GITHUB_OUTPUT
+          elif [[ "$NPM_TAG" == "experimental" ]]; then
+            echo "extra_tags=${{ vars.DOCKERHUB_USERNAME }}/envcp:experimental,ghcr.io/fentz26/envcp:experimental" >> $GITHUB_OUTPUT
+          else
+            echo "extra_tags=${{ vars.DOCKERHUB_USERNAME }}/envcp:canary,ghcr.io/fentz26/envcp:canary" >> $GITHUB_OUTPUT
+          fi
+
       - name: Build and push to Docker Hub
         uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7.1.0
         with:
@@ -109,21 +163,12 @@ jobs:
           file: ./docker/Dockerfile
           push: true
           tags: |
-            ${{ vars.DOCKERHUB_USERNAME }}/envcp:latest
             ${{ vars.DOCKERHUB_USERNAME }}/envcp:${{ steps.version.outputs.VERSION }}
-
-      - name: Build and push to GHCR
-        uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7.1.0
-        with:
-          context: .
-          file: ./docker/Dockerfile
-          push: true
-          tags: |
-            ghcr.io/fentz26/envcp:latest
             ghcr.io/fentz26/envcp:${{ steps.version.outputs.VERSION }}
+            ${{ steps.dockertags.outputs.extra_tags }}
 
   create-release:
-    needs: [publish-npm, publish-pypi, publish-docker]
+    needs: [determine-channel, publish-npm, publish-pypi, publish-docker]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
@@ -134,25 +179,144 @@ jobs:
           name: pypi-dist
           path: pypi-dist/
 
+      - name: Generate changelog
+        id: changelog
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+
+          if [[ -n "$PREV_TAG" ]]; then
+            RANGE="$PREV_TAG..HEAD"
+          else
+            RANGE="HEAD"
+          fi
+
+          FEAT=""
+          FIX=""
+          SECURITY=""
+          PERF=""
+          DOCS=""
+          CI=""
+          DEPS=""
+          OTHER=""
+
+          while IFS= read -r line; do
+            msg=$(echo "$line" | sed 's/^[a-f0-9]* //')
+            if echo "$msg" | grep -qiE '^[a-z]+(\(.+\))?!?:'; then
+              type=$(echo "$msg" | sed -E 's/^([a-z]+)(\(.+\))?!?:.*/\1/')
+            else
+              type="other"
+            fi
+
+            pr_num=$(echo "$msg" | grep -oE '#[0-9]+' | head -1 | tr -d '#')
+            link=""
+            if [[ -n "$pr_num" ]]; then
+              link=" ([#$pr_num](https://github.com/$GITHUB_REPOSITORY/pull/$pr_num))"
+            fi
+
+            case "$type" in
+              feat)    FEAT="$FEAT\n- $msg$link" ;;
+              fix)     FIX="$FIX\n- $msg$link" ;;
+              security|sec) SECURITY="$SECURITY\n- $msg$link" ;;
+              perf)    PERF="$PERF\n- $msg$link" ;;
+              docs)    DOCS="$DOCS\n- $msg$link" ;;
+              ci)      CI="$CI\n- $msg$link" ;;
+              deps|dep|build) DEPS="$DEPS\n- $msg$link" ;;
+              *)       OTHER="$OTHER\n- $msg$link" ;;
+            esac
+          done < <(git log $RANGE --pretty=format:"%h %s" --no-merges 2>/dev/null)
+
+          BODY="## What Changed"
+          BODY="$BODY\n"
+          if [[ -n "$FEAT" ]]; then BODY="$BODY\n### Features$(echo -e "$FEAT")"; fi
+          if [[ -n "$FIX" ]]; then BODY="$BODY\n### Fixes$(echo -e "$FIX")"; fi
+          if [[ -n "$SECURITY" ]]; then BODY="$BODY\n### Security$(echo -e "$SECURITY")"; fi
+          if [[ -n "$PERF" ]]; then BODY="$BODY\n### Performance$(echo -e "$PERF")"; fi
+          if [[ -n "$DOCS" ]]; then BODY="$BODY\n### Documentation$(echo -e "$DOCS")"; fi
+          if [[ -n "$CI" ]]; then BODY="$BODY\n### CI/CD$(echo -e "$CI")"; fi
+          if [[ -n "$DEPS" ]]; then BODY="$BODY\n### Dependencies$(echo -e "$DEPS")"; fi
+          if [[ -n "$OTHER" ]]; then BODY="$BODY\n### Other$(echo -e "$OTHER")"; fi
+
+          BODY="$BODY\n\n---\n\n**Full Changelog**: https://github.com/$GITHUB_REPOSITORY/compare/${PREV_TAG:-$TAG}...$TAG"
+
+          echo "body<<EOF" >> $GITHUB_OUTPUT
+          echo -e "$BODY" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+          SECTION=""
+          if [[ -n "$FEAT" ]]; then SECTION="$SECTION\n### Features$(echo -e "$FEAT")"; fi
+          if [[ -n "$FIX" ]]; then SECTION="$SECTION\n### Fixes$(echo -e "$FIX")"; fi
+          if [[ -n "$SECURITY" ]]; then SECTION="$SECTION\n### Security$(echo -e "$SECURITY")"; fi
+          if [[ -n "$PERF" ]]; then SECTION="$SECTION\n### Performance$(echo -e "$PERF")"; fi
+          if [[ -n "$DOCS" ]]; then SECTION="$SECTION\n### Documentation$(echo -e "$DOCS")"; fi
+          if [[ -n "$CI" ]]; then SECTION="$SECTION\n### CI/CD$(echo -e "$CI")"; fi
+          if [[ -n "$DEPS" ]]; then SECTION="$SECTION\n### Dependencies$(echo -e "$DEPS")"; fi
+          if [[ -n "$OTHER" ]]; then SECTION="$SECTION\n### Other$(echo -e "$OTHER")"; fi
+
+          echo "section<<EOF" >> $GITHUB_OUTPUT
+          echo -e "$SECTION" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           TAG="${GITHUB_REF#refs/tags/}"
+          PRERELEASE_FLAG=""
+          if [[ "${{ needs.determine-channel.outputs.prerelease }}" == "true" ]]; then
+            PRERELEASE_FLAG="--prerelease"
+          fi
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
             echo "Release $TAG already exists, updating with PyPI artifacts..."
             gh release upload "$TAG" pypi-dist/*.whl pypi-dist/*.tar.gz --clobber --repo "$GITHUB_REPOSITORY"
           else
+            CHANGELOG_FILE=/tmp/changelog_body.md
+            echo "${{ steps.changelog.outputs.body }}" > "$CHANGELOG_FILE"
             gh release create "$TAG" \
               --repo "$GITHUB_REPOSITORY" \
               --title "$TAG" \
-              --generate-notes \
+              --notes-file "$CHANGELOG_FILE" \
+              $PRERELEASE_FLAG \
               pypi-dist/*.whl pypi-dist/*.tar.gz
           fi
 
+      - name: Update pinned Changelog issue
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          VERSION="${GITHUB_REF#refs/tags/v}"
+          DATE=$(date +%Y-%m-%d)
+          NEW_SECTION="## $TAG ($DATE)${{ steps.changelog.outputs.section }}"
+          NEW_SECTION="$NEW_SECTION\n\n"
+
+          CURRENT=$(gh issue view 186 --repo "$GITHUB_REPOSITORY" --json body --jq '.body')
+
+          MARKER="## v1.1.0 (2026-04-11)"
+          HEADER="# Changelog"
+          OVERVIEW="All notable changes to EnvCP. Dates in YYYY-MM-DD format."
+          DIVIDER="---"
+
+          BEFORE_MARKER=$(echo "$CURRENT" | awk "/$MARKER/{found=1} !found{print}")
+          AFTER_HEADER=$(echo "$CURRENT" | awk "/$DIVIDER/{found=1; next} found")
+
+          UPDATED="$HEADER"
+          UPDATED="$UPDATED\n\n$OVERVIEW"
+          UPDATED="$UPDATED\n\n$DIVIDER"
+          UPDATED="$UPDATED\n\n$(echo -e "$NEW_SECTION")"
+
+          REMAINDER=$(echo "$CURRENT" | sed -n "/## v1\.1\.0/,\$p")
+          UPDATED="$UPDATED\n$REMAINDER"
+
+          echo -e "$UPDATED" > /tmp/issue_body.md
+          gh issue edit 186 --repo "$GITHUB_REPOSITORY" --body-file /tmp/issue_body.md
+
   publish-mcp-registry:
-    needs: [publish-npm]
+    needs: [determine-channel, publish-npm]
     runs-on: ubuntu-latest
+    if: needs.determine-channel.outputs.npm_tag == 'latest'
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
