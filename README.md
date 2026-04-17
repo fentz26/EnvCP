@@ -91,6 +91,27 @@ envcp serve --mode auto --port 3456
 
 ---
 
+## Architecture
+
+EnvCP now has a shared Rust core with native bindings for Node.js and Python:
+
+```
+envcp-core (Rust)
+├── crypto.rs — AES-256-GCM, Argon2id, HMAC-SHA256, recovery keys
+├── storage.rs — StorageManager with encrypted/plaintext modes
+└── error.rs — thiserror error types
+│
+├── envcp-node (napi-rs) → npm @fentz26/envcp-core
+│   Async crypto tasks, StorageManager class
+│
+└── envcp-python (PyO3) → pip envcp-core
+    Sync functions, StorageManager class, Python 3.9+
+```
+
+Both bindings use the **same crypto implementation**, ensuring byte-for-byte format compatibility across runtimes. The v2 format (`v2:<salt_hex><iv_hex><tag_hex><ciphertext_hex>`) is identical whether you encrypt from Node.js or Python.
+
+---
+
 ## License
 
 SAL v1.0 — See [LICENSE](LICENSE) file for details.
