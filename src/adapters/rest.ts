@@ -180,7 +180,7 @@ async startServer(port: number, host: string, apiKey?: string, rateLimitConfig?:
             const progressiveDelay = bfpConfig?.progressive_delay ?? true;
             const maxDelay = bfpConfig?.max_delay ?? 60;
             const permanentThreshold = bfpConfig?.permanent_lockout_threshold ?? 0;
-            
+
             const status = await this.lockoutManager.recordFailure(
               lockoutThreshold,
               lockoutBaseSeconds,
@@ -188,30 +188,30 @@ async startServer(port: number, host: string, apiKey?: string, rateLimitConfig?:
               maxDelay,
               permanentThreshold
             );
-            
+
             if (status.locked) {
-              const message = status.permanent_locked 
+              const message = status.permanent_locked
                 ? 'Authentication permanently locked - recovery required'
                 : `Too many failed attempts - try again in ${status.remaining_seconds} seconds`;
-              
+
               const statusCode = status.permanent_locked ? 403 : 429;
               if (!status.permanent_locked) {
                 res.setHeader('Retry-After', status.remaining_seconds.toString());
               }
-              
+
               await this.logs.log({ timestamp: new Date().toISOString(), operation: 'auth_failure', variable: '', source: 'api', success: false, message: `Invalid API key - ${status.permanent_locked ? 'permanent lockout' : `lockout for ${status.remaining_seconds}s`} from ${req.socket.remoteAddress ?? 'unknown'}` });
               sendJson(res, statusCode, this.createResponse(false, undefined, message));
               return;
             }
           }
-          
+
           await this.logs.log({ timestamp: new Date().toISOString(), operation: 'auth_failure', variable: '', source: 'api', success: false, message: `Invalid API key from ${req.socket.remoteAddress ?? 'unknown'}` });
           sendJson(res, 401, this.createResponse(false, undefined, 'Invalid API key'));
           return;
         }
       }
 
-      const parsedUrl = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
+      const parsedUrl = new URL(req.url || '/', `http://${req.headers.host ?? 'localhost'}`);
       const pathname = parsedUrl.pathname;
       const segments = pathname.split('/').filter(Boolean);
 

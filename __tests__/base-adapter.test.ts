@@ -183,6 +183,24 @@ describe('BaseAdapter tool operations', () => {
       expect(result.success).toBe(true);
       expect(result.message).toContain('updated');
     });
+
+    it('updates existing protected variable when variable_password is provided', async () => {
+      await adapter.runSetVariable({
+        name: 'PROTECTED_UPD',
+        value: 'secret-v1',
+        protect: true,
+        variable_password: 'pw-123',
+      });
+
+      const result = await adapter.runSetVariable({
+        name: 'PROTECTED_UPD',
+        value: 'secret-v2',
+        variable_password: 'pw-123',
+      });
+
+      expect(result.success).toBe(true);
+      expect(result.message).toContain('updated');
+    });
   });
 
   describe('deleteVariable', () => {
@@ -428,6 +446,24 @@ describe('BaseAdapter tool operations', () => {
       const content = await fs.readFile(path.join(tmpDir, '.env'), 'utf8');
       expect(content).toContain('# Auto-generated');
     });
+
+    it('respects sync.exclude patterns while exporting', async () => {
+      const a = new TestAdapter(EnvCPConfigSchema.parse({
+        access: { allow_ai_export: true },
+        encryption: { enabled: false },
+        storage: { encrypted: false, path: '.envcp/store.json' },
+        sync: { enabled: true, target: '.env', exclude: ['SECRET_*'] },
+      }), tmpDir);
+      await a.init();
+
+      await a.seedVariable({ name: 'SECRET_TOKEN', value: 'hidden', encrypted: false, created: now, updated: now, sync_to_env: true });
+      await a.seedVariable({ name: 'PUBLIC_TOKEN', value: 'visible', encrypted: false, created: now, updated: now, sync_to_env: true });
+
+      await a.runSyncToEnv();
+      const content = await fs.readFile(path.join(tmpDir, '.env'), 'utf8');
+      expect(content).toContain('PUBLIC_TOKEN=visible');
+      expect(content).not.toContain('SECRET_TOKEN');
+    });
   });
 
   describe('runCommand', () => {
@@ -455,6 +491,14 @@ describe('BaseAdapter tool operations', () => {
       const result = await adapter.runRunCommand({ command: 'echo hello', variables: [] });
       expect(result.stdout).toContain('hello');
       expect(result.exitCode).toBe(0);
+    });
+
+    it('captures stderr output from command failures', async () => {
+      const a = new TestAdapter(makeConfig({ allowed_commands: ['cat'] }), tmpDir);
+      await a.init();
+      const result = await a.runRunCommand({ command: 'cat /definitely_missing_envcp_file', variables: [] });
+      expect(result.stderr.length).toBeGreaterThan(0);
+      expect(result.exitCode).not.toBe(0);
     });
 
     it('handles single-quoted arguments', async () => {
@@ -829,9 +873,36 @@ describe('checkRootDelete — --recursive flag (line 687 branch)', () => {
     ).rejects.toThrow('root filesystem');
   });
 
-  it('blocks rm -recursive / (single-dash long form)', async () => {
-    await expect(
-      adapter.runRunCommand({ command: 'rm -recursive /', variables: [] }),
-    ).rejects.toThrow('root filesystem');
+  it('allows rm -recursive when root-delete protection is disabled', async () => {
+    const a = new TestAdapter(makeConfig({
+      allowed_commands: ['rm'],
+      run_safety: {
+        disallow_root_delete: false,
+        disallow_path_manipulation: false,
+        require_command_whitelist: false,
+        scrub_output: true,
+        redact_patterns: [],
+      },
+    }), tmpDir);
+    await a.init();
+
+    const result = await a.runRunCommand({ command: 'rm -recursive /', variables: [] });
+    expect(result.exitCode).not.toBe(0);
+    expect(result.stderr).toBeDefined();
+  });
+
+  it('handles dangling symlink env path by resolving readlink target', async () => {
+    const outsideDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-canon-out-'));
+    try {
+      const linkPath = path.join(tmpDir, 'dangling.env');
+      const targetPath = path.join(outsideDir, 'target.env');
+      await fs.symlink(targetPath, linkPath);
+
+      const result = await (adapter as any).canonicalizeEnvPath(linkPath);
+      expect(result.projectRootReal).toBe(tmpDir);
+      expect(result.envPathReal).toBe(targetPath);
+    } finally {
+      await fs.rm(outsideDir, { recursive: true, force: true });
+    }
   });
 });

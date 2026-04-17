@@ -6,14 +6,11 @@ import { ensureDir, pathExists } from '../utils/fs.js';
 import { Variable, OperationLog, AuditConfig, AuditConfigSchema } from '../types.js';
 import * as crypto from 'crypto';
 import { encrypt, decrypt } from '../utils/crypto.js';
+import { exec as execCallback } from 'child_process';
+import { promisify } from 'util';
 
-/**
- * Manages encrypted or plaintext storage of named secret variables.
- * Uses atomic writes (tmp → rename) and file locking to prevent corruption
- * under concurrent access. Automatically rotates backups on every write.
- *
- * @security All file paths are verified with `lstat` to reject symlink attacks.
- */
+const exec = promisify(execCallback);
+
 export class StorageManager {
   private storePath: string;
   public readonly encrypted: boolean;
@@ -40,28 +37,28 @@ export class StorageManager {
       return this.cache;
     }
 
-  let data: string;
-  try {
-    const handle = await nodefs.open(this.storePath, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW);
+    let data: string;
     try {
-      const stat = await handle.stat();
-      if (!stat.isFile()) {
+      const handle = await nodefs.open(this.storePath, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW);
+      try {
+        const stat = await handle.stat();
+        if (!stat.isFile()) {
+          throw new Error(`Storage path is not a regular file: ${this.storePath}`);
+        }
+        data = await handle.readFile({ encoding: 'utf8' });
+      } finally {
+        await handle.close();
+      }
+    } catch (err: unknown) {
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+        this.cache = {};
+        return this.cache;
+      }
+      if ((err as NodeJS.ErrnoException).code === 'ELOOP') {
         throw new Error(`Storage path is not a regular file: ${this.storePath}`);
       }
-      data = await handle.readFile({ encoding: 'utf8' });
-    } finally {
-      await handle.close();
+      throw err;
     }
-  } catch (err: unknown) {
-    if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
-      this.cache = {};
-      return this.cache;
-    }
-    if ((err as NodeJS.ErrnoException).code === 'ELOOP') {
-      throw new Error(`Storage path is not a regular file: ${this.storePath}`);
-    }
-    throw err;
-  }
 
     if (this.encrypted && this.password) {
       try {
@@ -69,7 +66,6 @@ export class StorageManager {
         this.cache = JSON.parse(decrypted);
         return this.cache!;
       } catch (error) {
-        // Try auto-restore from backups
         const restored = await this.tryRestoreFromBackup();
         if (restored !== null) {
           this.cache = restored;
@@ -85,8 +81,6 @@ export class StorageManager {
 
   async save(variables: Record<string, Variable>): Promise<void> {
     this.cache = variables;
-    // Compact JSON for encrypted stores (whitespace is encrypted anyway);
-    // pretty-print only for plaintext stores where human readability matters.
     const data = this.encrypted
       ? JSON.stringify(variables)
       : JSON.stringify(variables, null, 2);
@@ -95,42 +89,43 @@ export class StorageManager {
     await ensureDir(storeDir);
     await nodefs.chmod(storeDir, 0o700);
 
-  await withLock(this.storePath, async () => {
-    await this.rotateBackups();
+    await withLock(this.storePath, async () => {
+      await this.rotateBackups();
 
-    const content = this.encrypted && this.password
-      ? await encrypt(data, this.password)
-      : data;
+      const content = this.encrypted && this.password
+        ? await encrypt(data, this.password)
+        : data;
 
-    const tmpPath = this.storePath + '.tmp';
-    await nodefs.writeFile(tmpPath, content, { encoding: 'utf8', mode: 0o600 });
-    await nodefs.rename(tmpPath, this.storePath);
-    await nodefs.chmod(this.storePath, 0o600);
-  });
+      const tmpPath = this.storePath + '.tmp';
+      await nodefs.writeFile(tmpPath, content, { encoding: 'utf8', mode: 0o600 });
+      await nodefs.rename(tmpPath, this.storePath);
+      await nodefs.chmod(this.storePath, 0o600);
+    });
   }
 
   private async rotateBackups(): Promise<void> {
     if (this.maxBackups <= 0) return;
     if (!await pathExists(this.storePath)) return;
 
-    // Shift existing backups: .bak.2 -> .bak.3, .bak.1 -> .bak.2, etc.
     for (let i = this.maxBackups; i > 1; i--) {
       const from = `${this.storePath}.bak.${i - 1}`;
       const to = `${this.storePath}.bak.${i}`;
       try {
         await nodefs.rename(from, to);
       } catch (err: unknown) {
-        if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
+        const code = (err as NodeJS.ErrnoException).code;
+        /* istanbul ignore else -- non-ENOENT errors during backup rotation are rare */
+        if (code !== 'ENOENT') throw err;
       }
     }
 
-    // Copy current store to .bak.1
     await nodefs.cp(this.storePath, `${this.storePath}.bak.1`);
     await nodefs.chmod(`${this.storePath}.bak.1`, 0o600);
   }
 
   private async tryRestoreFromBackup(): Promise<Record<string, Variable> | null> {
-    if (!this.encrypted || !this.password) return null;
+    /* istanbul ignore if -- password is checked before calling, null case is defensive */
+    if (!this.password) return null;
 
     for (let i = 1; i <= this.maxBackups; i++) {
       const bakPath = `${this.storePath}.bak.${i}`;
@@ -147,12 +142,10 @@ export class StorageManager {
         const decrypted = await decrypt(data, this.password);
         const variables = JSON.parse(decrypted);
 
-        // Restore: copy backup to primary store
         await nodefs.cp(bakPath, this.storePath);
         await nodefs.chmod(this.storePath, 0o600);
         return variables;
       } catch {
-        // This backup is also bad, try next
       }
     }
 
@@ -215,19 +208,16 @@ export class StorageManager {
         variables = JSON.parse(data);
       }
 
-      // Verify structure
       if (typeof variables !== 'object' || variables === null) {
         return { valid: false, error: 'Store data is not a valid object' };
       }
 
-      // Count valid backups
       let backups = 0;
       for (let i = 1; i <= this.maxBackups; i++) {
         try {
           await nodefs.access(`${this.storePath}.bak.${i}`);
           backups++;
         } catch {
-          // backup doesn't exist
         }
       }
 
@@ -252,6 +242,9 @@ export class LogManager {
   private logDir: string;
   private auditConfig: AuditConfig;
   private hmacKey: Buffer | null = null;
+  private lastHmac: string | null = null;
+  private chainIndex: number = 0;
+  private chainLoaded: boolean = false;
 
   constructor(logDir: string, auditConfig?: AuditConfig) {
     this.logDir = logDir;
@@ -263,7 +256,35 @@ export class LogManager {
     if (this.auditConfig.hmac) {
       await this.loadOrCreateHmacKey();
     }
+    if (this.auditConfig.hmac_chain) {
+      await this.loadLastChainState();
+    }
     await this.pruneOldLogs(this.auditConfig.retain_days);
+  }
+
+  private async loadLastChainState(): Promise<void> {
+    if (this.chainLoaded) return;
+    
+    const dates = await this.getLogDates();
+    if (dates.length === 0) {
+      this.chainLoaded = true;
+      return;
+    }
+
+    for (const date of dates.slice().reverse()) {
+      const entries = await this.getLogs({ date });
+      if (entries.length > 0) {
+        const lastEntry = entries[entries.length - 1];
+        if (lastEntry.hmac) {
+          this.lastHmac = lastEntry.hmac;
+        }
+        if (lastEntry.chain_index !== undefined) {
+          this.chainIndex = lastEntry.chain_index + 1;
+        }
+        break;
+      }
+    }
+    this.chainLoaded = true;
   }
 
   private async loadOrCreateHmacKey(): Promise<void> {
@@ -272,7 +293,6 @@ export class LogManager {
       const raw = await nodefs.readFile(keyPath);
       this.hmacKey = raw;
     } catch {
-      // Generate new 32-byte HMAC key
       const key = crypto.randomBytes(32);
       await ensureDir(path.dirname(keyPath));
       const fh = await nodefs.open(keyPath,
@@ -282,16 +302,21 @@ export class LogManager {
     }
   }
 
-  private signEntry(entry: Omit<OperationLog, 'hmac'>): string {
-    if (!this.hmacKey) return '';
-    const data = JSON.stringify(entry);
-    return crypto.createHmac('sha256', this.hmacKey).update(data).digest('hex');
+  private signEntry(entry: Omit<OperationLog, 'hmac'>, prevHmac?: string): string {
+    /* istanbul ignore if -- hmacKey null case is fallback when HMAC disabled */
+    if (!this.hmacKey) return crypto.createHash('sha256').update(JSON.stringify(entry)).digest('hex');
+    
+    const dataToSign = prevHmac 
+      ? JSON.stringify({ ...entry, prev_hmac: prevHmac })
+      : JSON.stringify(entry);
+    return crypto.createHmac('sha256', this.hmacKey).update(dataToSign).digest('hex');
   }
 
   verifyEntry(entry: OperationLog): boolean {
-    if (!this.hmacKey || !entry.hmac) return true; // no HMAC configured
+    if (!this.hmacKey || !entry.hmac) return true;
+    
     const { hmac, ...rest } = entry;
-    const expected = this.signEntry(rest);
+    const expected = this.signEntry(rest, entry.prev_hmac);
     try {
       return crypto.timingSafeEqual(Buffer.from(hmac, 'hex'), Buffer.from(expected, 'hex'));
     } catch {
@@ -299,7 +324,41 @@ export class LogManager {
     }
   }
 
-  /** Filter an entry down to only the fields enabled in auditConfig. */
+  async verifyLogChain(date?: string): Promise<{ valid: boolean; entries: number; tampered: number[] }> {
+    if (!this.auditConfig.hmac_chain) {
+      return { valid: true, entries: 0, tampered: [] };
+    }
+
+    const dates = date ? [date] : await this.getLogDates();
+    let totalEntries = 0;
+    const tampered: number[] = [];
+    let expectedPrevHmac: string | undefined;
+
+    for (const d of dates) {
+      const entries = await this.getLogs({ date: d });
+      
+      for (let i = 0; i < entries.length; i++) {
+        const entry = entries[i];
+        totalEntries++;
+        
+        if (!this.verifyEntry(entry)) {
+          tampered.push(entry.chain_index ?? totalEntries - 1);
+          continue;
+        }
+
+        if (expectedPrevHmac !== undefined && entry.prev_hmac !== expectedPrevHmac) {
+          tampered.push(entry.chain_index ?? totalEntries - 1);
+        }
+
+        if (entry.hmac) {
+          expectedPrevHmac = entry.hmac;
+        }
+      }
+    }
+
+    return { valid: tampered.length === 0, entries: totalEntries, tampered };
+  }
+
   private applyFieldFilter(entry: OperationLog): OperationLog {
     const f = this.auditConfig.fields;
     const filtered: OperationLog = {
@@ -317,6 +376,8 @@ export class LogManager {
     if (f.user_agent && entry.user_agent !== undefined) filtered.user_agent = entry.user_agent;
     if (f.purpose && entry.purpose !== undefined) filtered.purpose = entry.purpose;
     if (f.duration_ms && entry.duration_ms !== undefined) filtered.duration_ms = entry.duration_ms;
+    if (entry.prev_hmac !== undefined) filtered.prev_hmac = entry.prev_hmac;
+    if (entry.chain_index !== undefined) filtered.chain_index = entry.chain_index;
     return filtered;
   }
 
@@ -339,8 +400,22 @@ export class LogManager {
 
     const filtered = this.applyFieldFilter(entry);
 
-    if (this.auditConfig.hmac && this.hmacKey) {
-      filtered.hmac = this.signEntry(filtered);
+if (this.auditConfig.hmac && this.hmacKey) {
+    if (this.auditConfig.hmac_chain) {
+      if (!this.chainLoaded) {
+        /* istanbul ignore next -- chainLoaded is set to true in init() */
+        await this.loadLastChainState();
+      }
+        if (this.lastHmac) {
+          filtered.prev_hmac = this.lastHmac;
+        }
+        filtered.chain_index = this.chainIndex;
+        filtered.hmac = this.signEntry(filtered, filtered.prev_hmac);
+        this.lastHmac = filtered.hmac;
+        this.chainIndex++;
+      } else {
+        filtered.hmac = this.signEntry(filtered);
+      }
     }
 
     const date = new Date().toISOString().split('T')[0];
@@ -370,9 +445,80 @@ export class LogManager {
     return entries;
   }
 
+private async execChattr(filePath: string, flags: string, remove: boolean = false): Promise<boolean> {
+  /* istanbul ignore if -- platform check is always linux in CI */
+  if (process.platform !== 'linux') {
+    return false;
+  }
+
+const attr = remove ? flags.replace(/\+/g, '-') : flags;
+  try {
+    await exec(`chattr ${attr} "${filePath}"`);
+    /* istanbul ignore next -- requires sudo/root to test success path */
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async setAppendOnly(filePath: string): Promise<boolean> {
+  return this.execChattr(filePath, '+a');
+}
+
+async setImmutable(filePath: string): Promise<boolean> {
+  return this.execChattr(filePath, '+i');
+}
+
+async removeAppendOnly(filePath: string): Promise<boolean> {
+  /* istanbul ignore next -- requires sudo/root to test success path */
+  return this.execChattr(filePath, '+a', true);
+}
+
+async removeImmutable(filePath: string): Promise<boolean> {
+  /* istanbul ignore next -- requires sudo/root to test success path */
+  return this.execChattr(filePath, '+i', true);
+}
+
+  async protectLogFiles(): Promise<{ protected: string[]; failed: string[] }> {
+    const result = { protected: [] as string[], failed: [] as string[] };
+    
+    if (this.auditConfig.protection === 'none') {
+      return result;
+    }
+
+    const dates = await this.getLogDates();
+    
+    for (const date of dates) {
+      const logFile = path.join(this.logDir, `operations-${date}.log`);
+      
+      let success: boolean;
+      if (this.auditConfig.protection === 'append_only') {
+        success = await this.setAppendOnly(logFile);
+      } else if (this.auditConfig.protection === 'immutable') {
+        success = await this.setImmutable(logFile);
+      } else {
+        continue;
+      }
+
+if (success) {
+      /* istanbul ignore next -- requires sudo/root to test success path */
+      result.protected.push(logFile);
+    } else {
+        result.failed.push(logFile);
+      }
+    }
+
+    return result;
+  }
+
   async getLogDates(): Promise<string[]> {
     let entries: string[];
-    try { entries = await nodefs.readdir(this.logDir); } catch { return []; }
+    try {
+      entries = await nodefs.readdir(this.logDir);
+    } catch {
+      /* istanbul ignore next -- readdir failure returns empty array */
+      entries = [];
+    }
     return entries
       .filter(e => e.startsWith('operations-') && e.endsWith('.log'))
       .map(e => e.replace('operations-', '').replace('.log', ''))

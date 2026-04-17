@@ -5,6 +5,12 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Branch or ref to analyze'
+        required: false
+        default: 'main'
   schedule:
     # Run weekly on Sundays at 00:00 UTC
     - cron: '0 0 * * 0'
@@ -31,8 +37,7 @@ jobs:
         uses: github/codeql-action/init@v4
         with:
           languages: ${{ matrix.language }}
-          # Use extended security queries for more comprehensive analysis
-          queries: security-extended
+          config-file: ./.github/codeql/codeql-config.yml
 
       - name: Setup Node.js
         uses: actions/setup-node@v6

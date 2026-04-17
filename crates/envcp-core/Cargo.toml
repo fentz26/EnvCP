@@ -1,0 +1,23 @@
+[package]
+name = "envcp-core"
+version = "1.1.0"
+edition = "2021"
+description = "Core crypto and storage library for EnvCP"
+license-file = "../../LICENSE"
+
+[dependencies]
+argon2 = "0.5"
+aes-gcm = "0.10"
+pbkdf2 = { version = "0.12", features = ["std"] }
+sha2 = "0.10"
+hmac = "0.12"
+hex = "0.4"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+rand = "0.8"
+thiserror = "1"
+zeroize = { version = "1", features = ["derive"] }
+
+[dev-dependencies]
+tempfile = "3"
+chrono = "0.4"

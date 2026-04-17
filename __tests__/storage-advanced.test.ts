@@ -296,6 +296,23 @@ describe('LogManager', () => {
     expect(await pathExists(recentPath)).toBe(true);
   });
 
+  it('pruneOldLogs uses default 30 days when called without argument', async () => {
+    const logger = new LogManager(logDir);
+    await logger.init();
+
+    const oldDate = new Date(Date.now() - 35 * 24 * 60 * 60 * 1000);
+    const oldName = `operations-${oldDate.toISOString().split('T')[0]}.log`;
+    const oldPath = path.join(logDir, oldName);
+
+    await fs.writeFile(oldPath, '{"old":true}\n', 'utf8');
+    const oldMtime = new Date(Date.now() - 35 * 24 * 60 * 60 * 1000);
+    await fs.utimes(oldPath, oldMtime, oldMtime);
+
+    await logger.pruneOldLogs();
+
+    expect(await pathExists(oldPath)).toBe(false);
+  });
+
   it('pruneOldLogs ignores non-log files and handles stat errors gracefully', async () => {
     const logger = new LogManager(logDir);
     await logger.init();
@@ -462,12 +479,25 @@ describe('LogManager enhanced audit features', () => {
     const logger = new LogManager(logDir);
     await logger.init();
 
-    // Create a couple of fake log files
     await fs.writeFile(path.join(logDir, 'operations-2024-01-01.log'), '{"test":1}\n', 'utf8');
     await fs.writeFile(path.join(logDir, 'operations-2024-01-02.log'), '{"test":2}\n', 'utf8');
 
     const dates = await logger.getLogDates();
     expect(dates).toEqual(['2024-01-01', '2024-01-02']);
+  });
+
+  it('getLogDates returns empty array when logDir does not exist', async () => {
+    const logger = new LogManager(path.join(tmpDir, 'nonexistent-logs'));
+    const dates = await logger.getLogDates();
+    expect(dates).toEqual([]);
+  });
+
+  it('signEntry uses hash when hmacKey is not set', async () => {
+    const logger = new LogManager(logDir, { enabled: true, retain_days: 30, fields: {}, hmac: false, hmac_key_path: '' });
+    await logger.init();
+    (logger as any).hmacKey = null;
+    const sig = (logger as any).signEntry({ timestamp: '2024-01-01', operation: 'get', source: 'api', success: true });
+    expect(sig).toMatch(/^[a-f0-9]{64}$/);
   });
 });
 
@@ -713,17 +743,41 @@ describe('StorageManager — tryRestoreFromBackup (lines 132-159)', () => {
     const password = 'test-restore-pw';
     const encryptedBackup = await encrypt(validData, password);
 
-    // Write a valid encrypted backup at .bak.1
     await fs.writeFile(`${storePath}.bak.1`, encryptedBackup);
-    // Write corrupt data as the main store (triggers restore)
     await fs.writeFile(storePath, 'CORRUPT-NOT-VALID-CIPHERTEXT');
 
     const storage = new StorageManager(storePath, true, 3);
     storage.setPassword(password);
 
-    // load() should succeed by restoring from .bak.1
     const vars = await storage.load();
     expect(vars['MY_KEY']).toBeDefined();
     expect(vars['MY_KEY'].value).toBe('restored');
+  });
+
+  it('rethrows non-ENOENT errors during backup rotation', async () => {
+    await ensureDir(path.dirname(storePath));
+    await fs.writeFile(storePath, '{}');
+    await fs.writeFile(`${storePath}.bak.3`, '{}');
+    await fs.mkdir(`${storePath}.bak.2`);
+    const storage = new StorageManager(storePath, false, 3);
+    try {
+      await storage.set('TEST', { name: 'TEST', value: 'v', encrypted: false, created: new Date().toISOString(), updated: new Date().toISOString(), sync_to_env: true });
+      expect(true).toBe(false);
+    } catch (e: unknown) {
+      expect((e as Error).message).toBeDefined();
+    }
+  });
+
+  it('tryRestoreFromBackup returns null when password not set', async () => {
+    const storage = new StorageManager(storePath, true, 2);
+    storage.setPassword('test');
+    const now = new Date().toISOString();
+    await storage.set('KEY', { name: 'KEY', value: 'v', encrypted: true, created: now, updated: now, sync_to_env: true });
+    storage.invalidateCache();
+    const storage2 = new StorageManager(storePath, true, 2);
+    (storage2 as any).password = undefined;
+    await fs.writeFile(storePath, 'corrupt');
+    const result = await (storage2 as any).tryRestoreFromBackup();
+    expect(result).toBeNull();
   });
 });

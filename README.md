@@ -13,6 +13,7 @@
 <a href="https://github.com/fentz26/EnvCP/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-SAL%20v1.0-000000?style=flat-square&labelColor=000000" alt="license"></a>
 <a href="https://github.com/fentz26/EnvCP/releases"><img src="https://img.shields.io/badge/SLSA-3-000000?style=flat-square&labelColor=000000" alt="SLSA Level 3"></a>
 <a href="https://nodejs.org"><img src="https://img.shields.io/node/v/%40fentz26%2Fenvcp?style=flat-square&color=000000&labelColor=000000&label=node" alt="node version"></a>
+<a href="https://github.com/fentz26/EnvCP"><img src="https://badgen.net/badge/lines/41k/000000?labelColor=000000" alt="lines"></a>
 </p>
 
 <p align="center">
@@ -61,12 +62,26 @@
 
 ## Quick Start
 
+Install and initialize:
+
 ```bash
 npm install -g @fentz26/envcp
 envcp init
-envcp add API_KEY --value "your-secret-key"
-envcp serve --mode auto --port 3456
 ```
+
+Add your secrets (you'll set a vault password on first use):
+
+```bash
+envcp add API_KEY --value "your-secret-key"
+```
+
+Start the MCP server for AI tools:
+
+```bash
+envcp serve
+```
+
+Your AI can now **reference** secrets by name without ever seeing the values. Full guide: [SETUP.md](SETUP.md)
 
 ---
 
@@ -88,7 +103,7 @@ envcp serve --mode auto --port 3456
 - **SHA-pinned CI** — All GitHub Actions pinned to immutable commit SHAs
 - **Signed npm releases** — `npm audit signatures` verifiable from v1.2.0+
 
----
+
 
 ## License
 

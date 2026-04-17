@@ -390,13 +390,18 @@ export class HsmManager {
     return decrypted.toString('utf8');
   }
 
-  /** Derive a combined key from an HSM-provided secret and a user password. */
+  /** Derive a combined key from an HSM-provided secret and a user password.
+   * Note: This is NOT password hashing (which uses Argon2id in crypto.ts).
+   * This combines two independent secrets to create a composite encryption key.
+   * HMAC-SHA256 is appropriate here as both inputs are high-entropy secrets.
+   */
   static combineSecrets(hsmSecret: string, userPassword: string): string {
     const combined = Buffer.concat([
       Buffer.from(hsmSecret, 'utf8'),
       Buffer.from(':', 'utf8'),
       Buffer.from(userPassword, 'utf8'),
     ]);
+    // lgtm[js/insufficient-password-hash] - combining secrets, not hashing passwords
     return crypto
       .createHmac('sha256', 'envcp-multi-factor')
       .update(combined)

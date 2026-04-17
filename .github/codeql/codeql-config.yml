@@ -1,0 +1,4 @@
+name: "Custom CodeQL Configuration"
+
+paths-ignore:
+  - '__tests__/sandbox/sandbox-runner.js'

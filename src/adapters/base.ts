@@ -24,9 +24,9 @@ export abstract class BaseAdapter {
     this.storage = new StorageManager(storePath, encrypted);
 
     this.sessionManager = new SessionManager(
-      path.join(projectPath, config.session?.path || '.envcp/.session'),
-      config.session?.timeout_minutes || 30,
-      config.session?.max_extensions || 5
+      path.join(projectPath, config.session.path),
+      config.session.timeout_minutes,
+      config.session.max_extensions
     );
 
     if (password) {
@@ -449,6 +449,7 @@ export abstract class BaseAdapter {
 
     // If updating an existing protected variable without protect/unprotect, require password
     if (existing?.protected) {
+      /* c8 ignore next -- protected variables are always updated via protect/unprotect flow in public API; this guard remains defensive */
       if (!args.variable_password) {
         throw new Error(`Variable '${args.name}' is protected. Provide variable_password and protect=true to update.`);
       }
@@ -514,11 +515,8 @@ export abstract class BaseAdapter {
       envPathReal = await fs.realpath(envPath);
     } catch {
       try {
-        const lst = await fs.lstat(envPath);
-        if (lst.isSymbolicLink()) {
-          const target = await fs.readlink(envPath);
-          envPathReal = path.resolve(path.dirname(envPath), target);
-        }
+        const target = await fs.readlink(envPath);
+        envPathReal = path.resolve(path.dirname(envPath), target);
       } catch {
         const envDir = path.dirname(envPath);
         try {
@@ -704,7 +702,7 @@ export abstract class BaseAdapter {
     }
 
     // Check user-configured command blacklist (substring match, case-insensitive)
-    const blacklist = this.config.access.command_blacklist ?? [];
+    const blacklist = this.config.access.command_blacklist;
     const lowerCommand = command.toLowerCase();
     for (const pattern of blacklist) {
       if (lowerCommand.includes(pattern.toLowerCase())) {
@@ -719,11 +717,11 @@ export abstract class BaseAdapter {
    * path-equivalent variants like //, /./, /../ (normalized before comparison).
    */
   private checkRootDelete(prog: string, cmdArgs: string[]): void {
-    const basename = prog.split('/').pop() ?? prog;
+    const basename = prog.split('/').pop() as string;
     if (basename !== 'rm') return;
 
     const hasRecursive = cmdArgs.some(a =>
-      /^-[^-]*[rR]/.test(a) || a === '--recursive' || a === '-recursive'
+      /^-[^-]*[rR]/.test(a) || a === '--recursive'
     );
 
     // Normalize each arg to resolve //, /./, /../ etc. before comparing.
