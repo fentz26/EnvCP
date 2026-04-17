@@ -1,6 +1,32 @@
+## Linked Issues
+
+<!-- Required: link at least one issue. Use "Closes" to auto-close on merge. -->
+
+| Issue | Relationship |
+|-------|-------------|
+| | <!-- Closes / Related / Blocks --> |
+
 ## Summary
 
 <!-- What does this PR do? Why? One paragraph is enough. -->
+
+## Release Channel
+
+<!-- Check one. The PR MUST have exactly one release:* label for CI to pass. -->
+
+- [ ] `release:latest` — Stable release
+- [ ] `release:experimental` — Pre-release for testing
+- [ ] `release:canary` — Nightly/bleeding edge
+- [ ] `release:skip` — No publish (docs, CI, internal)
+
+## Priority
+
+<!-- Delete all that do not apply -->
+
+- [ ] `priority:critical`
+- [ ] `priority:high`
+- [ ] `priority:medium`
+- [ ] `priority:low`
 
 ## Type of Change
 
@@ -26,11 +52,7 @@
 - [ ] Manually tested the affected commands/flows
 - [ ] New tests added for new behavior (if applicable)
 
-<!-- Describe any manual testing you did -->
-
 ## Security Checklist
-
-<!-- Check all that apply, or N/A -->
 
 - [ ] No secrets, passwords, or API keys in the diff
 - [ ] No new `console.log` of sensitive values
@@ -43,7 +65,3 @@
 - [ ] This PR introduces breaking changes
 
 <!-- If checked, describe what breaks and how users should migrate -->
-
-## Related Issues
-
-<!-- Closes #123 -->

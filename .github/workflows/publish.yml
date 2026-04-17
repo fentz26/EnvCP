@@ -19,6 +19,7 @@ permissions:
   contents: write
   packages: write
   id-token: write
+  issues: write
 
 jobs:
   determine-channel:
@@ -178,6 +179,86 @@ jobs:
           name: pypi-dist
           path: pypi-dist/
 
+      - name: Generate changelog
+        id: changelog
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+
+          if [[ -n "$PREV_TAG" ]]; then
+            RANGE="$PREV_TAG..HEAD"
+          else
+            RANGE="HEAD"
+          fi
+
+          FEAT=""
+          FIX=""
+          SECURITY=""
+          PERF=""
+          DOCS=""
+          CI=""
+          DEPS=""
+          OTHER=""
+
+          while IFS= read -r line; do
+            msg=$(echo "$line" | sed 's/^[a-f0-9]* //')
+            if echo "$msg" | grep -qiE '^[a-z]+(\(.+\))?!?:'; then
+              type=$(echo "$msg" | sed -E 's/^([a-z]+)(\(.+\))?!?:.*/\1/')
+            else
+              type="other"
+            fi
+
+            pr_num=$(echo "$msg" | grep -oE '#[0-9]+' | head -1 | tr -d '#')
+            link=""
+            if [[ -n "$pr_num" ]]; then
+              link=" ([#$pr_num](https://github.com/$GITHUB_REPOSITORY/pull/$pr_num))"
+            fi
+
+            case "$type" in
+              feat)    FEAT="$FEAT\n- $msg$link" ;;
+              fix)     FIX="$FIX\n- $msg$link" ;;
+              security|sec) SECURITY="$SECURITY\n- $msg$link" ;;
+              perf)    PERF="$PERF\n- $msg$link" ;;
+              docs)    DOCS="$DOCS\n- $msg$link" ;;
+              ci)      CI="$CI\n- $msg$link" ;;
+              deps|dep|build) DEPS="$DEPS\n- $msg$link" ;;
+              *)       OTHER="$OTHER\n- $msg$link" ;;
+            esac
+          done < <(git log $RANGE --pretty=format:"%h %s" --no-merges 2>/dev/null)
+
+          BODY="## What Changed"
+          BODY="$BODY\n"
+          if [[ -n "$FEAT" ]]; then BODY="$BODY\n### Features$(echo -e "$FEAT")"; fi
+          if [[ -n "$FIX" ]]; then BODY="$BODY\n### Fixes$(echo -e "$FIX")"; fi
+          if [[ -n "$SECURITY" ]]; then BODY="$BODY\n### Security$(echo -e "$SECURITY")"; fi
+          if [[ -n "$PERF" ]]; then BODY="$BODY\n### Performance$(echo -e "$PERF")"; fi
+          if [[ -n "$DOCS" ]]; then BODY="$BODY\n### Documentation$(echo -e "$DOCS")"; fi
+          if [[ -n "$CI" ]]; then BODY="$BODY\n### CI/CD$(echo -e "$CI")"; fi
+          if [[ -n "$DEPS" ]]; then BODY="$BODY\n### Dependencies$(echo -e "$DEPS")"; fi
+          if [[ -n "$OTHER" ]]; then BODY="$BODY\n### Other$(echo -e "$OTHER")"; fi
+
+          BODY="$BODY\n\n---\n\n**Full Changelog**: https://github.com/$GITHUB_REPOSITORY/compare/${PREV_TAG:-$TAG}...$TAG"
+
+          echo "body<<EOF" >> $GITHUB_OUTPUT
+          echo -e "$BODY" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+          SECTION=""
+          if [[ -n "$FEAT" ]]; then SECTION="$SECTION\n### Features$(echo -e "$FEAT")"; fi
+          if [[ -n "$FIX" ]]; then SECTION="$SECTION\n### Fixes$(echo -e "$FIX")"; fi
+          if [[ -n "$SECURITY" ]]; then SECTION="$SECTION\n### Security$(echo -e "$SECURITY")"; fi
+          if [[ -n "$PERF" ]]; then SECTION="$SECTION\n### Performance$(echo -e "$PERF")"; fi
+          if [[ -n "$DOCS" ]]; then SECTION="$SECTION\n### Documentation$(echo -e "$DOCS")"; fi
+          if [[ -n "$CI" ]]; then SECTION="$SECTION\n### CI/CD$(echo -e "$CI")"; fi
+          if [[ -n "$DEPS" ]]; then SECTION="$SECTION\n### Dependencies$(echo -e "$DEPS")"; fi
+          if [[ -n "$OTHER" ]]; then SECTION="$SECTION\n### Other$(echo -e "$OTHER")"; fi
+
+          echo "section<<EOF" >> $GITHUB_OUTPUT
+          echo -e "$SECTION" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -191,13 +272,46 @@ jobs:
             echo "Release $TAG already exists, updating with PyPI artifacts..."
             gh release upload "$TAG" pypi-dist/*.whl pypi-dist/*.tar.gz --clobber --repo "$GITHUB_REPOSITORY"
           else
+            CHANGELOG_FILE=/tmp/changelog_body.md
+            echo "${{ steps.changelog.outputs.body }}" > "$CHANGELOG_FILE"
             gh release create "$TAG" \
               --repo "$GITHUB_REPOSITORY" \
               --title "$TAG" \
-              --generate-notes \
+              --notes-file "$CHANGELOG_FILE" \
               $PRERELEASE_FLAG \
               pypi-dist/*.whl pypi-dist/*.tar.gz
           fi
+
+      - name: Update pinned Changelog issue
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          VERSION="${GITHUB_REF#refs/tags/v}"
+          DATE=$(date +%Y-%m-%d)
+          NEW_SECTION="## $TAG ($DATE)${{ steps.changelog.outputs.section }}"
+          NEW_SECTION="$NEW_SECTION\n\n"
+
+          CURRENT=$(gh issue view 186 --repo "$GITHUB_REPOSITORY" --json body --jq '.body')
+
+          MARKER="## v1.1.0 (2026-04-11)"
+          HEADER="# Changelog"
+          OVERVIEW="All notable changes to EnvCP. Dates in YYYY-MM-DD format."
+          DIVIDER="---"
+
+          BEFORE_MARKER=$(echo "$CURRENT" | awk "/$MARKER/{found=1} !found{print}")
+          AFTER_HEADER=$(echo "$CURRENT" | awk "/$DIVIDER/{found=1; next} found")
+
+          UPDATED="$HEADER"
+          UPDATED="$UPDATED\n\n$OVERVIEW"
+          UPDATED="$UPDATED\n\n$DIVIDER"
+          UPDATED="$UPDATED\n\n$(echo -e "$NEW_SECTION")"
+
+          REMAINDER=$(echo "$CURRENT" | sed -n "/## v1\.1\.0/,\$p")
+          UPDATED="$UPDATED\n$REMAINDER"
+
+          echo -e "$UPDATED" > /tmp/issue_body.md
+          gh issue edit 186 --repo "$GITHUB_REPOSITORY" --body-file /tmp/issue_body.md
 
   publish-mcp-registry:
     needs: [determine-channel, publish-npm]
