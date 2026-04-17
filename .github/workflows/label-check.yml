@@ -1,0 +1,65 @@
+name: PR Label Check
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+
+permissions:
+  pull-requests: write
+  statuses: write
+
+jobs:
+  check-labels:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check PR labels
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PR_NUMBER="${{ github.event.pull_request.number }}"
+          REPO="${{ github.repository }}"
+
+          LABELS=$(gh pr view "$PR_NUMBER" --repo "$REPO" --json labels --jq '.labels[].name')
+
+          echo "=== Labels on PR #$PR_NUMBER ==="
+          echo "$LABELS"
+          echo ""
+
+          # Check for Holding label
+          if echo "$LABELS" | grep -qx "Holding"; then
+            echo "::error::PR has 'Holding' label — merge is blocked. Remove 'Holding' when ready."
+            gh pr comment "$PR_NUMBER" --repo "$REPO" --body "**Merge blocked**: This PR has the \`Holding\` label. Remove it when the feature is ready for merge." || true
+            exit 1
+          fi
+
+          # Check for release channel label (require exactly one)
+          RELEASE_LABELS=$(echo "$LABELS" | grep "^release:" || true)
+          RELEASE_COUNT=$(echo "$RELEASE_LABELS" | grep -c "release:" || true)
+
+          if [ "$RELEASE_COUNT" -eq 0 ]; then
+            echo "::error::No release channel label found. Add one of: release:latest, release:experimental, release:canary, release:skip"
+            gh pr comment "$PR_NUMBER" --repo "$REPO" --body "**Missing release channel label**. Add one of:
+          - \`release:latest\` — stable release (npm latest, Docker latest)
+          - \`release:experimental\` — pre-release (npm experimental, Docker experimental)
+          - \`release:canary\` — nightly (npm canary, Docker canary)
+          - \`release:skip\` — no publish (CI/docs/internal only)
+
+          See [Release Channels docs](https://github.com/$REPO/blob/main/docs/release-channels.md) for details." || true
+            exit 1
+          fi
+
+          if [ "$RELEASE_COUNT" -gt 1 ]; then
+            echo "::error::Multiple release channel labels found. Use exactly one: $RELEASE_LABELS"
+            gh pr comment "$PR_NUMBER" --repo "$REPO" --body "**Multiple release channel labels found**: $(echo "$RELEASE_LABELS" | tr '\n' ', '). Use exactly one." || true
+            exit 1
+          fi
+
+          CHANNEL=$(echo "$RELEASE_LABELS" | head -1 | sed 's/release://')
+          echo "Release channel: $CHANNEL"
+          echo "channel=$CHANNEL" >> $GITHUB_OUTPUT
+
+          if [ "$CHANNEL" = "skip" ]; then
+            echo "This PR will NOT trigger a publish (release:skip)."
+          else
+            echo "This PR will publish to: $CHANNEL"
+          fi
