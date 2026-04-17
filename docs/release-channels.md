@@ -47,6 +47,7 @@ Every PR MUST have exactly one `release:*` label. The CI pipeline will reject PR
 |-------|-------|-------------|
 | `Holding` | Yellow | Work in progress. **Blocks merge** until removed |
 | `ready-for-review` | Green | Ready for review, all tests passing |
+| `closed` | Gray | Applied automatically to all closed PRs and issues |
 
 ### Category Labels
 
@@ -209,12 +210,11 @@ The `main` branch requires:
 
 | PR | Labels | Channel | Status |
 |----|--------|---------|--------|
-| #137 HSM | `feature`, `security`, `Holding` | Blocked | On hold |
-| #173 Brute-force delays | (needs label) | TBD | Open |
-| #174 Notifications | (needs label) | TBD | Open |
-| #175 Notifications PR | `Holding` | Blocked | On hold |
-| #184 Memory hardening | (needs label) | TBD | Open |
-| #185 Release channels | (needs label) | TBD | Open |
+| #137 HSM | `feature`, `security`, `Holding`, `release:experimental` | Blocked (Holding) | On hold |
+| #173 Brute-force delays | `feature`, `security`, `release:experimental` | Experimental | Open |
+| #175 Notifications PR | `feature`, `notification`, `Holding`, `release:experimental` | Blocked (Holding) | On hold |
+| #184 Memory hardening | `feature`, `security`, `release:latest` | Latest | Open |
+| #185 Release channels | `release:skip` | Skip | Open |
 
 ## Workflow Files
 
