@@ -40,6 +40,9 @@ Thumbs.db
 coverage/
 .nyc_output/
 
+# Rust build output
+target/
+
 # Misc
 *.bak
 *.tmp

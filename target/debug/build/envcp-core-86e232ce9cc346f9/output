@@ -1,2 +1,0 @@
-cargo:rustc-env=ENVCP_VERSION=1.1.0
-cargo:rerun-if-changed=../../VERSION
