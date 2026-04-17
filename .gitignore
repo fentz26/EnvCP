@@ -40,9 +40,13 @@ Thumbs.db
 coverage/
 .nyc_output/
 
+# Rust build output
+target/
+
 # Misc
 *.bak
 *.tmp
 
 # SLSA provenance — uploaded to GitHub Releases, not committed to repo
 *.intoto.jsonl
+target/

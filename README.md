@@ -62,12 +62,26 @@
 
 ## Quick Start
 
+Install and initialize:
+
 ```bash
 npm install -g @fentz26/envcp
 envcp init
-envcp add API_KEY --value "your-secret-key"
-envcp serve --mode auto --port 3456
 ```
+
+Add your secrets (you'll set a vault password on first use):
+
+```bash
+envcp add API_KEY --value "your-secret-key"
+```
+
+Start the MCP server for AI tools:
+
+```bash
+envcp serve
+```
+
+Your AI can now **reference** secrets by name without ever seeing the values. Full guide: [SETUP.md](SETUP.md)
 
 ---
 
@@ -89,7 +103,7 @@ envcp serve --mode auto --port 3456
 - **SHA-pinned CI** — All GitHub Actions pinned to immutable commit SHAs
 - **Signed npm releases** — `npm audit signatures` verifiable from v1.2.0+
 
----
+
 
 ## License
 

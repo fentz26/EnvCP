@@ -6,6 +6,15 @@ labels: enhancement
 assignees: fentz26
 ---
 
+## Priority
+
+<!-- Delete all that do not apply -->
+
+- [ ] `priority:critical` — Required for security or compliance
+- [ ] `priority:high` — High impact, needed soon
+- [ ] `priority:medium` — Standard feature request
+- [ ] `priority:low` — Nice to have
+
 ## Summary
 
 A clear and concise description of the feature you'd like to see.
@@ -14,21 +23,11 @@ A clear and concise description of the feature you'd like to see.
 
 What problem does this solve? What's the current limitation or pain point?
 
-<!-- e.g. "When working with multiple AI tools simultaneously, I have to..." -->
-
 ## Proposed Solution
 
 Describe the solution you'd like. Be as specific as possible.
 
-<!-- e.g. new CLI command, new config option, new API endpoint -->
-
-## Alternatives Considered
-
-Any alternative solutions or workarounds you've considered, and why they fall short.
-
 ## Example Usage
-
-<!-- Show what using this feature would look like -->
 
 ```bash
 # CLI example
@@ -39,8 +38,21 @@ envcp ...
 # Config example (if applicable)
 ```
 
+## Related Issues
+
+| Issue | Relationship |
+|-------|-------------|
+| | <!-- Closes / Related / Blocks --> |
+
+## Breaking Changes
+
+- [ ] This feature introduces breaking changes
+
+## Security Impact
+
+- [ ] This feature has security implications
+- [ ] N/A
+
 ## Additional Context
 
-- Does this affect security? If so, how should it be handled?
-- Does this require breaking changes?
-- Any prior art in similar tools?
+Any other context, prior art, or references.

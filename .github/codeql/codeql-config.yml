@@ -1,11 +1,4 @@
 name: "Custom CodeQL Configuration"
 
-# Specify the paths to analyze
 paths-ignore:
-  # Test sandbox files use temp dirs intentionally for isolation
   - '__tests__/sandbox/sandbox-runner.js'
-
-# Disable problematic queries that are false positives for this codebase
-query-filters:
-  - exclude:
-      id: js/insecure-temporary-file

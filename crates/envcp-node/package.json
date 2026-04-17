@@ -1,0 +1,29 @@
+{
+  "name": "@fentz26/envcp-core",
+  "version": "1.1.0",
+  "description": "Native Node.js binding for envcp-core (Rust)",
+  "main": "index.js",
+  "napi": {
+    "name": "envcp-core",
+    "triples": {
+      "defaults": true,
+      "additional": [
+        "x86_64-unknown-linux-musl",
+        "aarch64-unknown-linux-gnu",
+        "aarch64-apple-darwin"
+      ]
+    }
+  },
+  "engines": {
+    "node": ">= 18"
+  },
+  "scripts": {
+    "build": "napi build --platform --release",
+    "build:debug": "napi build --platform",
+    "prepublishOnly": "napi prepublish -t npm"
+  },
+  "license": "SEE LICENSE IN ../../LICENSE",
+  "devDependencies": {
+    "@napi-rs/cli": "^2.18.0"
+  }
+}
