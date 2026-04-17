@@ -8,6 +8,7 @@ import * as crypto from 'crypto';
 import { encrypt, decrypt } from '../utils/crypto.js';
 import { exec as execCallback } from 'child_process';
 import { promisify } from 'util';
+import { secureZero } from '../utils/secure-memory.js';
 
 const exec = promisify(execCallback);
 
@@ -226,6 +227,11 @@ export class StorageManager {
       const message = error instanceof Error ? error.message : String(error);
       return { valid: false, error: `Store verification failed: ${message}` };
     }
+  }
+
+  destroy(): void {
+    this.cache = null;
+    this.password = undefined;
   }
 }
 
@@ -523,5 +529,12 @@ if (success) {
       .filter(e => e.startsWith('operations-') && e.endsWith('.log'))
       .map(e => e.replace('operations-', '').replace('.log', ''))
       .sort();
+  }
+
+  destroy(): void {
+    if (this.hmacKey) {
+      secureZero(this.hmacKey);
+      this.hmacKey = null;
+    }
   }
 }
