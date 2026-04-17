@@ -1,0 +1,26 @@
+[build-system]
+requires = ["maturin>=1.5,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "envcp-core"
+version = "1.1.0"
+description = "Native Python binding for envcp-core (Rust)"
+requires-python = ">=3.9"
+license = { file = "../../LICENSE" }
+authors = [{ name = "Fentz", email = "fentz26@users.noreply.github.com" }]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Rust",
+  "Intended Audience :: Developers",
+  "Topic :: Security :: Cryptography",
+]
+
+[project.urls]
+Homepage = "https://github.com/fentz26/EnvCP"
+Issues = "https://github.com/fentz26/EnvCP/issues"
+
+[tool.maturin]
+module-name = "envcp._core"
+python-source = "python"
+features = ["pyo3/extension-module"]

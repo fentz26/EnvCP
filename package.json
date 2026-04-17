@@ -36,18 +36,18 @@
   ],
   "author": "fentz26",
   "license": "SEE LICENSE IN https://github.com/fentz26/EnvCP/blob/main/LICENSE",
-"dependencies": {
-  "@modelcontextprotocol/sdk": "^1.0.0",
-  "argon2": "^0.44.0",
-  "chalk": "^4.1.2",
-  "commander": "^11.1.0",
-  "js-yaml": "^4.1.0",
-  "pkcs11js": "^2.1.6",
-  "zod": "^3.22.4"
-},
-"devDependencies": {
-  "@types/argon2": "^0.15.4",
-  "@types/jest": "^30.0.0",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "argon2": "^0.44.0",
+    "chalk": "^4.1.2",
+    "commander": "^11.1.0",
+    "js-yaml": "^4.1.0",
+    "pkcs11js": "^2.1.6",
+    "zod": "^3.22.4"
+  },
+  "devDependencies": {
+    "@types/argon2": "^0.15.4",
+    "@types/jest": "^30.0.0",
     "@types/js-yaml": "^4.0.9",
     "@types/node": "^25.6.0",
     "@typescript-eslint/eslint-plugin": "^8.58.1",

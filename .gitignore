@@ -46,3 +46,4 @@ coverage/
 
 # SLSA provenance — uploaded to GitHub Releases, not committed to repo
 *.intoto.jsonl
+target/

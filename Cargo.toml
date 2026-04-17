@@ -1,0 +1,3 @@
+[workspace]
+members = ["crates/envcp-core", "crates/envcp-node", "crates/envcp-python"]
+resolver = "2"

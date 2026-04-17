@@ -6,6 +6,11 @@
  *   - package.json
  *   - plugins/envcp/.claude-plugin/plugin.json
  *   - .claude-plugin/marketplace.json
+ *   - crates/envcp-core/Cargo.toml
+ *   - crates/envcp-node/Cargo.toml
+ *   - crates/envcp-node/package.json
+ *   - crates/envcp-python/Cargo.toml
+ *   - crates/envcp-python/pyproject.toml
  *
  * Usage:
  *   node scripts/sync-version.js
@@ -50,6 +55,34 @@ syncJson(join(root, '.claude-plugin/marketplace.json'), (mkt) => {
     mkt.plugins = mkt.plugins.map((p) => ({ ...p, version }));
   }
 });
+
+// Cargo.toml files — replace the first `version = "..."` line only (package version)
+function syncCargoToml(relPath) {
+  const p = join(root, relPath);
+  const content = readFileSync(p, 'utf8');
+  const updated = content.replace(/^version = ".*"/m, `version = "${version}"`);
+  writeFileSync(p, updated);
+  console.log(`✓ ${relPath} → ${version}`);
+}
+
+syncCargoToml('crates/envcp-core/Cargo.toml');
+syncCargoToml('crates/envcp-node/Cargo.toml');
+syncCargoToml('crates/envcp-python/Cargo.toml');
+
+// crates/envcp-node/package.json
+syncJson(join(root, 'crates/envcp-node/package.json'), (pkg) => {
+  pkg.version = version;
+});
+
+// crates/envcp-python/pyproject.toml — sync [project].version
+const pyprojectPath = join(root, 'crates/envcp-python/pyproject.toml');
+const pyprojectContent = readFileSync(pyprojectPath, 'utf8');
+const updatedPyproject = pyprojectContent.replace(
+  /^version = ".*"/m,
+  `version = "${version}"`,
+);
+writeFileSync(pyprojectPath, updatedPyproject);
+console.log(`✓ crates/envcp-python/pyproject.toml → ${version}`);
 
 console.log(`\nVersion synced: ${version}`);
 console.log('Run `npm install` to update package-lock.json.');
