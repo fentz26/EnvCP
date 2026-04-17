@@ -2,7 +2,3 @@ name: "Custom CodeQL Configuration"
 
 paths-ignore:
   - '__tests__/sandbox/sandbox-runner.js'
-
-queries:
-  - exclude:
-      id: js/insecure-temporary-file
