@@ -6,6 +6,15 @@ labels: bug
 assignees: fentz26
 ---
 
+## Priority
+
+<!-- Delete all that do not apply -->
+
+- [ ] `priority:critical` — Security, data loss, production down
+- [ ] `priority:high` — Major functionality broken
+- [ ] `priority:medium` — Standard bug
+- [ ] `priority:low` — Minor issue, workaround exists
+
 ## Description
 
 A clear and concise description of the bug.
@@ -29,11 +38,13 @@ paste error output here
 
 ## Environment
 
-- **EnvCP version**: <!-- run `envcp --version` -->
-- **Node.js version**: <!-- run `node --version` -->
-- **OS**: <!-- e.g. Ubuntu 24.04, macOS 15, Windows 11 -->
-- **Installation method**: <!-- npm global / npx / pip -->
-- **Server mode**: <!-- mcp / rest / openai / gemini / cli only -->
+| Field | Value |
+|-------|-------|
+| EnvCP version | <!-- run `envcp --version` --> |
+| Node.js version | <!-- run `node --version` --> |
+| OS | <!-- e.g. Ubuntu 24.04, macOS 15, Windows 11 --> |
+| Install method | <!-- npm global / npx / pip --> |
+| Server mode | <!-- mcp / rest / openai / gemini / cli only --> |
 
 ## Configuration
 
