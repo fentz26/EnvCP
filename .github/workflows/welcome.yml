@@ -14,7 +14,7 @@ jobs:
   welcome:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/first-interaction@3c71c7c67b4a5e719e791aae8c6e6f8e9ca1d6c5 # v3
+      - uses: actions/first-interaction@a1db772c4e84dc1a54f5e6e74a980cfc9d2c429b # v3
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
           issue-message: |
