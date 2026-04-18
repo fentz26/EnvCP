@@ -17,6 +17,8 @@ async function getFreePort(): Promise<number> {
   });
 }
 
+const TEST_API_KEY = 'test-api-key-for-edge-tests';
+
 function makeConfig(serverConfigOverrides?: Partial<ServerConfig>) {
   const config = EnvCPConfigSchema.parse({
     access: {
@@ -34,24 +36,24 @@ function makeConfig(serverConfigOverrides?: Partial<ServerConfig>) {
     storage: { encrypted: false, path: '.envcp/store.json' },
     sync: { enabled: false },
   });
-  
+
   const serverConfig: ServerConfig = {
     mode: 'auto',
-    port: 0, // Will be overridden with actual port before start()
+    port: 0,
     host: '127.0.0.1',
     cors: true,
-    api_key: undefined,
+    api_key: TEST_API_KEY,
     auto_detect: true,
     adapters: { openai: true, gemini: true, rest: true },
     ...serverConfigOverrides,
   };
-  
+
   return { config, serverConfig };
 }
 
 function fetchHttp(port: number, method: string, urlPath: string, body?: unknown, headers?: Record<string, string>): Promise<{ status: number; data: unknown }> {
   return new Promise((resolve, reject) => {
-    const reqHeaders: Record<string, string> = { 'Content-Type': 'application/json', ...headers };
+    const reqHeaders: Record<string, string> = { 'Content-Type': 'application/json', 'x-api-key': TEST_API_KEY, 'Authorization': `Bearer ${TEST_API_KEY}`, ...headers };
     const req = http.request({ hostname: '127.0.0.1', port, path: urlPath, method, headers: reqHeaders }, (res) => {
       let data = '';
       res.on('data', (chunk) => { data += chunk; });
