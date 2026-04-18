@@ -8,7 +8,10 @@ import {
   lockMemory,
   unlockMemory,
   passwordToBuffer,
+  bufferToString,
   secureCompare,
+  zeroObjectValues,
+  zeroEnv,
   isDebuggerAttached,
   preventCoreDumps,
   initMemoryProtection,
@@ -56,6 +59,62 @@ describe('secure-memory', () => {
     });
   });
 
+  describe('secureFree', () => {
+    it('zeros a populated buffer', () => {
+      const buf = Buffer.from('password', 'utf8');
+      secureFree(buf);
+      expect(buf.toString('hex')).toBe('00'.repeat(buf.length));
+    });
+
+    it('ignores empty or missing buffers', () => {
+      expect(() => secureFree(Buffer.alloc(0))).not.toThrow();
+      expect(() => secureFree(null as unknown as Buffer)).not.toThrow();
+      expect(() => secureFree(undefined as unknown as Buffer)).not.toThrow();
+    });
+  });
+
+  describe('bufferToString', () => {
+    it('decodes a buffer as UTF-8', () => {
+      const buf = Buffer.from('hello 🔑', 'utf8');
+      expect(bufferToString(buf)).toBe('hello 🔑');
+    });
+  });
+
+  describe('zeroObjectValues', () => {
+    it('zeros buffer values and unsets keys', () => {
+      const secret = Buffer.from('my-secret', 'utf8');
+      const obj: Record<string, unknown> = {
+        password: secret,
+        notes: 'keep',
+      };
+      zeroObjectValues(obj, ['password', 'missing']);
+      expect(secret.toString('hex')).toBe('00'.repeat(secret.length));
+      expect(obj.password).toBeUndefined();
+      expect(obj.notes).toBe('keep');
+    });
+
+    it('skips non-buffer values without throwing', () => {
+      const obj: Record<string, unknown> = { token: 'abc', count: 3 };
+      expect(() => zeroObjectValues(obj, ['token', 'count'])).not.toThrow();
+      expect(obj.token).toBeUndefined();
+      expect(obj.count).toBeUndefined();
+    });
+  });
+
+  describe('zeroEnv', () => {
+    it('removes the listed keys from the record', () => {
+      const env: Record<string, string | undefined> = {
+        API_KEY: 'secret',
+        DB_URL: 'postgres://x',
+        KEEP: 'me',
+      };
+      zeroEnv(env, ['API_KEY', 'DB_URL', 'UNSET']);
+      expect(env.API_KEY).toBeUndefined();
+      expect(env.DB_URL).toBeUndefined();
+      expect(env.KEEP).toBe('me');
+    });
+  });
+
   describe('passwordToBuffer', () => {
     it('converts string to buffer', () => {
       const password = 'mySecretPassword123!';
@@ -88,6 +147,18 @@ describe('secure-memory', () => {
       const a = Buffer.from('short', 'utf8');
       const b = Buffer.from('longerpassword', 'utf8');
       expect(secureCompare(a, b)).toBe(false);
+    });
+
+    it('falls back to manual xor when timingSafeEqual throws', () => {
+      // Plain arrays (not ArrayBufferView) pass the length check but make
+      // timingSafeEqual throw, hitting the manual loop fallback.
+      const a = [1, 2, 3] as unknown as Buffer;
+      const b = [1, 2, 3] as unknown as Buffer;
+      expect(secureCompare(a, b)).toBe(true);
+
+      const c = [1, 2, 3] as unknown as Buffer;
+      const d = [1, 2, 4] as unknown as Buffer;
+      expect(secureCompare(c, d)).toBe(false);
     });
   });
 

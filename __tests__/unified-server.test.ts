@@ -1241,11 +1241,56 @@ describe('UnifiedServer — branch coverage paths', () => {
       oa.callTool = async () => { throw 'openai-non-error'; };
       // /v1/functions/call routes to handleOpenAIRequest
       const { status } = await fetch(port, 'POST', '/v1/functions/call',
-        { name: 'envcp_list', arguments: {} }, auth);
+        { name: 'openai-non-err', arguments: {} }, auth);
       expect(status).toBe(500);
       if (orig) oa.callTool = orig;
     } else {
       expect(server).toBeDefined();
+    }
+  });
+});
+
+describe('UnifiedServer — restart removes previous shutdown handlers', () => {
+  let tmpDir: string;
+
+  beforeAll(async () => {
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-unified-restart-'));
+  });
+
+  afterAll(async () => {
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  });
+
+  it('unregisters old SIGTERM/SIGINT handlers on a second start', async () => {
+    const serverConfig: ServerConfig = {
+      mode: 'auto',
+      port: await getFreePort(),
+      host: '127.0.0.1',
+      cors: true,
+      auto_detect: true,
+    };
+    const s = new UnifiedServer(makeConfig(), serverConfig, tmpDir);
+    await s.start();
+    const firstHandlers = (s as any).shutdownHandlers;
+    expect(firstHandlers).not.toBeNull();
+
+    // Close the underlying HTTP server without touching stop() so that
+    // shutdownHandlers stays populated when we call start() again. This
+    // forces the "remove previous handlers" branch to execute.
+    await new Promise<void>((resolve) => {
+      (s as any).httpServer.close(() => resolve());
+    });
+
+    (s as any).serverConfig.port = await getFreePort();
+    await s.start();
+    const secondHandlers = (s as any).shutdownHandlers;
+    expect(secondHandlers).not.toBeNull();
+    expect(secondHandlers).not.toBe(firstHandlers);
+
+    s.stop();
+    if (secondHandlers) {
+      process.off('SIGTERM', secondHandlers.sigterm);
+      process.off('SIGINT', secondHandlers.sigint);
     }
   });
 });

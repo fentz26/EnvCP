@@ -3,7 +3,8 @@ import { ensureDir, pathExists } from '../src/utils/fs.js';
 import * as nativeFs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import { StorageManager } from '../src/storage/index';
+import { StorageManager, LogManager } from '../src/storage/index';
+import { AuditConfigSchema } from '../src/types';
 
 describe('StorageManager', () => {
   let tmpDir: string;
@@ -216,5 +217,42 @@ describe('StorageManager', () => {
     expect(await pathExists(storePath + '.bak.2')).toBe(true);
     const bak1 = await fs.readFile(storePath + '.bak.1', 'utf8');
     expect(bak1).toContain('B');
+  });
+
+  it('destroy clears cached state and password', async () => {
+    const storage = new StorageManager(storePath, true);
+    storage.setPassword('pw');
+    await storage.set('A', { name: 'A', value: '1', encrypted: true, created: now, updated: now, sync_to_env: true });
+    await storage.load();
+    expect((storage as any).cache).not.toBeNull();
+    storage.destroy();
+    expect((storage as any).cache).toBeNull();
+    expect((storage as any).password).toBeUndefined();
+  });
+});
+
+describe('LogManager.destroy', () => {
+  let tmpDir: string;
+
+  beforeEach(async () => {
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-logmgr-destroy-'));
+  });
+
+  afterEach(async () => {
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  });
+
+  it('zeros and clears the hmac key when hmac is enabled', async () => {
+    const logMgr = new LogManager(tmpDir, AuditConfigSchema.parse({ hmac: true }));
+    await logMgr.init();
+    expect((logMgr as any).hmacKey).not.toBeNull();
+    logMgr.destroy();
+    expect((logMgr as any).hmacKey).toBeNull();
+  });
+
+  it('is a no-op when no hmac key is set', () => {
+    const logMgr = new LogManager(tmpDir);
+    expect(() => logMgr.destroy()).not.toThrow();
+    expect((logMgr as any).hmacKey).toBeNull();
   });
 });
