@@ -43,6 +43,7 @@
     "commander": "^11.1.0",
     "js-yaml": "^4.1.0",
     "pkcs11js": "^2.1.6",
+    "sodium-native": "^5.1.0",
     "zod": "^3.22.4"
   },
   "devDependencies": {
@@ -50,6 +51,7 @@
     "@types/jest": "^30.0.0",
     "@types/js-yaml": "^4.0.9",
     "@types/node": "^25.6.0",
+    "@types/sodium-native": "^2.3.9",
     "@typescript-eslint/eslint-plugin": "^8.58.1",
     "@typescript-eslint/parser": "^8.58.1",
     "eslint": "^10.2.0",

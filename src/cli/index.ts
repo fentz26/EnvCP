@@ -17,6 +17,7 @@ import { checkForUpdate, formatUpdateMessage, logUpdateCheck } from '../utils/up
 import { LockoutManager } from '../utils/lockout.js';
 
 import { Variable, EnvCPConfig } from '../types.js';
+import { initMemoryProtection } from '../utils/secure-memory.js';
 import {
   getGlobalVaultPath,
   getProjectVaultPath,
@@ -25,6 +26,8 @@ import {
   listVaults,
   initNamedVault,
 } from '../vault/index.js';
+
+initMemoryProtection();
 
 async function withSession(fn: (storage: StorageManager, password: string, config: EnvCPConfig, projectPath: string, logManager: LogManager) => Promise<void>, vaultOverride?: 'global' | 'project'): Promise<void> {
   const projectPath = process.cwd();
