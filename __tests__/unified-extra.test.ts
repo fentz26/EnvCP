@@ -46,6 +46,12 @@ const makeConfig = () => EnvCPConfigSchema.parse({
   sync: { enabled: false },
 });
 
+const TEST_API_KEY = 'test-api-key-for-extra-tests';
+
+function makeServerConfig(overrides: Partial<ServerConfig> = {}): ServerConfig {
+  return { api_key: TEST_API_KEY, ...overrides } as ServerConfig;
+}
+
 describe('UnifiedServer MCP mode start', () => {
   let tmpDir: string;
 
@@ -59,13 +65,13 @@ describe('UnifiedServer MCP mode start', () => {
   });
 
   it('creates EnvCPServer and calls start() in MCP mode', async () => {
-    const serverConfig: ServerConfig = {
+    const serverConfig = makeServerConfig({
       mode: 'mcp',
       port: 0,
       host: '127.0.0.1',
       cors: false,
       auto_detect: false,
-    };
+    });
     const server = new UnifiedServer(makeConfig(), serverConfig, tmpDir);
     await server.start();
 
@@ -78,7 +84,7 @@ describe('UnifiedServer MCP mode start', () => {
 
 function fetchHttp(port: number, method: string, urlPath: string, body?: unknown, headers?: Record<string, string>): Promise<{ status: number; data: unknown }> {
   return new Promise((resolve, reject) => {
-    const reqHeaders: Record<string, string> = { 'Content-Type': 'application/json', ...headers };
+    const reqHeaders: Record<string, string> = { 'Content-Type': 'application/json', 'x-api-key': TEST_API_KEY, 'Authorization': `Bearer ${TEST_API_KEY}`, ...headers };
     const req = http.request({ hostname: '127.0.0.1', port, path: urlPath, method, headers: reqHeaders }, (res) => {
       let data = '';
       res.on('data', (chunk) => { data += chunk; });
@@ -109,13 +115,13 @@ describe('UnifiedServer SIGTERM handler', () => {
 
   it('calls stop() and process.exit(0) on SIGTERM', async () => {
     const port = await getFreePort();
-    const serverConfig: ServerConfig = {
+    const serverConfig = makeServerConfig({
       mode: 'all',
       port,
       host: '127.0.0.1',
       cors: true,
       auto_detect: true,
-    };
+    });
     const server = new UnifiedServer(makeConfig(), serverConfig, tmpDir);
     await server.start();
 
@@ -148,13 +154,13 @@ describe('UnifiedServer handleGeminiRequest /v1/functions/call', () => {
   beforeAll(async () => {
     tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-gemini-fc-'));
     port = await getFreePort();
-    const serverConfig: ServerConfig = {
+    const serverConfig = makeServerConfig({
       mode: 'all',
       port,
       host: '127.0.0.1',
       cors: true,
       auto_detect: true,
-    };
+    });
     server = new UnifiedServer(makeConfig(), serverConfig, tmpDir);
     await server.start();
   });

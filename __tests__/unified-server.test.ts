@@ -36,9 +36,18 @@ const makeConfig = () => EnvCPConfigSchema.parse({
   sync: { enabled: false },
 });
 
+const TEST_API_KEY = 'test-api-key-for-unified-tests';
+
+function makeServerConfig(overrides: Partial<ServerConfig> = {}): ServerConfig {
+  return {
+    api_key: TEST_API_KEY,
+    ...overrides,
+  } as ServerConfig;
+}
+
 function fetch(port: number, method: string, urlPath: string, body?: unknown, headers?: Record<string, string>): Promise<{ status: number; data: unknown }> {
   return new Promise((resolve, reject) => {
-    const reqHeaders: Record<string, string> = { 'Content-Type': 'application/json', ...headers };
+    const reqHeaders: Record<string, string> = { 'Content-Type': 'application/json', 'x-api-key': TEST_API_KEY, 'Authorization': `Bearer ${TEST_API_KEY}`, ...headers };
     const req = http.request({ hostname: '127.0.0.1', port, path: urlPath, method, headers: reqHeaders }, (res) => {
       let data = '';
       res.on('data', (chunk) => { data += chunk; });
@@ -64,13 +73,13 @@ describe('UnifiedServer', () => {
   beforeAll(async () => {
     tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-unified-'));
     port = await getFreePort();
-    const serverConfig: ServerConfig = {
+    const serverConfig = makeServerConfig({
       mode: 'auto',
       port,
       host: '127.0.0.1',
       cors: true,
       auto_detect: true,
-    };
+    });
     server = new UnifiedServer(makeConfig(), serverConfig, tmpDir);
     await server.start();
   });
@@ -125,14 +134,14 @@ describe('UnifiedServer', () => {
 
     beforeAll(async () => {
       authPort = await getFreePort();
-      const serverConfig: ServerConfig = {
+      const serverConfig = makeServerConfig({
         mode: 'auto',
         port: authPort,
         host: '127.0.0.1',
         cors: true,
         auto_detect: true,
         api_key: 'test-secret-key',
-      };
+      });
       authServer = new UnifiedServer(makeConfig(), serverConfig, tmpDir);
       await authServer.start();
     });
@@ -142,17 +151,17 @@ describe('UnifiedServer', () => {
     });
 
     it('rejects requests without API key', async () => {
-      const { status } = await fetch(authPort, 'GET', '/api/health');
+      const { status } = await fetch(authPort, 'GET', '/api/health', undefined, { 'x-api-key': '', 'Authorization': '' });
       expect(status).toBe(401);
     });
 
     it('accepts requests with valid X-API-Key', async () => {
-      const { status } = await fetch(authPort, 'GET', '/api/health', undefined, { 'X-API-Key': 'test-secret-key' });
+      const { status } = await fetch(authPort, 'GET', '/api/health', undefined, { 'x-api-key': 'test-secret-key', 'Authorization': '' });
       expect(status).toBe(200);
     });
 
     it('accepts requests with valid Bearer token', async () => {
-      const { status } = await fetch(authPort, 'GET', '/api/health', undefined, { 'Authorization': 'Bearer test-secret-key' });
+      const { status } = await fetch(authPort, 'GET', '/api/health', undefined, { 'x-api-key': '', 'Authorization': 'Bearer test-secret-key' });
       expect(status).toBe(200);
     });
   });
@@ -192,7 +201,7 @@ describe('UnifiedServer single modes', () => {
 
   it('starts in rest mode', async () => {
     const port = await getFreePort();
-    const serverConfig: ServerConfig = { mode: 'rest', port, host: '127.0.0.1', cors: true, auto_detect: false };
+    const serverConfig = makeServerConfig({ mode: 'rest', port, host: '127.0.0.1', cors: true, auto_detect: false });
     const server = new UnifiedServer(makeConfig(), serverConfig, tmpDir);
     await server.start();
     const { status, data } = await fetch(port, 'GET', '/api/health');
@@ -202,7 +211,7 @@ describe('UnifiedServer single modes', () => {
 
   it('starts in openai mode', async () => {
     const port = await getFreePort();
-    const serverConfig: ServerConfig = { mode: 'openai', port, host: '127.0.0.1', cors: true, auto_detect: false };
+    const serverConfig = makeServerConfig({ mode: 'openai', port, host: '127.0.0.1', cors: true, auto_detect: false });
     const server = new UnifiedServer(makeConfig(), serverConfig, tmpDir);
     await server.start();
     const { status } = await fetch(port, 'GET', '/v1/models');
@@ -212,7 +221,7 @@ describe('UnifiedServer single modes', () => {
 
   it('starts in gemini mode', async () => {
     const port = await getFreePort();
-    const serverConfig: ServerConfig = { mode: 'gemini', port, host: '127.0.0.1', cors: true, auto_detect: false };
+    const serverConfig = makeServerConfig({ mode: 'gemini', port, host: '127.0.0.1', cors: true, auto_detect: false });
     const server = new UnifiedServer(makeConfig(), serverConfig, tmpDir);
     await server.start();
     const { status } = await fetch(port, 'GET', '/v1/models');
@@ -229,13 +238,13 @@ describe('UnifiedServer all mode routes', () => {
   beforeAll(async () => {
     tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-allmode-'));
     port = await getFreePort();
-    const serverConfig: ServerConfig = {
+    const serverConfig = makeServerConfig({
       mode: 'all',
       port,
       host: '127.0.0.1',
       cors: true,
       auto_detect: true,
-    };
+    });
     server = new UnifiedServer(makeConfig(), serverConfig, tmpDir);
     await server.start();
   });
@@ -436,14 +445,14 @@ describe('UnifiedServer sync/run/error routes', () => {
   beforeAll(async () => {
     tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-syncrun-'));
     port = await getFreePort();
-    const serverConfig: ServerConfig = {
+    const serverConfig = makeServerConfig({
       mode: 'all',
       port,
       host: '127.0.0.1',
       cors: true,
       auto_detect: true,
       api_key: 'test-key',
-    };
+    });
     const config = EnvCPConfigSchema.parse({
       access: {
         allow_ai_read: true,
@@ -509,7 +518,7 @@ describe('UnifiedServer adapter 503 paths', () => {
     tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-503-'));
     port = await getFreePort();
     // Start in all mode so all routes are active, then null out adapters
-    const serverConfig: ServerConfig = { mode: 'all', port, host: '127.0.0.1', cors: true, auto_detect: true };
+    const serverConfig = makeServerConfig({ mode: 'all', port, host: '127.0.0.1', cors: true, auto_detect: true });
     srv = new UnifiedServer(makeConfig(), serverConfig, tmpDir);
     await srv.start();
   });
@@ -575,7 +584,7 @@ describe('UnifiedServer rate limiting', () => {
 
   it('rate limits after many rapid requests', async () => {
     const port = await getFreePort();
-    const serverConfig: ServerConfig = { mode: 'auto', port, host: '127.0.0.1', cors: true, auto_detect: true };
+    const serverConfig = makeServerConfig({ mode: 'auto', port, host: '127.0.0.1', cors: true, auto_detect: true });
     const srv = new UnifiedServer(makeConfig(), serverConfig, tmpDir);
     await srv.start();
 
@@ -592,7 +601,7 @@ describe('UnifiedServer rate limiting', () => {
 
 describe('UnifiedServer.detectClientType', () => {
   const config = makeConfig();
-  const serverConfig: ServerConfig = { mode: 'auto', port: 0, host: '127.0.0.1', cors: true, auto_detect: true };
+  const serverConfig = makeServerConfig({ mode: 'auto', port: 0, host: '127.0.0.1', cors: true, auto_detect: true });
   const server = new UnifiedServer(config, serverConfig, '/tmp');
 
   function makeReq(url: string, headers: Record<string, string> = {}): http.IncomingMessage {
@@ -634,7 +643,7 @@ describe('UnifiedServer.detectClientType', () => {
 
   it('routes /api/* to REST when client type is MCP (fallback)', async () => {
     const port = await getFreePort();
-    const serverConfig: ServerConfig = { mode: 'auto', port, host: '127.0.0.1', cors: true, auto_detect: true };
+    const serverConfig = makeServerConfig({ mode: 'auto', port, host: '127.0.0.1', cors: true, auto_detect: true });
     const srv = new UnifiedServer(makeConfig(), serverConfig, '/tmp/nonexistent-' + Date.now());
     await srv.start();
     const { status, data } = await fetch(port, 'GET', '/api/health', undefined, { 'x-mcp-version': '1.0' });
@@ -662,7 +671,7 @@ describe('UnifiedServer vault-aware startup', () => {
       storage: { encrypted: false, path: '.envcp/store.json' },
       vault: { default: 'project' },
     });
-    const serverConfig: ServerConfig = { mode: 'rest', port, host: '127.0.0.1', cors: true, auto_detect: false };
+    const serverConfig = makeServerConfig({ mode: 'rest', port, host: '127.0.0.1', cors: true, auto_detect: false });
     const srv = new UnifiedServer(config, serverConfig, tmpDir);
     await srv.start();
     const { status, data } = await fetch(port, 'GET', '/api/health');
@@ -679,7 +688,7 @@ describe('UnifiedServer vault-aware startup', () => {
       storage: { encrypted: false, path: '.envcp/store.json' },
       vault: { default: 'global', global_path: '.envcp/store.enc' },
     });
-    const serverConfig: ServerConfig = { mode: 'rest', port, host: '127.0.0.1', cors: true, auto_detect: false };
+    const serverConfig = makeServerConfig({ mode: 'rest', port, host: '127.0.0.1', cors: true, auto_detect: false });
     const srv = new UnifiedServer(config, serverConfig, tmpDir);
     await srv.start();
     const { status } = await fetch(port, 'GET', '/api/health');
@@ -696,13 +705,13 @@ describe('UnifiedServer auto_detect=false in all mode', () => {
   beforeAll(async () => {
     tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-noauto-'));
     port = await getFreePort();
-    const serverConfig: ServerConfig = {
+    const serverConfig = makeServerConfig({
       mode: 'all',
       port,
       host: '127.0.0.1',
       cors: true,
       auto_detect: false,
-    };
+    });
     server = new UnifiedServer(makeConfig(), serverConfig, tmpDir);
     await server.start();
   });
@@ -742,14 +751,14 @@ describe('UnifiedServer rate_limit disabled', () => {
 
   it('skips rate-limiter setup when rate_limit.enabled=false', async () => {
     const port = await getFreePort();
-    const serverConfig: ServerConfig = {
+    const serverConfig = makeServerConfig({
       mode: 'all',
       port,
       host: '127.0.0.1',
       cors: true,
       auto_detect: true,
       rate_limit: { enabled: false, requests_per_minute: 1 },
-    };
+    });
     const srv = new UnifiedServer(makeConfig(), serverConfig, tmpDir);
     await srv.start();
     const { status } = await fetch(port, 'GET', '/api/health');
@@ -766,7 +775,7 @@ describe('UnifiedServer non-Error throws in catch blocks', () => {
   beforeAll(async () => {
     tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-nonerr-'));
     port = await getFreePort();
-    const serverConfig: ServerConfig = { mode: 'all', port, host: '127.0.0.1', cors: true, auto_detect: true };
+    const serverConfig = makeServerConfig({ mode: 'all', port, host: '127.0.0.1', cors: true, auto_detect: true });
     server = new UnifiedServer(makeConfig(), serverConfig, tmpDir);
     await server.start();
   });
@@ -839,7 +848,7 @@ describe('UnifiedServer direct handler calls with null/edge-case urls', () => {
   beforeAll(async () => {
     tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-nullurl-'));
     const port = await getFreePort();
-    const sc: ServerConfig = { mode: 'all', port, host: '127.0.0.1', cors: true, auto_detect: true };
+    const sc = makeServerConfig({ mode: 'all', port, host: '127.0.0.1', cors: true, auto_detect: true });
     server = new UnifiedServer(makeConfig(), sc, tmpDir);
     await server.start();
     server.stop();
@@ -1002,8 +1011,7 @@ describe('UnifiedServer direct handler calls with null/edge-case urls', () => {
 });
 
 describe('UnifiedServer checkApiKeySecurity (#148)', () => {
-  it('emits warning to stderr when AI flags are enabled with no api_key', async () => {
-    const stderrSpy = jest.spyOn(process.stderr, 'write').mockImplementation(() => true);
+  it('throws when AI flags are enabled with no api_key', async () => {
     const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-sec-warn-'));
     const port = await getFreePort();
     const config = EnvCPConfigSchema.parse({
@@ -1013,16 +1021,11 @@ describe('UnifiedServer checkApiKeySecurity (#148)', () => {
     });
     const serverConfig: ServerConfig = { mode: 'auto', port, host: '127.0.0.1', cors: true, auto_detect: true };
     const srv = new UnifiedServer(config, serverConfig, tmpDir);
-    await srv.start();
-    expect(stderrSpy).toHaveBeenCalledWith(expect.stringContaining('WARNING: Server starting with no API key'));
-    expect(stderrSpy).toHaveBeenCalledWith(expect.stringContaining('allow_ai_read'));
-    srv.stop();
+    await expect(srv.start()).rejects.toThrow('no api_key is set');
     await fs.rm(tmpDir, { recursive: true, force: true });
-    stderrSpy.mockRestore();
   });
 
-  it('warning includes all active allow_ai_* flag names', async () => {
-    const stderrSpy = jest.spyOn(process.stderr, 'write').mockImplementation(() => true);
+  it('error includes all active allow_ai_* flag names', async () => {
     const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-sec-flags-'));
     const port = await getFreePort();
     const config = EnvCPConfigSchema.parse({
@@ -1032,14 +1035,8 @@ describe('UnifiedServer checkApiKeySecurity (#148)', () => {
     });
     const serverConfig: ServerConfig = { mode: 'auto', port, host: '127.0.0.1', cors: true, auto_detect: true };
     const srv = new UnifiedServer(config, serverConfig, tmpDir);
-    await srv.start();
-    const calls = stderrSpy.mock.calls.map(c => String(c[0])).join('');
-    expect(calls).toContain('allow_ai_read');
-    expect(calls).toContain('allow_ai_write');
-    expect(calls).toContain('allow_ai_delete');
-    srv.stop();
+    await expect(srv.start()).rejects.toThrow('allow_ai_read, allow_ai_write, allow_ai_delete');
     await fs.rm(tmpDir, { recursive: true, force: true });
-    stderrSpy.mockRestore();
   });
 
   it('throws when allow_ai_execute is enabled with no api_key', async () => {
@@ -1082,10 +1079,10 @@ describe('UnifiedServer checkApiKeySecurity (#148)', () => {
       encryption: { enabled: false },
       storage: { encrypted: false, path: '.envcp/store.json' },
     });
-    const serverConfig: ServerConfig = {
+    const serverConfig = makeServerConfig({
       mode: 'auto', port, host: '127.0.0.1', cors: true, auto_detect: true,
       api_key: 'secret-key',
-    };
+    });
     const srv = new UnifiedServer(config, serverConfig, tmpDir);
     await srv.start();
     expect(stderrSpy).not.toHaveBeenCalled();
@@ -1103,10 +1100,10 @@ describe('UnifiedServer — branch coverage paths', () => {
   beforeAll(async () => {
     tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-branches-'));
     port = await getFreePort();
-    const serverConfig: ServerConfig = {
+    const serverConfig = makeServerConfig({
       mode: 'all', port, host: '127.0.0.1', cors: true, auto_detect: true,
       api_key: 'test-key',
-    };
+    });
     const config = EnvCPConfigSchema.parse({
       access: { allow_ai_read: true, allow_ai_write: true, allow_ai_delete: true, allow_ai_export: true, allow_ai_execute: true, allow_ai_active_check: true, require_user_reference: false, require_confirmation: false, mask_values: false, blacklist_patterns: [], allowed_commands: ['echo'] },
       encryption: { enabled: false },
@@ -1262,13 +1259,13 @@ describe('UnifiedServer — restart removes previous shutdown handlers', () => {
   });
 
   it('unregisters old SIGTERM/SIGINT handlers on a second start', async () => {
-    const serverConfig: ServerConfig = {
+    const serverConfig = makeServerConfig({
       mode: 'auto',
       port: await getFreePort(),
       host: '127.0.0.1',
       cors: true,
       auto_detect: true,
-    };
+    });
     const s = new UnifiedServer(makeConfig(), serverConfig, tmpDir);
     await s.start();
     const firstHandlers = (s as any).shutdownHandlers;
