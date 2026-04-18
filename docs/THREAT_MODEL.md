@@ -1,6 +1,6 @@
 # EnvCP Threat Model
 
-**Version:** 1.0 | **Date:** 2026-04-13 | **Scope:** EnvCP v1.x
+**Version:** 1.1 | **Date:** 2026-04-18 | **Scope:** EnvCP v1.1.x
 
 This document covers the STRIDE threat model for EnvCP and two detailed attack trees for the highest-risk scenarios. It is a living document — open risks are explicitly called out for future work.
 
@@ -48,7 +48,7 @@ An attacker could forge requests to the HTTP server pretending to be Claude, Cur
 - stdio transport — only processes that can write to the process's stdin can interact; no network exposure
 
 **Residual risk:**
-- If `api_key` is not configured, HTTP modes (REST/OpenAI/Gemini) have no authentication. Server now hard-blocks startup when `allow_ai_execute: true` with no `api_key`, but read-only access remains unauthenticated. **Open risk: enforce api_key for all HTTP modes, not just execute.**
+- ~~If `api_key` is not configured, HTTP modes (REST/OpenAI/Gemini) have no authentication. Server now hard-blocks startup when `allow_ai_execute: true` with no `api_key`, but read-only access remains unauthenticated. **Open risk: enforce api_key for all HTTP modes, not just execute.**~~ **MITIGATED:** Server now blocks startup when ANY AI access flag is enabled without `api_key` (PR #192).
 - API key is stored in `.envcp/config.yaml` in plaintext — any process with local filesystem read access can extract it.
 
 ---
@@ -76,9 +76,10 @@ An attacker with local write access could overwrite the encrypted store.
 **Mitigations in place:**
 - Config is read at server startup — a running server is not affected by config changes until restart.
 - File permissions are `0o600` — other users on a multi-user system cannot read or write it.
+- **HMAC signature:** Config file is signed with HMAC-SHA256 (`src/config/config-hmac.ts`). Tampering is detected on load and blocks server startup.
 
 **Residual risk:**
-- No integrity check on the config file itself. **Open risk: config file MAC / hash pinning.**
+- ~~No integrity check on the config file itself. **Open risk: config file MAC / hash pinning.**~~ **MITIGATED:** Config integrity verified via HMAC signature (PR #193).
 
 ---
 
@@ -132,9 +133,10 @@ When `allow_ai_execute: true`, an AI agent can run arbitrary commands. The comma
 - Command argument arrays (never shell strings) prevent injection
 - `disallow_commands` list blocks known dangerous commands
 - `disallow_root_delete`, `disallow_path_manipulation` flags
+- **Output scrubbing:** `scrubOutput()` removes known secret values and common patterns (API keys, JWTs, tokens) before returning output to AI
 
 **Residual risk:**
-- Output filtering is not implemented — a command that prints env vars will disclose them. **Open risk: output scrubbing against known variable values before returning to AI.**
+- ~~Output filtering is not implemented — a command that prints env vars will disclose them. **Open risk: output scrubbing against known variable values before returning to AI.**~~ **MITIGATED:** Output scrubbing implemented (PR #184).
 
 **Threat 4: Memory extraction**
 
@@ -143,18 +145,20 @@ The decrypted vault content and master password are held in process memory while
 **Mitigations in place:**
 - Session expires after 30 minutes by default (configurable); password is cleared from `SessionManager` on `destroy()`
 - Storage cache is invalidated on password change
+- **Memory hardening:** `sodium_memzero` for explicit zeroing, `mlock` to prevent swapping (when `sodium-native` available)
+- **Core dump prevention:** `prlimit --core=0` on Linux to disable core dumps
 
 **Residual risk:**
-- Node.js does not support explicit memory zeroing — secrets reside in GC-managed heap objects until garbage collected. A core dump or `/proc/<pid>/mem` read by a privileged process can extract them. **Open risk: issue #152 (memory hardening).**
+- ~~Node.js does not support explicit memory zeroing — secrets reside in GC-managed heap objects until garbage collected. A core dump or `/proc/<pid>/mem` read by a privileged process can extract them. **Open risk: issue #152 (memory hardening).**~~ **MITIGATED:** Memory hardening implemented (PR #184).
 
 **Threat 5: Secrets in temp files or swap**
 
 **Mitigations in place:**
 - Atomic writes use `.tmp` → `rename()` — no long-lived temp files with secret content
-- No explicit swap prevention (no `mlock`/`mlockall`)
+- **Swap prevention:** `mlock` locks sensitive buffers in RAM when available
 
 **Residual risk:**
-- OS may page heap memory containing secrets to swap. **Open risk: `mlock` for sensitive buffers (requires native addon or OS-specific call).**
+- ~~OS may page heap memory containing secrets to swap. **Open risk: `mlock` for sensitive buffers (requires native addon or OS-specific call).**~~ **MITIGATED:** `mlock` used when `sodium-native` is available (PR #184).
 
 ---
 
@@ -355,22 +359,29 @@ An AI agent authenticated with a valid API key should only access what the confi
 
 ---
 
-## Open Risks Summary
+## Risks Summary
 
-| Risk | STRIDE | Severity | Tracking |
-|------|--------|----------|----------|
-| Memory holds decrypted secrets + password until GC | I | High | Issue #152 |
-| `envcp_run` output not scrubbed for secret values | I / E | High | Issue #135 |
-| API key in plaintext config.yaml | T / I | Medium | — |
-| No API key required for read-only HTTP access | S | Medium | — |
-| Short secrets may be reconstructable from masked output | I | Medium | — |
-| No config file integrity check | T | Medium | — |
-| Audit log not tamper-evident (no HMAC chain) | R | Medium | Issue #153 |
-| No egress filtering for `envcp_run` network commands | E | Medium | — |
-| Prompt injection bypasses access controls at AI layer | E | Medium | — |
-| No off-machine backup (vault deletion = permanent loss) | D | Low | — |
-| OS swap may contain heap secrets | I | Low | — |
-| Legacy v1 PBKDF2 format weaker than v2 Argon2id | I | Low | — |
+### Mitigated Risks (Resolved)
+
+| Risk | STRIDE | Severity | Resolution |
+|------|--------|----------|------------|
+| Memory holds decrypted secrets + password until GC | I | High | ✓ MITIGATED — PR #184 (memory hardening with `sodium_memzero`, `mlock`) |
+| `envcp_run` output not scrubbed for secret values | I / E | High | ✓ MITIGATED — `scrubOutput()` in `src/utils/crypto.ts` scrubs known secrets and patterns |
+| No API key required for read-only HTTP access | S | Medium | ✓ MITIGATED — PR #192 (API key enforced for all HTTP modes when AI flags enabled) |
+| No config file integrity check | T | Medium | ✓ MITIGATED — PR #193 (HMAC-SHA256 config signature in `.envcp/.config_signature`) |
+| OS swap may contain heap secrets | I | Low | ✓ MITIGATED — PR #184 (`mlock` prevents swapping of sensitive buffers when available) |
+
+### Open Risks (Active)
+
+| Risk | STRIDE | Severity | Tracking | Notes |
+|------|--------|----------|----------|-------|
+| API key in plaintext config.yaml | T / I | Medium | — | Low priority; file is `0o600` perms, local access required |
+| Short secrets may be reconstructable from masked output | I | Medium | — | 8+ char minimum recommended; inherent limitation of masking |
+| Audit log not tamper-evident (no HMAC chain) | R | Medium | Issue #153 | Future enhancement |
+| No egress filtering for `envcp_run` network commands | E | Medium | — | Operators should use `disallow_commands` to block curl/wget |
+| Prompt injection bypasses access controls at AI layer | E | Medium | — | Out of scope — AI/prompt-level attack |
+| No off-machine backup (vault deletion = permanent loss) | D | Low | — | Future: cloud backup / export feature |
+| Legacy v1 PBKDF2 format weaker than v2 Argon2id | I | Low | — | New vaults use v2; legacy decryption supported for migration |
 
 ---
 
@@ -393,6 +404,12 @@ An AI agent authenticated with a valid API key should only access what the confi
 | Blacklist patterns | Glob-matched variable name blocklist |
 | Per-variable passwords | Argon2id-hashed, second-factor for sensitive variables |
 | Argument array execution | `spawn()` with arrays — no shell injection path |
+| Memory hardening | `sodium_memzero`, `mlock` when available, core dump prevention |
+| Output scrubbing | `scrubOutput()` removes known secrets and patterns from command output |
+| API key enforcement | Required for all HTTP modes when any AI access flag is enabled |
+| Config integrity | HMAC-SHA256 signature on config file, verified on load |
+| Brute-force notifications | Email/webhook alerts for lockout events (PR #175) |
+| Auto-startup service | Systemd/launchd/Windows service for boot persistence (PR #191) |
 
 ---
 
