@@ -485,16 +485,11 @@ const { valid: passwordValid, warning: passwordWarning } = validatePassword(pass
         if (lockoutStatus.permanent_locked) {
           console.log(chalk.red.bold('PERMANENT LOCKOUT: Too many failed attempts.'));
           console.log(chalk.red('Recovery key or administrator intervention required.'));
-          
-          // Offer recovery key option
-          const { useRecovery } = await inquirer.prompt([
-            { type: 'confirm', name: 'useRecovery', message: 'Use recovery key to clear lockout?', default: true }
-          ]);
-          
+
+          const useRecovery = await promptConfirm('Use recovery key to clear lockout?', true);
+
           if (useRecovery) {
-            const { recoveryKey } = await inquirer.prompt([
-              { type: 'password', name: 'recoveryKey', message: 'Enter recovery key:', mask: '*' }
-            ]);
+            const recoveryKey = await promptPassword('Enter recovery key:');
             
             const recoveryPath = path.join(projectPath, config.security?.recovery_file || '.envcp/.recovery');
             if (!await pathExists(recoveryPath)) {
