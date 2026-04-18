@@ -99,11 +99,10 @@ export class UnifiedServer {
       );
     }
 
-    process.stderr.write(
-      `\n[EnvCP] WARNING: Server starting with no API key configured.\n` +
-      '[EnvCP]   AI access is enabled — anyone who can reach this port can access your vault.\n' +
-      `[EnvCP]   Active AI flags: ${activeFlags.join(', ')}\n` +
-      '[EnvCP]   Set server.api_key in your config to require authentication.\n\n'
+    throw new Error(
+      'Refusing to start: AI access is enabled but no api_key is set.\n' +
+      `Active AI flags: ${activeFlags.join(', ')}\n` +
+      'Set server.api_key in your config, or disable all AI access flags.'
     );
   }
 
