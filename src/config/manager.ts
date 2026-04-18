@@ -3,6 +3,7 @@ import * as path from 'path';
 import * as yaml from 'js-yaml';
 import { ensureDir, pathExists } from '../utils/fs.js';
 import { EnvCPConfig, EnvCPConfigSchema } from '../types.js';
+import { generateConfigHmac, verifyConfigHmac, deriveHmacKey, getSystemIdentifier } from './config-hmac.js';
 
 const DEFAULT_CONFIG: Partial<EnvCPConfig> = {
   version: '1.0',
@@ -109,6 +110,19 @@ export async function loadConfig(projectPath: string): Promise<EnvCPConfig> {
   const globalConfigPath = path.join(home, '.envcp', 'config.yaml');
   const projectConfigPath = path.join(projectPath, 'envcp.yaml');
 
+  const sigPath = path.join(projectPath, '.envcp', '.config_signature');
+  const hmacKey = deriveHmacKey(getSystemIdentifier());
+
+  if (await pathExists(sigPath)) {
+    if (await pathExists(projectConfigPath)) {
+      const storedHmac = await fs.readFile(sigPath, 'utf8');
+      const projectContent = await fs.readFile(projectConfigPath, 'utf8');
+      if (!verifyConfigHmac(projectContent, storedHmac, hmacKey)) {
+        throw new Error('Config integrity check failed: envcp.yaml has been tampered with or corrupted. Verify the file or remove .envcp/.config_signature to regenerate.');
+      }
+    }
+  }
+
   let merged: Record<string, unknown> = DEFAULT_CONFIG as Record<string, unknown>;
 
   // Layer 1: global config (~/.envcp/config.yaml)
@@ -132,10 +146,20 @@ export async function loadConfig(projectPath: string): Promise<EnvCPConfig> {
   return EnvCPConfigSchema.parse(merged);
 }
 
+export async function saveConfigSignature(projectPath: string, configContent: string, key: string): Promise<void> {
+  const envcpDir = path.join(projectPath, '.envcp');
+  await ensureDir(envcpDir);
+  const sigPath = path.join(envcpDir, '.config_signature');
+  const hmac = generateConfigHmac(configContent, key);
+  await fs.writeFile(sigPath, hmac, 'utf8');
+}
+
 export async function saveConfig(config: EnvCPConfig, projectPath: string): Promise<void> {
   const configPath = path.join(projectPath, 'envcp.yaml');
   const content = yaml.dump(config, { indent: 2, lineWidth: -1 });
   await fs.writeFile(configPath, content, 'utf8');
+  const key = deriveHmacKey(getSystemIdentifier());
+  await saveConfigSignature(projectPath, content, key);
 }
 
 export async function initConfig(projectPath: string, projectName?: string): Promise<EnvCPConfig> {
