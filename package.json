@@ -59,7 +59,7 @@
     "jest": "^30.3.0",
     "jest-junit": "^16.0.0",
     "ts-jest": "^29.4.9",
-    "typescript": "^5.3.0"
+    "typescript": "^6.0.3"
   },
   "files": [
     "dist",
