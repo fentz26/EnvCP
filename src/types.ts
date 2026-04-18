@@ -137,6 +137,16 @@ export const EnvCPConfigSchema = z.object({
   security: z.object({
     mode: z.enum(['hard-lock', 'recoverable']).default('recoverable'),
     recovery_file: z.string().default('.envcp/.recovery'),
+    brute_force_protection: z.object({
+      enabled: z.boolean().default(true),
+      max_attempts: z.number().int().min(1).default(5),
+      lockout_duration: z.number().int().min(1).default(300),
+      progressive_delay: z.boolean().default(true),
+      max_delay: z.number().int().min(0).default(60),
+      permanent_lockout_threshold: z.number().int().min(0).default(50),
+      permanent_lockout_action: z.enum(['require_recovery_key', 'require_admin', 'permanent_lock']).default('require_recovery_key'),
+      notifications: z.object({}).default({}),
+    }).default({}),
   }).default({}),
 
   password: z.object({
@@ -191,7 +201,7 @@ export type Variable = z.infer<typeof VariableSchema>;
 
 export const OperationLogSchema = z.object({
   timestamp: z.string(),
-  operation: z.enum(['add', 'get', 'update', 'delete', 'list', 'sync', 'export', 'unlock', 'lock', 'check_access', 'run', 'auth_failure']),
+  operation: z.enum(['add', 'get', 'update', 'delete', 'list', 'sync', 'export', 'unlock', 'lock', 'check_access', 'run', 'auth_failure', 'permanent_lockout', 'lockout_triggered']),
   variable: z.string().optional(),
   source: z.enum(['cli', 'mcp', 'api']),
   success: z.boolean(),

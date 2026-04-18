@@ -81,8 +81,8 @@ export class ConfigGuard {
         const encrypted = await fs.promises.readFile(storePath, 'utf8');
         const { decrypt } = await import('../utils/crypto.js');
         await decrypt(encrypted, password);
-      } catch (err: any) {
-        if (err?.code === 'ENOENT') {
+      } catch (err: unknown) {
+        if (err && typeof err === 'object' && 'code' in err && err.code === 'ENOENT') {
           // Store file doesn't exist yet — no password verification needed
         } else {
           return { success: false, error: 'Invalid password' };

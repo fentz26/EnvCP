@@ -70,6 +70,9 @@ describe('UnifiedServer MCP mode start', () => {
     await server.start();
 
     expect(mockMcpStart).toHaveBeenCalledTimes(1);
+    
+    // Clean up
+    server.stop();
   });
 });
 
@@ -122,15 +125,18 @@ describe('UnifiedServer SIGTERM handler', () => {
     // Spy on stop
     const stopSpy = jest.spyOn(server, 'stop');
 
-    // Emit SIGTERM
-    process.emit('SIGTERM');
+    try {
+      // Emit SIGTERM
+      process.emit('SIGTERM');
 
-    expect(stopSpy).toHaveBeenCalled();
-    expect(mockExit).toHaveBeenCalledWith(0);
-
-    mockExit.mockRestore();
-    stopSpy.mockRestore();
-    // Server already stopped by the handler
+      expect(stopSpy).toHaveBeenCalled();
+      expect(mockExit).toHaveBeenCalledWith(0);
+    } finally {
+      // Ensure server is stopped even if test fails
+      server.stop();
+      mockExit.mockRestore();
+      stopSpy.mockRestore();
+    }
   });
 });
 

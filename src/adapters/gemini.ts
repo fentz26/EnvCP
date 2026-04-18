@@ -232,5 +232,6 @@ async startServer(port: number, host: string, apiKey?: string, rateLimitConfig?:
       this.server.close();
       this.server = null;
     }
+    this.rateLimiter?.destroy();
   }
 }

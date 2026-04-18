@@ -15,6 +15,7 @@ import { KeychainManager } from '../utils/keychain.js';
 import { HsmManager } from '../utils/hsm.js';
 import { checkForUpdate, formatUpdateMessage, logUpdateCheck } from '../utils/update-checker.js';
 import { LockoutManager } from '../utils/lockout.js';
+
 import { Variable, EnvCPConfig } from '../types.js';
 import { initMemoryProtection } from '../utils/secure-memory.js';
 import {
@@ -26,10 +27,9 @@ import {
   initNamedVault,
 } from '../vault/index.js';
 
-// Initialize memory protection on module load
 initMemoryProtection();
 
-async function withSession(fn: (storage: StorageManager, password: string, config: EnvCPConfig, projectPath: string) => Promise<void>, vaultOverride?: 'global' | 'project'): Promise<void> {
+async function withSession(fn: (storage: StorageManager, password: string, config: EnvCPConfig, projectPath: string, logManager: LogManager) => Promise<void>, vaultOverride?: 'global' | 'project'): Promise<void> {
   const projectPath = process.cwd();
   const config = await loadConfig(projectPath);
 
@@ -41,16 +41,23 @@ async function withSession(fn: (storage: StorageManager, password: string, confi
 
   if (config.encryption?.enabled === false) {
     const storage = new StorageManager(vaultPath, false);
-    await fn(storage, '', config, projectPath);
+    const logManager = new LogManager(path.join(projectPath, '.envcp', 'logs'), config.audit);
+    await logManager.init();
+    await fn(storage, '', config, projectPath, logManager);
     return;
   }
 
-  const sessionManager = new SessionManager(
-    path.join(projectPath, config.session?.path || '.envcp/.session'),
-    config.session?.timeout_minutes || 30,
-    config.session?.max_extensions || 5
-  );
-  await sessionManager.init();
+    const sessionManager = new SessionManager(
+      path.join(projectPath, config.session?.path || '.envcp/.session'),
+      config.session?.timeout_minutes || 30,
+      config.session?.max_extensions || 5
+    );
+
+    await sessionManager.init();
+
+    // Initialize audit logging
+    const logManager = new LogManager(path.join(projectPath, '.envcp', 'logs'), config.audit);
+    await logManager.init();
 
   let session = await sessionManager.load();
   let password = '';
@@ -138,7 +145,7 @@ let userPassword = '';
   const storage = new StorageManager(vaultPath, config.storage.encrypted);
   if (password) storage.setPassword(password);
 
-  await fn(storage, password, config, projectPath);
+  await fn(storage, password, config, projectPath, logManager);
 }
 
 const program = new Command();
@@ -189,12 +196,38 @@ program
     if (securityChoice === 'none') {
       config.encryption = { enabled: false };
       config.storage.encrypted = false;
-      config.security = { mode: 'recoverable', recovery_file: '.envcp/.recovery' };
+      config.security = { 
+        mode: 'recoverable', 
+        recovery_file: '.envcp/.recovery',
+        brute_force_protection: {
+          enabled: true,
+          max_attempts: 5,
+          lockout_duration: 300,
+          progressive_delay: true,
+          max_delay: 60,
+          permanent_lockout_threshold: 50,
+          permanent_lockout_action: 'require_recovery_key',
+          notifications: {}
+        }
+      };
     } else {
       config.encryption = { enabled: true };
       config.storage.encrypted = true;
-      config.security = { mode: securityChoice, recovery_file: '.envcp/.recovery' };
-}
+          config.security = {
+            mode: securityChoice,
+            recovery_file: '.envcp/.recovery',
+            brute_force_protection: {
+              enabled: true,
+              max_attempts: 5,
+              lockout_duration: 300,
+              progressive_delay: true,
+              max_delay: 60,
+              permanent_lockout_threshold: 50,
+              permanent_lockout_action: 'require_recovery_key',
+              notifications: {},
+            }
+          };
+        }
 
 // For encrypted modes: get password now
   let pwd = '';
@@ -351,6 +384,7 @@ program
   .command('unlock')
   .description('Unlock EnvCP session with password')
   .option('-p, --password <password>', 'Password (will prompt if not provided)')
+  .option('--recovery-key <key>', 'Recovery key to clear permanent lockout')
   .option('--save-to-keychain', 'Save password to OS keychain for auto-unlock')
   .option('--setup-hsm', 'Protect vault password with hardware security module')
   .option('--hsm-type <type>', 'HSM type: yubikey | gpg | pkcs11 (default: yubikey)')
@@ -377,9 +411,55 @@ const { valid: passwordValid, warning: passwordWarning } = validatePassword(pass
     }
 
     const sessionDir = path.join(projectPath, path.dirname(config.session?.path || '.envcp/.session'));
-    const lockoutManager = new LockoutManager(path.join(sessionDir, '.lockout'));
-    const lockoutThreshold = config.session?.lockout_threshold ?? 5;
-    const lockoutBaseSeconds = config.session?.lockout_base_seconds ?? 60;
+    
+    let lockoutManager: LockoutManager = new LockoutManager(path.join(sessionDir, '.lockout'));
+    
+    // Handle recovery key if provided
+    if (options.recoveryKey) {
+      const recoveryPath = path.join(projectPath, config.security?.recovery_file || '.envcp/.recovery');
+      if (!await pathExists(recoveryPath)) {
+        console.log(chalk.red('No recovery file found.'));
+        return;
+      }
+      
+      const recoveryData = await fs.readFile(recoveryPath, 'utf8');
+      try {
+        await recoverPassword(recoveryData, options.recoveryKey);
+        // Recovery key is valid - clear permanent lockout
+        await lockoutManager.clearPermanentLockout();
+        console.log(chalk.green('Permanent lockout cleared.'));
+        
+        // Log recovery event
+        const logManager = new LogManager(path.join(projectPath, '.envcp', 'logs'), config.audit);
+        await logManager.init();
+        await logManager.log({
+          timestamp: new Date().toISOString(),
+          operation: 'unlock',
+          variable: '',
+          source: 'cli',
+          success: true,
+          message: 'Permanent lockout cleared with recovery key (via --recovery-key flag)',
+          session_id: '',
+          client_id: 'cli',
+          client_type: 'terminal',
+          ip: '127.0.0.1'
+        });
+        
+        console.log(chalk.yellow('Note: You still need to enter the correct password.'));
+        // Continue with password prompt
+      } catch {
+        console.log(chalk.red('Invalid recovery key.'));
+        return;
+      }
+    }
+    
+    // Use new brute_force_protection config if available, fall back to session config
+    const bfpConfig = config.security?.brute_force_protection;
+    const lockoutThreshold = bfpConfig?.max_attempts ?? config.session?.lockout_threshold ?? 5;
+    const lockoutBaseSeconds = bfpConfig?.lockout_duration ?? config.session?.lockout_base_seconds ?? 60;
+    const progressiveDelay = bfpConfig?.progressive_delay ?? true;
+    const maxDelay = bfpConfig?.max_delay ?? 60;
+    const permanentThreshold = bfpConfig?.permanent_lockout_threshold ?? 0;
 
     const sessionManager = new SessionManager(
       path.join(projectPath, config.session?.path || '.envcp/.session'),
@@ -388,6 +468,10 @@ const { valid: passwordValid, warning: passwordWarning } = validatePassword(pass
     );
 
     await sessionManager.init();
+
+    // Initialize audit logging
+    const logManager = new LogManager(path.join(projectPath, '.envcp', 'logs'), config.audit);
+    await logManager.init();
 
     const storage = new StorageManager(
       path.join(projectPath, config.storage.path),
@@ -401,8 +485,55 @@ const { valid: passwordValid, warning: passwordWarning } = validatePassword(pass
     if (storeExists) {
       const lockoutStatus = await lockoutManager.check();
       if (lockoutStatus.locked) {
-        console.log(chalk.red(`Too many failed attempts. Try again in ${lockoutStatus.remaining_seconds} second(s).`));
-        return;
+        if (lockoutStatus.permanent_locked) {
+          console.log(chalk.red.bold('PERMANENT LOCKOUT: Too many failed attempts.'));
+          console.log(chalk.red('Recovery key or administrator intervention required.'));
+
+          const useRecovery = await promptConfirm('Use recovery key to clear lockout?', true);
+
+          if (useRecovery) {
+            const recoveryKey = await promptPassword('Enter recovery key:');
+            
+            const recoveryPath = path.join(projectPath, config.security?.recovery_file || '.envcp/.recovery');
+            if (!await pathExists(recoveryPath)) {
+              console.log(chalk.red('No recovery file found.'));
+              return;
+            }
+            
+            const recoveryData = await fs.readFile(recoveryPath, 'utf8');
+            try {
+              await recoverPassword(recoveryData, recoveryKey);
+              // Recovery key is valid - clear permanent lockout
+              await lockoutManager.clearPermanentLockout();
+              console.log(chalk.green('Permanent lockout cleared. You can now attempt to unlock.'));
+              console.log(chalk.yellow('Note: You still need to enter the correct password.'));
+              
+              // Log recovery event
+              await logManager.log({
+                timestamp: new Date().toISOString(),
+                operation: 'unlock',
+                variable: '',
+                source: 'cli',
+                success: true,
+                message: 'Permanent lockout cleared with recovery key',
+                session_id: '',
+                client_id: 'cli',
+                client_type: 'terminal',
+                ip: '127.0.0.1'
+              });
+              
+              // Continue with password prompt
+            } catch {
+              console.log(chalk.red('Invalid recovery key.'));
+              return;
+            }
+          } else {
+            return;
+          }
+        } else {
+          console.log(chalk.red(`Too many failed attempts. Try again in ${lockoutStatus.remaining_seconds} second(s).`));
+          return;
+        }
       }
     }
 
@@ -436,12 +567,71 @@ const confirmPasswordValue = await promptPassword('Confirm password:');
       await storage.load();
     } catch (error) {
       if (storeExists) {
-        const status = await lockoutManager.recordFailure(lockoutThreshold, lockoutBaseSeconds);
-        if (status.locked) {
+        const status = await lockoutManager.recordFailure(
+          lockoutThreshold, 
+          lockoutBaseSeconds,
+          progressiveDelay,
+          maxDelay,
+          permanentThreshold
+        );
+        
+        // Log the failed attempt
+        await logManager.log({
+          timestamp: new Date().toISOString(),
+          operation: 'auth_failure',
+          variable: '',
+          source: 'cli',
+          success: false,
+          message: `Failed unlock attempt (attempt ${status.attempts})`,
+          session_id: '',
+          client_id: 'cli',
+          client_type: 'terminal',
+          ip: '127.0.0.1'
+        });
+        
+        if (status.permanent_locked) {
+          console.log(chalk.red.bold('PERMANENT LOCKOUT TRIGGERED: Too many failed attempts.'));
+          console.log(chalk.red('Recovery key or administrator intervention required.'));
+          
+          // Log permanent lockout event
+          await logManager.log({
+            timestamp: new Date().toISOString(),
+            operation: 'permanent_lockout',
+            variable: '',
+            source: 'cli',
+            success: false,
+            message: `Permanent lockout triggered after ${status.permanent_lockout_count} lockouts`,
+            session_id: '',
+            client_id: 'cli',
+            client_type: 'terminal',
+            ip: '127.0.0.1'
+          });
+        } else if (status.locked) {
           console.log(chalk.red(`Invalid password. Too many failed attempts — locked out for ${status.remaining_seconds} second(s).`));
+          
+          // Log lockout event
+          await logManager.log({
+            timestamp: new Date().toISOString(),
+            operation: 'lockout_triggered',
+            variable: '',
+            source: 'cli',
+            success: false,
+            message: `Lockout triggered for ${status.remaining_seconds}s (lockout #${status.lockout_count})`,
+            session_id: '',
+            client_id: 'cli',
+            client_type: 'terminal',
+            ip: '127.0.0.1'
+          });
         } else {
           const remaining = lockoutThreshold - status.attempts;
-          console.log(chalk.red(`Invalid password. ${remaining} attempt(s) remaining before lockout.`));
+          let message = `Invalid password. ${remaining} attempt(s) remaining before lockout.`;
+          
+          // Show progressive delay if applied
+          if (status.delay_seconds && status.delay_seconds > 0) {
+            message += ` (Delayed ${status.delay_seconds}s)`;
+          }
+          
+          console.log(chalk.red(message));
         }
       } else {
         console.log(chalk.red('Invalid password'));
@@ -453,6 +643,20 @@ const confirmPasswordValue = await promptPassword('Confirm password:');
     await lockoutManager.reset();
 
     const session = await sessionManager.create(password);
+
+    // Log successful unlock
+    await logManager.log({
+      timestamp: new Date().toISOString(),
+      operation: 'unlock',
+      variable: '',
+      source: 'cli',
+      success: true,
+      message: 'Session unlocked successfully',
+      session_id: session.id,
+      client_id: 'cli',
+      client_type: 'terminal',
+      ip: '127.0.0.1'
+    });
 
     console.log(chalk.green('Session unlocked!'));
     console.log(chalk.gray(`  Session ID: ${session.id}`));
