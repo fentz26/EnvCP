@@ -184,7 +184,7 @@ const whitelist = rl?.whitelist ?? [];
       if (api_key) {
         const providedKey = (req.headers['x-api-key'] ||
                            req.headers['x-goog-api-key'] ||
-                           req.headers['authorization']?.replace('Bearer ', '')) as string | undefined;
+                           req.headers['authorization']?.replace(/^Bearer\s+/i, '')) as string | undefined;
         if (!validateApiKey(providedKey, api_key)) {
           /* c8 ignore next -- logs is always initialized in start(); the undefined branch is unreachable in practice */
           await this.logs?.log({ timestamp: new Date().toISOString(), operation: 'auth_failure', variable: '', source: 'api', success: false, message: `Invalid API key from ${req.socket.remoteAddress ?? 'unknown'}` });

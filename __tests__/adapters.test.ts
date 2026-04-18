@@ -233,7 +233,7 @@ describe('OpenAIAdapter', () => {
   it('GET /v1/models returns model list', async () => {
     const { status, data } = await fetch(port, 'GET', '/v1/models');
     expect(status).toBe(200);
-    expect((data as any).data[0].id).toBe('envcp-1.0');
+    expect((data as any).data[0].id).toMatch(/^envcp-\d+\.\d+/);
   });
 
   it('GET /v1/functions returns functions', async () => {

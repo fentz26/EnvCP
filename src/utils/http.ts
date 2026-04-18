@@ -28,11 +28,18 @@ export function setCorsHeaders(res: http.ServerResponse, allowedOrigin?: string,
   // Apply security headers first
   setSecurityHeaders(res);
   
-  const localOrigins = ['http://127.0.0.1', 'http://localhost', 'http://[::1]'];
+  const localHosts = new Set(['127.0.0.1', 'localhost', '[::1]', '::1']);
   let origin = allowedOrigin ?? '';
   if (!allowedOrigin && requestOrigin) {
-    const matches = localOrigins.some(lo => requestOrigin.startsWith(lo));
-    origin = matches ? requestOrigin : '';
+    try {
+      const parsed = new URL(requestOrigin);
+      const host = parsed.hostname.toLowerCase();
+      if (parsed.protocol === 'http:' && localHosts.has(host)) {
+        origin = requestOrigin;
+      }
+    } catch {
+      origin = '';
+    }
   }
   res.setHeader('Access-Control-Allow-Origin', origin);
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');

@@ -1,6 +1,7 @@
 import { BaseAdapter } from './base.js';
 import { EnvCPConfig, GeminiFunctionDeclaration, GeminiFunctionCall, GeminiFunctionResponse, RateLimitConfig } from '../types.js';
 import { setCorsHeaders, sendJson, parseBody, validateApiKey, RateLimiter, rateLimitMiddleware } from '../utils/http.js';
+import { VERSION } from '../version.js';
 import * as http from 'http';
 
 export class GeminiAdapter extends BaseAdapter {
@@ -77,7 +78,7 @@ async startServer(port: number, host: string, apiKey?: string, rateLimitConfig?:
 
       // API key validation
       if (apiKey) {
-        const providedKey = (req.headers['x-goog-api-key'] || req.headers['authorization']?.replace('Bearer ', '')) as string | undefined;
+        const providedKey = (req.headers['x-goog-api-key'] || req.headers['authorization']?.replace(/^Bearer\s+/i, '')) as string | undefined;
         if (!validateApiKey(providedKey, apiKey)) {
           await this.logs.log({ timestamp: new Date().toISOString(), operation: 'auth_failure', variable: '', source: 'api', success: false, message: `Invalid API key from ${req.socket.remoteAddress || 'unknown'}` });
           sendJson(res, 401, { error: { code: 401, message: 'Invalid API key', status: 'UNAUTHENTICATED' } });
@@ -95,7 +96,7 @@ async startServer(port: number, host: string, apiKey?: string, rateLimitConfig?:
         if (pathname === '/v1/models' && req.method === 'GET') {
           sendJson(res, 200, {
             models: [{
-              name: 'models/envcp-1.0',
+              name: `models/envcp-${VERSION}`,
               displayName: 'EnvCP Tool Server',
               description: 'Environment variable management tools',
               supportedGenerationMethods: ['generateContent'],
@@ -204,7 +205,7 @@ async startServer(port: number, host: string, apiKey?: string, rateLimitConfig?:
         if (pathname === '/v1/health' || pathname === '/') {
           sendJson(res, 200, {
             status: 'ok',
-            version: '1.0.0',
+            version: VERSION,
             mode: 'gemini',
             endpoints: ['/v1/models', '/v1/tools', '/v1/functions/call', '/v1/function_calls', '/v1/models/envcp:generateContent'],
           });

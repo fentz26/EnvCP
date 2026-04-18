@@ -170,7 +170,7 @@ async startServer(port: number, host: string, apiKey?: string, rateLimitConfig?:
           this.lockoutManager.setNotificationSource('api', ip, userAgent);
         }
         
-        const providedKey = (req.headers['x-api-key'] || req.headers['authorization']?.replace('Bearer ', '')) as string | undefined;
+        const providedKey = (req.headers['x-api-key'] || req.headers['authorization']?.replace(/^Bearer\s+/i, '')) as string | undefined;
         if (!validateApiKey(providedKey, apiKey)) {
           // Record failed attempt if lockout is enabled
           if (this.lockoutManager) {

@@ -1,6 +1,7 @@
 import { BaseAdapter } from './base.js';
 import { EnvCPConfig, OpenAIFunction, OpenAIToolCall, OpenAIMessage, RateLimitConfig } from '../types.js';
 import { setCorsHeaders, sendJson, parseBody, validateApiKey, RateLimiter, rateLimitMiddleware } from '../utils/http.js';
+import { VERSION } from '../version.js';
 import * as http from 'http';
 
 export class OpenAIAdapter extends BaseAdapter {
@@ -80,7 +81,7 @@ async startServer(port: number, host: string, apiKey?: string, rateLimitConfig?:
 
       // API key validation
       if (apiKey) {
-        const providedKey = req.headers['authorization']?.replace('Bearer ', '');
+        const providedKey = req.headers['authorization']?.replace(/^Bearer\s+/i, '');
         if (!validateApiKey(providedKey, apiKey)) {
           await this.logs.log({ timestamp: new Date().toISOString(), operation: 'auth_failure', variable: '', source: 'api', success: false, message: `Invalid API key from ${req.socket.remoteAddress || 'unknown'}` });
           sendJson(res, 401, { error: { message: 'Invalid API key', type: 'invalid_api_key' } });
@@ -99,7 +100,7 @@ async startServer(port: number, host: string, apiKey?: string, rateLimitConfig?:
           sendJson(res, 200, {
             object: 'list',
             data: [{
-              id: 'envcp-1.0',
+              id: `envcp-${VERSION}`,
               object: 'model',
               created: Date.now(),
               owned_by: 'envcp',
@@ -173,7 +174,7 @@ async startServer(port: number, host: string, apiKey?: string, rateLimitConfig?:
               id: `chatcmpl-${Date.now()}`,
               object: 'chat.completion',
               created: Math.floor(Date.now() / 1000),
-              model: 'envcp-1.0',
+              model: `envcp-${VERSION}`,
               choices: [{
                 index: 0,
                 message: {
@@ -193,7 +194,7 @@ async startServer(port: number, host: string, apiKey?: string, rateLimitConfig?:
             id: `chatcmpl-${Date.now()}`,
             object: 'chat.completion',
             created: Math.floor(Date.now() / 1000),
-            model: 'envcp-1.0',
+            model: `envcp-${VERSION}`,
             choices: [{
               index: 0,
               message: {
@@ -214,7 +215,7 @@ async startServer(port: number, host: string, apiKey?: string, rateLimitConfig?:
         if (pathname === '/v1/health' || pathname === '/') {
           sendJson(res, 200, {
             status: 'ok',
-            version: '1.0.0',
+            version: VERSION,
             mode: 'openai',
             endpoints: ['/v1/models', '/v1/functions', '/v1/functions/call', '/v1/tool_calls', '/v1/chat/completions'],
           });

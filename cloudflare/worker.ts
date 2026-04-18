@@ -106,7 +106,7 @@ app.get('/api/health', (c) => {
   return c.json({
     status: 'ok',
     timestamp: new Date().toISOString(),
-    version: '1.0.0'
+    version: c.env.VERSION ?? '1.2.0'
   });
 });
 
@@ -114,7 +114,7 @@ app.get('/api/health', (c) => {
 app.get('/api/docs', (c) => {
   return c.json({
     name: 'EnvCP Cloud API',
-    version: '1.0.0',
+    version: c.env.VERSION ?? '1.2.0',
     description: 'Cloud-hosted EnvCP service',
     authentication: { type: 'API Key', header: 'X-API-Key' },
     endpoints: {

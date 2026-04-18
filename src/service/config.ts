@@ -60,8 +60,25 @@ export async function loadServiceConfig(configPath?: string): Promise<ServiceCon
   return mergeServiceConfig(parsed);
 }
 
+// SECURITY: Service unit/script generators interpolate these values into
+// systemd ExecStart, launchd plist, and Windows .bat. Reject characters that
+// could break out of those formats (newlines, quotes, shell metas).
+const SAFE_API_KEY = /^[A-Za-z0-9_\-]+$/;
+const UNSAFE_PATH_CHARS = /[\r\n"`$|&;<>]/;
+
+function assertSafe(field: string, value: string | undefined, pattern?: RegExp): void {
+  if (value === undefined) return;
+  if (pattern) {
+    if (!pattern.test(value)) {
+      throw new Error(`Invalid ${field}: contains disallowed characters`);
+    }
+  } else if (UNSAFE_PATH_CHARS.test(value)) {
+    throw new Error(`Invalid ${field}: contains disallowed characters`);
+  }
+}
+
 export function mergeServiceConfig(partial: Partial<ServiceConfig>): ServiceConfig {
-  return {
+  const merged: ServiceConfig = {
     server: {
       ...DEFAULT_SERVICE_CONFIG.server,
       ...(partial.server || {}),
@@ -72,6 +89,14 @@ export function mergeServiceConfig(partial: Partial<ServiceConfig>): ServiceConf
     log_level: partial.log_level ?? DEFAULT_SERVICE_CONFIG.log_level,
     working_directory: partial.working_directory,
   };
+
+  assertSafe('server.api_key', merged.server.api_key, SAFE_API_KEY);
+  assertSafe('server.host', merged.server.host);
+  assertSafe('server.mode', merged.server.mode);
+  assertSafe('log_level', merged.log_level);
+  assertSafe('working_directory', merged.working_directory);
+
+  return merged;
 }
 
 export async function saveServiceConfig(

@@ -137,4 +137,4 @@ Feel free to open an issue for any questions about contributing!
 
 ## License
 
-By contributing, you agree that your contributions will be licensed under the MIT License.
+By contributing, you agree that your contributions will be licensed under the EnvCP Source Available License v1.0 (SAL-1.0). See [LICENSE](LICENSE) for details.

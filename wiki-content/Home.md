@@ -109,4 +109,4 @@ EnvCP works with all major AI platforms:
 
 ## License
 
-EnvCP is open source software licensed under the [MIT License](https://github.com/fentz26/EnvCP/blob/main/LICENSE).
+EnvCP is licensed under the [EnvCP Source Available License v1.0 (SAL-1.0)](https://github.com/fentz26/EnvCP/blob/main/LICENSE).

@@ -104,7 +104,7 @@ export function writeCache(projectPath: string, data: CachedCheck): void {
     if (!fs.existsSync(cacheDir)) {
       fs.mkdirSync(cacheDir, { recursive: true });
     }
-    fs.writeFileSync(cachePath, JSON.stringify(data, null, 2), 'utf8');
+    fs.writeFileSync(cachePath, JSON.stringify(data, null, 2), { encoding: 'utf8', mode: 0o600 });
   } catch { /* ignore */ }
 }
 
@@ -236,6 +236,6 @@ export async function logUpdateCheck(projectPath: string, info: VersionInfo): Pr
     }
     const logPath = path.join(logDir, 'audit.log');
     const line = `${new Date().toISOString()} UPDATE_CHECK current=${info.current} latest=${info.latest} available=${info.updateAvailable}\n`;
-    fs.appendFileSync(logPath, line, 'utf8');
+    fs.appendFileSync(logPath, line, { encoding: 'utf8', mode: 0o600 });
   } catch { /* ignore */ }
 }

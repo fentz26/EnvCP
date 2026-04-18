@@ -241,6 +241,17 @@ impl StorageManager {
             };
             if let Ok(decrypted) = crypto::decrypt(&raw, &pw) {
                 if let Ok(vars) = serde_json::from_str::<HashMap<String, Variable>>(&decrypted) {
+                    // SECURITY: Surface restore loudly so silent recovery
+                    // can't mask tampering or corruption.
+                    eprintln!(
+                        "\n[envcp] WARNING: primary store failed to decrypt; \
+                         restored from backup {}.\n\
+                         [envcp] If you did not expect this, your store may \
+                         have been tampered with or corrupted. Inspect \
+                         '{}.bak.*' before continuing.\n",
+                        bak.display(),
+                        self.path.display()
+                    );
                     fs::copy(&bak, &self.path)?;
                     set_private(&self.path)?;
                     return Ok(Some(vars));

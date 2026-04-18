@@ -109,7 +109,7 @@ describe('service/generators', () => {
     it('produces a batch file with cd and executable invocation', () => {
       const script = generateWindowsWrapperScript(makeCtx());
       expect(script).toContain('@echo off');
-      expect(script).toContain('set NODE_ENV=production');
+      expect(script).toContain('NODE_ENV=production');
       expect(script).toContain('cd /d "/srv/work"');
       expect(script).toContain('"/usr/bin/node" "/opt/envcp/cli.js"');
       expect(script).toContain('>> "/var/log/envcp.log"');

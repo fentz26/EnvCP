@@ -29,7 +29,7 @@ const DEFAULT_CONFIG: Partial<EnvCPConfig> = {
     audit_log: true,
     blacklist_patterns: ['*_SECRET', '*_PRIVATE', 'ADMIN_*', 'ROOT_*'],
     require_variable_password: false,
-    command_blacklist: ['mkfs', 'shred', 'wipefs', 'fdisk', 'parted'],
+    command_blacklist: ['mkfs', 'shred', 'wipefs', 'fdisk', 'parted', 'dd', 'chattr'],
     run_safety: {
       disallow_root_delete: true,
       disallow_path_manipulation: true,
@@ -151,13 +151,13 @@ export async function saveConfigSignature(projectPath: string, configContent: st
   await ensureDir(envcpDir);
   const sigPath = path.join(envcpDir, '.config_signature');
   const hmac = generateConfigHmac(configContent, key);
-  await fs.writeFile(sigPath, hmac, 'utf8');
+  await fs.writeFile(sigPath, hmac, { encoding: 'utf8', mode: 0o600 });
 }
 
 export async function saveConfig(config: EnvCPConfig, projectPath: string): Promise<void> {
   const configPath = path.join(projectPath, 'envcp.yaml');
   const content = yaml.dump(config, { indent: 2, lineWidth: -1 });
-  await fs.writeFile(configPath, content, 'utf8');
+  await fs.writeFile(configPath, content, { encoding: 'utf8', mode: 0o600 });
   const key = deriveHmacKey(getSystemIdentifier());
   await saveConfigSignature(projectPath, content, key);
 }

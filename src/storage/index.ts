@@ -143,8 +143,18 @@ export class StorageManager {
         const decrypted = await decrypt(data, this.password);
         const variables = JSON.parse(decrypted);
 
-        await nodefs.cp(bakPath, this.storePath);
-        await nodefs.chmod(this.storePath, 0o600);
+        // SECURITY: Surface the restore loudly. Silent restore could mask
+        // tampering — make sure the user sees this and can investigate.
+        process.stderr.write(
+          `\n[envcp] WARNING: primary store failed to decrypt; ` +
+          `recovered variables from backup ${bakPath}.\n` +
+          `[envcp] The primary store was NOT overwritten — it still contains ` +
+          `corrupted data. The next save will write a fresh copy.\n` +
+          `[envcp] If you did not expect this, your store may have been ` +
+          `tampered with or corrupted. Inspect '${this.storePath}.bak.*' ` +
+          `before continuing.\n\n`
+        );
+
         return variables;
       } catch {
       }

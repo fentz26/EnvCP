@@ -4,6 +4,7 @@ compatibility_date = "2024-01-01"
 
 [vars]
 ENVIRONMENT = "production"
+VERSION = "1.2.0"
 
 [[routes]]
 pattern = "envcp.org/*"

@@ -90,8 +90,8 @@ export function generateWindowsWrapperScript(ctx: GeneratorContext): string {
     .map((a) => (a.includes(' ') ? `"${a}"` : a))
     .join(' ');
   return `@echo off
-set NODE_ENV=production
-set ENVCP_LOG_LEVEL=${ctx.config.log_level}
+set "NODE_ENV=production"
+set "ENVCP_LOG_LEVEL=${ctx.config.log_level}"
 cd /d "${ctx.workingDirectory}"
 "${ctx.nodePath}" "${ctx.execPath}" ${args} >> "${ctx.logFile}" 2>> "${ctx.errorLogFile}"
 `;
