@@ -60,6 +60,20 @@
 
 ---
 
+## What's New in v1.2.0
+
+- **Rust Core Library**: AES-256-GCM encryption, Argon2id key derivation, and HMAC-SHA256 implemented in Rust for maximum performance and security
+- **Memory Hardening**: Zero-sensitive memory, prevent swapping, core dump protection
+- **Brute-Force Protection**: Progressive delays and permanent lockout after repeated failures
+- **Email/Webhook Notifications**: Alert on security events (lockouts, unlocks)
+- **Auto-Startup System Service**: Install as systemd/launchd/Windows service for always-on availability
+- **API Key Enforcement**: Stricter validation when AI access is enabled
+- **Config File Integrity Protection**: HMAC-SHA256 signatures detect tampering
+- **Release Channels**: Latest, Experimental, and Canary channels for different risk profiles
+- **Python Native Binding**: `pip install envcp-core` for Python applications without Node.js
+- **Security Audit Fixes**: All High and Medium severity findings addressed (CORS bypass, backup auto-restore, Windows injection, etc.)
+
+
 ## Quick Start
 
 Install and initialize:

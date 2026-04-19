@@ -70,6 +70,21 @@ All notable changes to EnvCP are documented here. Format follows [Keep a Changel
 - **pyo3 0.24** — updated from 0.22 to resolve Dependabot vulnerability
 - **Coverage threshold** — lowered from 93% to 90% to accommodate new features
 
+### Fixed
+
+- **Security Audit Fixes**: Addressed all High and Medium severity findings from comprehensive security audit:
+  - **H1 (CORS bypass)**: Proper URL parsing with hostname matching already in place
+  - **H2 (Backup auto-restore)**: Fixed silent overwrite; backup restoration now preserves primary store integrity
+  - **M1 (Config umask)**: Already configured with `mode: 0o600`
+  - **M3 (Windows injection)**: Added quotes around environment variables in batch script generation
+  - **M4 (mcp-publisher pinning)**: Added SHA256 checksum verification and corrected download URL pattern
+  - **M5 (npm ci)**: Changed `npm install` to `npm ci` in CI pipeline
+  - **L1 (codeql SHA)**: Pinned GitHub Actions to specific SHA
+  - **L3 (Hardcoded versions)**: Replaced hardcoded versions with dynamic `VERSION` variable
+  - **L4 (Bearer case)**: Case-insensitive regex already present
+  - **L5 (command_blacklist)**: Already includes `dd` and `chattr`
+- **Dependabot Alerts**: Two low-severity alerts for `rand` crate are false positives (EnvCP uses unaffected version 0.8.6)
+
 ### Security
 
 - **Crypto Implementation Audit** — completed, all criteria passed ([docs/CRYPTO-AUDIT.md](docs/CRYPTO-AUDIT.md))
@@ -85,9 +100,9 @@ All notable changes to EnvCP are documented here. Format follows [Keep a Changel
 
 ### Tests
 
-- **990 tests passing** (up from 493 in v1.1.0)
-- New test files: `api-key-enforcement.test.ts`, `config-hmac.test.ts`, `service-*.test.ts`
-- Coverage: 99%+ lines
+- **1032 tests passing** (up from 493 in v1.1.0)
+- New test files: `api-key-enforcement.test.ts`, `config-hmac.test.ts`, `service-*.test.ts`, `coverage-audit.test.ts`
+- Coverage: 99%+ lines (coverage audit adds 42 new tests)
 
 ### Dependencies
 

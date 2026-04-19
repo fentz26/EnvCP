@@ -91,6 +91,75 @@ session:
   extend_time: 900  # Extend by 15 minutes on activity
 ```
 
+## Advanced Security Features (v1.2.0+)
+
+### Memory Hardening
+
+EnvCP v1.2.0 includes memory hardening measures:
+
+- **Zero-sensitive memory**: Uses `sodium_memzero` or `Buffer.fill(0)` to explicitly zero sensitive buffers after use
+- **Prevent swapping**: `mlock` locks sensitive memory to prevent it from being written to disk swap
+- **Core dump prevention**: On Linux, sets `prlimit --core=0` to prevent core dumps that could contain secrets
+- **Fallback protection**: When native modules unavailable, falls back to secure JavaScript implementations
+
+### Brute-Force Protection
+
+Progressive lockout system defends against password guessing:
+
+- **Progressive delays**: 60s → 120s → 240s → ... exponential backoff on repeated failures
+- **Permanent lockout**: After 50 failed attempts (configurable), vault requires recovery key
+- **Separate API lockout**: HTTP endpoints have independent lockout state
+- **Audit logging**: All lockout events logged for security monitoring
+
+### Config File Integrity Protection
+
+HMAC-SHA256 signatures prevent configuration tampering:
+
+- **Automatic signing**: `envcp.yaml` signed on save with key derived from system identifier
+- **Tamper detection**: Signature verified on load; tampered config blocks server startup
+- **Signature storage**: Stored in `.envcp/.config_signature` separate from config file
+
+### API Key Enforcement
+
+Stricter validation when AI access is enabled:
+
+- **Required when any AI access flag is true**: Previously only `allow_ai_execute`, now covers read/write/delete/export
+- **Clear error messages**: Lists active flags requiring API key
+- **Prevents accidental exposure**: Ensures HTTP servers don't start without authentication when AI access is allowed
+
+### Release Channels
+
+Choose appropriate release channel for your risk profile:
+
+- **Latest (stable)**: Production-ready, thoroughly tested
+- **Experimental**: New features for testing, may have bugs
+- **Canary**: Nightly builds, bleeding edge, for developers
+- **Channel selection**: Use `npm install @fentz26/envcp@experimental` or `@canary` suffixes
+
+### Email/Webhook Notifications
+
+Get alerted on security events:
+
+- **SMTP email**: Configure with your email provider
+- **Webhook HTTP POST**: Send JSON payloads to your monitoring system
+- **Events**: `lockout_triggered`, `permanent_lockout`, `unlock`
+- **Configurable**: Enable/disable per event type
+
+### Security Audit Fixes
+
+All High and Medium severity findings from the comprehensive security audit have been addressed in v1.2.0:
+
+- **H1 (CORS bypass)**: Proper URL parsing with hostname matching already in place
+- **H2 (Backup auto-restore)**: Fixed silent overwrite; backup restoration now preserves primary store integrity
+- **M1 (Config umask)**: Already configured with `mode: 0o600`
+- **M3 (Windows injection)**: Added quotes around environment variables in batch script generation
+- **M4 (mcp-publisher pinning)**: Added SHA256 checksum verification and corrected download URL pattern
+- **M5 (npm ci)**: Changed `npm install` to `npm ci` in CI pipeline
+- **L1 (codeql SHA)**: Pinned GitHub Actions to specific SHA
+- **L3 (Hardcoded versions)**: Replaced hardcoded versions with dynamic `VERSION` variable
+- **L4 (Bearer case)**: Case-insensitive regex already present
+- **L5 (command_blacklist)**: Already includes `dd` and `chattr`
+
 ## Password Management
 
 ### Storing Passwords Securely

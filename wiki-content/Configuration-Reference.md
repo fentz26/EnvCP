@@ -142,6 +142,15 @@ encryption:
 security:
   mode: recoverable
   recovery_file: .envcp/.recovery
+  brute_force_protection:
+    enabled: true
+    max_attempts: 5
+    lockout_duration: 300
+    progressive_delay: true
+    max_delay: 60
+    permanent_lockout_threshold: 50
+    permanent_lockout_action: require_recovery_key
+    notifications: {}
 ```
 
 - **mode**:
@@ -149,7 +158,36 @@ security:
   - `hard-lock` — No recovery possible. Losing the password means losing all data. Maximum security.
 - **recovery_file**: Path to the encrypted recovery data file. Default: `.envcp/.recovery`
 
+**Brute-force protection**:
+
+- **enabled**: Enable brute-force protection. Default: `true`
+- **max_attempts**: Number of consecutive failed attempts before temporary lockout. Default: `5`
+- **lockout_duration**: Lockout duration in seconds after reaching max attempts. Default: `300` (5 minutes)
+- **progressive_delay**: Enable progressive delays between attempts (60s, 120s, 240s...). Default: `true`
+- **max_delay**: Maximum progressive delay in seconds. Default: `60`
+- **permanent_lockout_threshold**: Total failed attempts across all sessions before requiring recovery key. Default: `50`
+- **permanent_lockout_action**: Action when permanent lockout threshold reached. Options: `require_recovery_key` (default), `require_admin`, `permanent_lock`.
+- **notifications**: Placeholder for future notification settings.
+
 ---
+### advanced_security_features
+
+Advanced security features introduced in v1.2.0:
+
+**Memory hardening** (always enabled):
+
+- Zero-sensitive memory: Sensitive buffers explicitly zeroed after use
+- Prevent swapping: `mlock` locks memory to prevent disk swap
+- Core dump prevention: Core dumps disabled on Linux
+- Fallback protection: Secure JavaScript implementations when native modules unavailable
+
+**Configuration file integrity protection** (always enabled):
+
+- HMAC-SHA256 signing of `envcp.yaml`
+- Tamper detection blocks server startup
+- Signature stored in `.envcp/.config_signature`
+- Automatic signature updates on config save
+
 
 ### session
 

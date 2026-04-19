@@ -927,6 +927,107 @@ envcp keychain disable
 ```
 
 ---
+### service
+
+Install EnvCP as a system service for always-on availability.
+
+```bash
+envcp service <subcommand>
+```
+
+**Subcommands**:
+
+#### service install
+
+Install EnvCP as a system service (systemd on Linux, launchd on macOS, Scheduled Task on Windows).
+
+```bash
+envcp service install [options]
+```
+
+**Options**:
+- `--user` - Install as user service (systemd: `--user`, launchd: user agent)
+- `--name <name>` - Service name (default: `envcp`)
+- `--config <path>` - Path to `envcp.yaml` config file (default: current directory)
+
+**Examples**:
+```bash
+# Install as system service
+envcp service install
+
+# Install as user service (Linux/macOS)
+envcp service install --user
+
+# Custom service name
+envcp service install --name envcp-myproject
+```
+
+#### service start
+
+Start the installed service.
+
+```bash
+envcp service start [options]
+```
+
+**Options**:
+- `--name <name>` - Service name (default: `envcp`)
+
+#### service stop
+
+Stop the running service.
+
+```bash
+envcp service stop [options]
+```
+
+**Options**:
+- `--name <name>` - Service name (default: `envcp`)
+
+#### service status
+
+Check service status.
+
+```bash
+envcp service status [options]
+```
+
+**Options**:
+- `--name <name>` - Service name (default: `envcp`)
+
+#### service logs
+
+View service logs (last 100 lines).
+
+```bash
+envcp service logs [options]
+```
+
+**Options**:
+- `--name <name>` - Service name (default: `envcp`)
+- `--follow, -f` - Follow log output (like `tail -f`)
+- `--lines, -n <number>` - Number of lines to show (default: 100)
+
+#### service uninstall
+
+Uninstall the service.
+
+```bash
+envcp service uninstall [options]
+```
+
+**Options**:
+- `--name <name>` - Service name (default: `envcp`)
+
+**Platform Support**:
+- **Linux**: systemd (user or system)
+- **macOS**: launchd (user agent or daemon)
+- **Windows**: Scheduled Task (user or system)
+
+**Service Configuration**: Stored in `~/.envcp/service.yaml` after installation.
+
+
+---
 
 ### config reload
 

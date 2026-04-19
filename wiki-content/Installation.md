@@ -57,6 +57,23 @@ Then use it via npm scripts or npx:
 npx envcp init
 ```
 
+### Python Native Binding
+
+For Python applications that need EnvCP's encryption and storage functions without Node.js dependency:
+
+```bash
+pip install envcp-core
+```
+
+This installs the Rust-based core library with Python bindings, providing:
+
+- `encrypt`, `decrypt`, `hash_password`, `verify_password` functions
+- `StorageManager` class for vault file operations
+- Same AES-256-GCM encryption and Argon2id key derivation as Node.js version
+- Python 3.9+ support
+
+**Note**: This is the core library only — for full CLI, MCP server, and HTTP adapters, use the Node.js package.
+
 ## Platform-Specific Setup
 
 ### macOS

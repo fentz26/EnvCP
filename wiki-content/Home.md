@@ -45,6 +45,11 @@ EnvCP is a secure environment variable manager designed specifically for AI-assi
 - **Per-variable password protection** - Individual variables can require a second password beyond the vault password
 - **Password recovery** - Recover access with a one-time recovery key (recoverable mode)
 - **Automatic .env sync** - Keep your .env files up to date
+- **Memory hardening** - Zero-sensitive memory, prevent swapping, core dump protection
+- **Brute-force protection** - Progressive delays and permanent lockout after repeated failures
+- **Config integrity protection** - HMAC-SHA256 signatures detect configuration tampering
+- **Auto-startup service** - Install as systemd/launchd/Windows service for always-on availability
+- **Python native binding** - `pip install envcp-core` for Python applications without Node.js
 
 ### How It Works
 
@@ -62,6 +67,23 @@ When working with AI coding assistants, you often need to reference API keys, da
 - **Manual .env editing** - Tedious and error-prone
 
 EnvCP solves these problems by providing a secure, encrypted storage layer that AI can reference without seeing actual values.
+
+## What's New in v1.2.0
+
+EnvCP v1.2.0 introduces major security enhancements and new features:
+
+- **Rust Core Library**: AES-256-GCM encryption, Argon2id key derivation, and HMAC-SHA256 implemented in Rust for maximum performance and security
+- **Memory Hardening**: Zero-sensitive memory, prevent swapping, core dump protection
+- **Brute-Force Protection**: Progressive delays and permanent lockout after repeated failures
+- **Email/Webhook Notifications**: Alert on security events (lockouts, unlocks)
+- **Auto-Startup System Service**: Install as systemd/launchd/Windows service for always-on availability
+- **API Key Enforcement**: Stricter validation when AI access is enabled
+- **Config File Integrity Protection**: HMAC-SHA256 signatures detect tampering
+- **Release Channels**: Latest, Experimental, and Canary channels for different risk profiles
+- **Python Native Binding**: `pip install envcp-core` for Python applications without Node.js
+- **Security Audit Fixes**: All High and Medium severity findings addressed (CORS bypass, backup auto-restore, Windows injection, mcp-publisher pinning, npm ci, and more)
+
+See the full [changelog](https://github.com/fentz26/EnvCP/blob/main/CHANGELOG.md) for details.
 
 ## Quick Start
 
