@@ -6,11 +6,12 @@ import { ensureDir, pathExists } from '../utils/fs.js';
 import { Variable, OperationLog, AuditConfig, AuditConfigSchema } from '../types.js';
 import * as crypto from 'crypto';
 import { encrypt, decrypt } from '../utils/crypto.js';
-import { exec as execCallback } from 'child_process';
+import { exec as execCallback, execFile as execFileCallback } from 'child_process';
 import { promisify } from 'util';
 import { secureZero } from '../utils/secure-memory.js';
 
 const exec = promisify(execCallback);
+const execFile = promisify(execFileCallback);
 
 export class StorageManager {
   private storePath: string;
@@ -462,19 +463,28 @@ if (this.auditConfig.hmac && this.hmacKey) {
   }
 
 private async execChattr(filePath: string, flags: string, remove: boolean = false): Promise<boolean> {
-  /* istanbul ignore if -- platform check is always linux in CI */
-  if (process.platform !== 'linux') {
-    return false;
-  }
+/* istanbul ignore if -- platform check is always linux in CI */
+if (process.platform !== 'linux') {
+return false;
+}
 
+// Validate flags - only allow +a, +i, -a, -i
+const validFlags = ['+a', '+i', '-a', '-i'];
 const attr = remove ? flags.replace(/\+/g, '-') : flags;
-  try {
-    await exec(`chattr ${attr} "${filePath}"`);
-    /* istanbul ignore next -- requires sudo/root to test success path */
-    return true;
-  } catch {
-    return false;
-  }
+if (!validFlags.includes(attr)) {
+/* istanbul ignore next -- invalid input path */
+return false;
+}
+
+try {
+// Use execFile with array arguments to avoid shell injection
+// chattr must be in PATH
+await execFile('chattr', [attr, filePath]);
+/* istanbul ignore next -- requires sudo/root to test success path */
+return true;
+} catch {
+return false;
+}
 }
 
 async setAppendOnly(filePath: string): Promise<boolean> {
