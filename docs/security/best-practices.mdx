@@ -95,6 +95,94 @@ session:
   extend_time: 900  # Extend by 15 minutes on activity
 ```
 
+## Advanced Security Features (v1.2.0+)
+
+EnvCP v1.2.0 introduces enhanced security capabilities:
+
+### Memory Hardening
+
+Protection against memory-based attacks:
+
+- **Zero-sensitive memory**: Uses `sodium_memzero` or `Buffer.fill(0)` to explicitly zero sensitive buffers after use
+- **Prevent swapping**: `mlock` locks sensitive memory to prevent it from being written to disk swap
+- **Core dump prevention**: On Linux, sets `prlimit --core=0` to prevent core dumps that could contain secrets
+- **Fallback protection**: When native modules unavailable, falls back to secure JavaScript implementations
+
+### Brute-Force Protection
+
+Progressive lockout system defends against password guessing:
+
+- **Progressive delays**: 60s → 120s → 240s → ... exponential backoff on repeated failures
+- **Configurable thresholds**: Set maximum attempts and lockout duration
+- **Automatic reset**: Successful unlock resets the counter
+- **Logging**: All failed attempts logged with timestamps and IP addresses
+
+Enable in configuration:
+
+```yaml
+brute_force_protection:
+  enabled: true
+  max_attempts: 5
+  base_delay: 60  # seconds
+  max_delay: 3600 # 1 hour
+```
+
+### Config Integrity Protection
+
+Digital signatures prevent tampering with configuration files:
+
+- **Hash verification**: SHA-256 hashes of critical config files
+- **Signature checking**: Optional PGP signatures for production deployments
+- **Tamper detection**: Alerts when config files change unexpectedly
+- **Auto-repair**: Optionally restore from known-good backups
+
+### API Key Enforcement
+
+Stricter API key validation and rotation:
+
+- **Key rotation policies**: Automatic expiration and rotation schedules
+- **Usage quotas**: Limit requests per key per time period
+- **Revocation lists**: Immediately invalidate compromised keys
+- **Key strength validation**: Enforce minimum entropy requirements
+
+### Release Channels
+
+Choose your risk tolerance for updates:
+
+- **Stable**: Fully tested, recommended for production (default)
+- **Beta**: Feature-complete, undergoing final testing
+- **Canary**: Latest changes, for early adopters and testing
+
+Set your preferred channel:
+
+```bash
+envcp config set release_channel stable  # or beta, canary
+```
+
+### Notifications
+
+Get alerted about security events:
+
+- **Failed login attempts**: Immediate notification of brute-force attacks
+- **Config changes**: Alert when configuration is modified
+- **Key rotation**: Notify when API keys are about to expire
+- **Audit events**: Summary of all security-relevant activities
+
+Configure notification methods:
+
+```yaml
+notifications:
+  enabled: true
+  methods:
+    - email
+    - slack
+    - webhook
+  events:
+    - failed_login
+    - config_change
+    - key_rotation
+```
+
 ## Password Management
 
 ### Storing Passwords Securely

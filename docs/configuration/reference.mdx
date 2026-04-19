@@ -64,6 +64,12 @@ password:
   allow_numeric_only: false
   allow_single_char: false
 
+brute_force_protection:
+  enabled: false
+  max_attempts: 5
+  base_delay: 60
+  max_delay: 3600
+
 sync:
   enabled: false
   target: .env
@@ -329,6 +335,49 @@ password:
   require_complexity: true
   allow_numeric_only: false
   allow_single_char: false
+ ```
+
+### brute_force_protection (v1.2.0+)
+
+Progressive lockout system to defend against password guessing attacks.
+
+```yaml
+brute_force_protection:
+  enabled: false
+  max_attempts: 5
+  base_delay: 60
+  max_delay: 3600
+  reset_after_success: true
+  lockout_duration: 0
+  notify_on_lockout: false
+  ip_whitelist: []
+```
+
+- **enabled**: Enable brute-force protection. Default: `false`
+- **max_attempts**: Maximum failed attempts before triggering delays. Default: `5`
+- **base_delay**: Initial delay in seconds after first threshold breach. Default: `60` (1 minute)
+- **max_delay**: Maximum delay in seconds (exponential backoff cap). Default: `3600` (1 hour)
+- **reset_after_success**: Reset attempt counter after successful unlock. Default: `true`
+- **lockout_duration**: Permanent lockout duration in seconds after excessive failures (0 = disable permanent lockout). Default: `0`
+- **notify_on_lockout**: Send notification when lockout occurs. Default: `false`
+- **ip_whitelist**: IP addresses exempt from protection (e.g., `["127.0.0.1", "::1"]`). Default: `[]`
+
+**Behavior**:
+- Failed attempts are tracked per IP address
+- After `max_attempts` failures, delays are introduced: `base_delay × 2^(n - max_attempts)`
+- Delays cap at `max_delay`
+- Successful unlock resets the counter if `reset_after_success: true`
+- If `lockout_duration > 0`, excessive failures trigger a temporary lockout
+
+**Example**:
+```yaml
+brute_force_protection:
+  enabled: true
+  max_attempts: 3
+  base_delay: 30
+  max_delay: 1800
+  lockout_duration: 86400  # 24-hour lockout after 10+ failures
+  ip_whitelist: ["127.0.0.1"]
 ```
 
 ---

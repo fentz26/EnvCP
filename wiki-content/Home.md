@@ -27,6 +27,7 @@ Welcome to EnvCP - Secure environment variable management for AI-assisted coding
 - [Configuration Options](Configuration-Reference)
 - [API Reference](API-Reference)
 - [Server Modes](Server-Modes)
+- [Release Notes v1.2.0](Release-Notes-v1.2.0)
 
 ## What is EnvCP?
 
@@ -83,7 +84,7 @@ EnvCP v1.2.0 introduces major security enhancements and new features:
 - **Python Native Binding**: `pip install envcp-core` for Python applications without Node.js
 - **Security Audit Fixes**: All High and Medium severity findings addressed (CORS bypass, backup auto-restore, Windows injection, mcp-publisher pinning, npm ci, and more)
 
-See the full [changelog](https://github.com/fentz26/EnvCP/blob/main/CHANGELOG.md) for details.
+See the full [changelog](https://github.com/fentz26/EnvCP/blob/main/CHANGELOG.md) for details, or read the [v1.2.0 Release Notes](Release-Notes-v1.2.0) for in-depth feature documentation.
 
 ## Quick Start
 

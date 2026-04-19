@@ -488,6 +488,143 @@ Press Ctrl+C to stop
 
 ---
 
+### service
+
+Manage EnvCP as a system service (v1.2.0+).
+
+```bash
+envcp service <subcommand> [options]
+```
+
+**Subcommands**:
+
+#### service install
+
+Install EnvCP as a system service.
+
+```bash
+envcp service install [options]
+```
+
+**Options**:
+- `--user` - Install as user service (default)
+- `--system` - Install as system service (requires root)
+- `--config <path>` - Config file to use (default: `envcp.yaml`)
+- `--mode <mode>` - Server mode (default: `auto`)
+- `--port <port>` - HTTP port (default: 3456)
+- `--api-key <key>` - API key for authentication
+
+**Examples**:
+```bash
+# Install as user service with default config
+envcp service install
+
+# Install as system service (requires sudo)
+sudo envcp service install --system
+
+# Install with custom config and mode
+envcp service install --config envcp.prod.yaml --mode rest --api-key secret123
+```
+
+#### service start
+
+Start the EnvCP service.
+
+```bash
+envcp service start
+```
+
+#### service stop
+
+Stop the EnvCP service.
+
+```bash
+envcp service stop
+```
+
+#### service restart
+
+Restart the EnvCP service.
+
+```bash
+envcp service restart
+```
+
+#### service status
+
+Check service status.
+
+```bash
+envcp service status
+```
+
+**Output**:
+```bash
+$ envcp service status
+EnvCP Service Status
+  Status:     Running (PID: 12345)
+  Uptime:     2 days, 3 hours
+  Mode:       auto
+  Port:       3456
+  Config:     envcp.yaml
+  User:       fentz
+```
+
+#### service logs
+
+View service logs.
+
+```bash
+envcp service logs [options]
+```
+
+**Options**:
+- `--follow, -f` - Follow log output (like `tail -f`)
+- `--lines, -n <number>` - Number of lines to show (default: 50)
+- `--level <level>` - Filter by log level: `error`, `warn`, `info`, `debug`
+
+**Examples**:
+```bash
+# Show last 50 lines
+envcp service logs
+
+# Follow logs
+envcp service logs --follow
+
+# Show errors only
+envcp service logs --level error
+```
+
+#### service uninstall
+
+Uninstall the EnvCP service.
+
+```bash
+envcp service uninstall [options]
+```
+
+**Options**:
+- `--user` - Uninstall user service (default)
+- `--system` - Uninstall system service (requires root)
+
+**Examples**:
+```bash
+# Uninstall user service
+envcp service uninstall
+
+# Uninstall system service
+sudo envcp service uninstall --system
+```
+
+**Platform Support**:
+- **Linux**: systemd (user and system), init.d (system)
+- **macOS**: launchd (user and system)
+- **Windows**: Windows Service (requires admin)
+
+**Auto-Start**: Services automatically start on boot and restart on failure.
+
+---
+
 ### export
 
 Export variables to stdout or file.
@@ -743,7 +880,7 @@ envcp update --check
 ```bash
 $ envcp update
 Checking for updates...
-You are running the latest version of EnvCP (v1.0.0)
+You are running the latest version of EnvCP (v1.2.0)
 ```
 
 ---

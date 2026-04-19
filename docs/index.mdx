@@ -6,6 +6,19 @@ title: EnvCP Documentation
 
 Welcome to EnvCP - Secure environment variable management for AI-assisted coding.
 
+## What's New in v1.2.0
+
+EnvCP v1.2.0 brings significant security improvements and new features:
+
+- **Security Audit Fixes**: All High and Medium severity findings addressed including CORS bypass prevention, backup auto-restore hardening, Windows command injection protection, and config file permission hardening
+- **Advanced Memory Hardening**: Zero-sensitive memory buffers, `mlock` protection, core dump prevention
+- **Brute-Force Protection**: Progressive lockout system with exponential backoff delays
+- **Python Native Binding**: `pip install envcp-core` for Python-first workflows
+- **Auto-Startup Service**: System service installation with `envcp service install`
+- **Enhanced API Key Enforcement**: Stricter validation and rotation policies
+- **Config Integrity Protection**: Digital signatures and tamper detection
+- **Release Channels**: Beta and canary release tracks for early testing
+
 ## Quick Navigation
 
 ### Getting Started
@@ -45,6 +58,10 @@ EnvCP is a secure environment variable manager designed specifically for AI-assi
 - **AI access control** - Granular control over what AI can access
 - **Session management** - Unlock once, work seamlessly
 - **Automatic .env sync** - Keep your .env files up to date
+- **Memory hardening** - Zero-sensitive buffers, mlock protection, core dump prevention (v1.2.0+)
+- **Brute-force protection** - Progressive lockout with exponential backoff (v1.2.0+)
+- **Python native binding** - `pip install envcp-core` for Python-first workflows (v1.2.0+)
+- **Auto-startup service** - System service installation for always-on availability (v1.2.0+)
 
 ### How It Works
 

@@ -740,7 +740,7 @@ envcp update --check
 ```bash
 $ envcp update
 Checking for updates...
-You are running the latest version of EnvCP (v1.0.0)
+You are running the latest version of EnvCP (v1.2.0)
 ```
 
 ---
