@@ -29,16 +29,16 @@ jobs:
       npm_tag: ${{ steps.channel.outputs.npm_tag }}
       prerelease: ${{ steps.channel.outputs.prerelease }}
     steps:
-- id: channel
-run: |
-TAG="${GITHUB_REF#refs/tags/v}"
-if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-echo "npm_tag=${{ github.event.inputs.npm_tag }}" >> $GITHUB_OUTPUT
-if [[ "${{ github.event.inputs.npm_tag }}" != "latest" ]]; then
-echo "prerelease=true" >> $GITHUB_OUTPUT
-else
-echo "prerelease=false" >> $GITHUB_OUTPUT
-fi
+      - id: channel
+        run: |
+          TAG="${GITHUB_REF#refs/tags/v}"
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "npm_tag=${{ github.event.inputs.npm_tag }}" >> $GITHUB_OUTPUT
+            if [[ "${{ github.event.inputs.npm_tag }}" != "latest" ]]; then
+              echo "prerelease=true" >> $GITHUB_OUTPUT
+            else
+              echo "prerelease=false" >> $GITHUB_OUTPUT
+            fi
 elif [[ "$TAG" == *"-experimental"* ]]; then
 echo "npm_tag=experimental" >> $GITHUB_OUTPUT
 echo "prerelease=true" >> $GITHUB_OUTPUT
@@ -49,9 +49,9 @@ elif [[ "$TAG" == *"-beta"* ]] || [[ "$TAG" =~ ^[0-9]+\.[0-9]+\.[0-9]+-beta ]]; 
 echo "npm_tag=beta" >> $GITHUB_OUTPUT
 echo "prerelease=true" >> $GITHUB_OUTPUT
 else
-echo "npm_tag=latest" >> $GITHUB_OUTPUT
-echo "prerelease=false" >> $GITHUB_OUTPUT
-fi
+            echo "npm_tag=latest" >> $GITHUB_OUTPUT
+            echo "prerelease=false" >> $GITHUB_OUTPUT
+          fi
 
   publish-npm:
     needs: determine-channel
