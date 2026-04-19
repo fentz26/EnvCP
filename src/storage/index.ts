@@ -6,11 +6,10 @@ import { ensureDir, pathExists } from '../utils/fs.js';
 import { Variable, OperationLog, AuditConfig, AuditConfigSchema } from '../types.js';
 import * as crypto from 'crypto';
 import { encrypt, decrypt } from '../utils/crypto.js';
-import { exec as execCallback, execFile as execFileCallback } from 'child_process';
+import { execFile as execFileCallback } from 'child_process';
 import { promisify } from 'util';
 import { secureZero } from '../utils/secure-memory.js';
 
-const exec = promisify(execCallback);
 const execFile = promisify(execFileCallback);
 
 export class StorageManager {
