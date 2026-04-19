@@ -4,7 +4,7 @@ import { RESTAdapter } from '../adapters/rest.js';
 import { OpenAIAdapter } from '../adapters/openai.js';
 import { GeminiAdapter } from '../adapters/gemini.js';
 import { EnvCPServer } from '../mcp/server.js';
-import { resolveVaultPath } from '../vault/index.js';
+import { resolveVaultPath, resolveSessionPath } from '../vault/index.js';
 import { setCorsHeaders, sendJson, parseBody, validateApiKey, RateLimiter, rateLimitMiddleware } from '../utils/http.js';
 import { LogManager } from '../storage/index.js';
 import * as path from 'path';
@@ -109,8 +109,9 @@ export class UnifiedServer {
   async start(): Promise<void> {
     const { mode, port, host, api_key } = this.serverConfig;
 
-    // Resolve vault path once before creating any adapters
+    // Resolve vault and session paths once before creating any adapters
     const vaultPath = await resolveVaultPath(this.projectPath, this.config);
+    const sessionPath = resolveSessionPath(this.projectPath, this.config);
 
     // Initialize audit log for HTTP modes
     this.logs = new LogManager(path.join(this.projectPath, '.envcp', 'logs'), this.config.audit);
@@ -118,7 +119,7 @@ export class UnifiedServer {
 
     // MCP mode uses stdio, not HTTP
     if (mode === 'mcp') {
-      this.mcpServer = new EnvCPServer(this.config, this.projectPath, this.password, vaultPath);
+      this.mcpServer = new EnvCPServer(this.config, this.projectPath, this.password, vaultPath, sessionPath);
       await this.mcpServer.start();
       return;
     }
@@ -128,17 +129,17 @@ export class UnifiedServer {
 
     // Initialize adapters based on mode
     if (mode === 'rest' || mode === 'all' || mode === 'auto') {
-      this.restAdapter = new RESTAdapter(this.config, this.projectPath, this.password, vaultPath);
+      this.restAdapter = new RESTAdapter(this.config, this.projectPath, this.password, vaultPath, sessionPath);
       await this.restAdapter.init();
     }
 
     if (mode === 'openai' || mode === 'all' || mode === 'auto') {
-      this.openaiAdapter = new OpenAIAdapter(this.config, this.projectPath, this.password, vaultPath);
+      this.openaiAdapter = new OpenAIAdapter(this.config, this.projectPath, this.password, vaultPath, sessionPath);
       await this.openaiAdapter.init();
     }
 
     if (mode === 'gemini' || mode === 'all' || mode === 'auto') {
-      this.geminiAdapter = new GeminiAdapter(this.config, this.projectPath, this.password, vaultPath);
+      this.geminiAdapter = new GeminiAdapter(this.config, this.projectPath, this.password, vaultPath, sessionPath);
       await this.geminiAdapter.init();
     }
 

@@ -154,36 +154,57 @@ export async function saveConfigSignature(projectPath: string, configContent: st
   await fs.writeFile(sigPath, hmac, { encoding: 'utf8', mode: 0o600 });
 }
 
-export async function saveConfig(config: EnvCPConfig, projectPath: string): Promise<void> {
-  const configPath = path.join(projectPath, 'envcp.yaml');
+export interface ConfigPathOptions {
+  global?: boolean;
+}
+
+export function getConfigFilePath(projectPath: string, options?: ConfigPathOptions): string {
+  return options?.global
+    ? path.join(projectPath, '.envcp', 'config.yaml')
+    : path.join(projectPath, 'envcp.yaml');
+}
+
+export async function saveConfig(config: EnvCPConfig, projectPath: string, options?: ConfigPathOptions): Promise<void> {
+  const configPath = getConfigFilePath(projectPath, options);
+  await ensureDir(path.dirname(configPath));
   const content = yaml.dump(config, { indent: 2, lineWidth: -1 });
   await fs.writeFile(configPath, content, { encoding: 'utf8', mode: 0o600 });
+  // Signature is stored alongside the project's .envcp dir; for global mode the
+  // signature lives in ~/.envcp/.config_signature, which is also the base.
   const key = deriveHmacKey(getSystemIdentifier());
   await saveConfigSignature(projectPath, content, key);
 }
 
-export async function initConfig(projectPath: string, projectName?: string): Promise<EnvCPConfig> {
+export async function initConfig(projectPath: string, projectName?: string, options?: ConfigPathOptions): Promise<EnvCPConfig> {
   const envcpDir = path.join(projectPath, '.envcp');
   await ensureDir(envcpDir);
   await ensureDir(path.join(envcpDir, 'logs'));
-  
+
+  const baseConfig = { ...DEFAULT_CONFIG } as EnvCPConfig;
+  if (options?.global) {
+    baseConfig.vault = { ...baseConfig.vault, mode: 'global' };
+  }
+
   const config: EnvCPConfig = {
-    ...DEFAULT_CONFIG,
+    ...baseConfig,
     project: projectName || path.basename(projectPath),
   } as EnvCPConfig;
-  
-  await saveConfig(config, projectPath);
-  
-  const gitignorePath = path.join(projectPath, '.gitignore');
-  if (await pathExists(gitignorePath)) {
-    const gitignore = await fs.readFile(gitignorePath, 'utf8');
-    if (!gitignore.includes('.envcp/')) {
-      await fs.appendFile(gitignorePath, '\n# EnvCP\n.envcp/\nstore.enc\n');
+
+  await saveConfig(config, projectPath, options);
+
+  // .gitignore management only makes sense for project-local installs.
+  if (!options?.global) {
+    const gitignorePath = path.join(projectPath, '.gitignore');
+    if (await pathExists(gitignorePath)) {
+      const gitignore = await fs.readFile(gitignorePath, 'utf8');
+      if (!gitignore.includes('.envcp/')) {
+        await fs.appendFile(gitignorePath, '\n# EnvCP\n.envcp/\nstore.enc\n');
+      }
+    } else {
+      await fs.writeFile(gitignorePath, '# EnvCP\n.envcp/\nstore.enc\n');
     }
-  } else {
-    await fs.writeFile(gitignorePath, '# EnvCP\n.envcp/\nstore.enc\n');
   }
-  
+
   return config;
 }
 

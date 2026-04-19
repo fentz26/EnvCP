@@ -80,7 +80,8 @@ Install and initialize:
 
 ```bash
 npm install -g @fentz26/envcp
-envcp init
+envcp init                # project vault: ./envcp.yaml + ./.envcp/
+# or: envcp init --global # global vault:  ~/.envcp/config.yaml + ~/.envcp/
 ```
 
 Add your secrets (you'll set a vault password on first use):
@@ -94,6 +95,12 @@ Start the MCP server for AI tools:
 ```bash
 envcp serve
 ```
+
+`envcp serve` walks up from the current directory looking for an
+`envcp.yaml`; if none is found, it falls back to `~/.envcp/config.yaml`.
+This means MCP clients launched from arbitrary working directories will
+still find the vault and an active session. Use `--global` to skip the
+project lookup entirely.
 
 Your AI can now **reference** secrets by name without ever seeing the values. Full guide: [SETUP.md](SETUP.md)
 

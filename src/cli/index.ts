@@ -22,16 +22,32 @@ import {
   getGlobalVaultPath,
   getProjectVaultPath,
   resolveVaultPath,
+  resolveSessionPath,
   setActiveVault,
   listVaults,
   initNamedVault,
 } from '../vault/index.js';
+import { findProjectRoot } from '../utils/fs.js';
 
 initMemoryProtection();
 
-async function withSession(fn: (storage: StorageManager, password: string, config: EnvCPConfig, projectPath: string, logManager: LogManager) => Promise<void>, vaultOverride?: 'global' | 'project'): Promise<void> {
+async function resolveCliContext(vaultOverride?: 'global' | 'project'): Promise<{ projectPath: string; config: EnvCPConfig }> {
+  if (vaultOverride === 'global') {
+    const home = process.env.HOME || process.env.USERPROFILE || os.homedir();
+    const config = await loadConfig(home);
+    config.vault = { ...config.vault, mode: 'global' };
+    return { projectPath: home, config };
+  }
   const projectPath = process.cwd();
   const config = await loadConfig(projectPath);
+  if (vaultOverride === 'project') {
+    config.vault = { ...config.vault, mode: 'project' };
+  }
+  return { projectPath, config };
+}
+
+async function withSession(fn: (storage: StorageManager, password: string, config: EnvCPConfig, projectPath: string, logManager: LogManager) => Promise<void>, vaultOverride?: 'global' | 'project'): Promise<void> {
+  const { projectPath, config } = await resolveCliContext(vaultOverride);
 
   const vaultPath = vaultOverride
     ? vaultOverride === 'global'
@@ -48,7 +64,7 @@ async function withSession(fn: (storage: StorageManager, password: string, confi
   }
 
     const sessionManager = new SessionManager(
-      path.join(projectPath, config.session?.path || '.envcp/.session'),
+      resolveSessionPath(projectPath, config),
       config.session?.timeout_minutes || 30,
       config.session?.max_extensions || 5
     );
@@ -166,14 +182,17 @@ program
   .option('--hsm-type <type>', 'HSM type for --auth-method hsm|multi: yubikey | gpg | pkcs11')
   .option('--key-id <id>', 'GPG key ID or PKCS#11 key label for HSM auth')
   .option('--pkcs11-lib <path>', 'Path to PKCS#11 shared library for --hsm-type pkcs11')
+  .option('--global', 'Initialize a global vault at ~/.envcp/ (config + store live in $HOME)')
   .action(async (options) => {
-    const projectPath = process.cwd();
-    const projectName = options.project || path.basename(projectPath);
+    const useGlobal = !!options.global;
+    const home = process.env.HOME || process.env.USERPROFILE || os.homedir();
+    const projectPath = useGlobal ? home : process.cwd();
+    const projectName = options.project || (useGlobal ? 'global' : path.basename(projectPath));
 
-    console.log(chalk.blue('Initializing EnvCP...'));
+    console.log(chalk.blue(useGlobal ? 'Initializing EnvCP (global vault)...' : 'Initializing EnvCP...'));
     console.log('');
 
-    const config = await initConfig(projectPath, projectName);
+    const config = await initConfig(projectPath, projectName, { global: useGlobal });
 
     // Single security question (or skip if --no-encrypt)
     let securityChoice: 'none' | 'recoverable' | 'hard-lock';
@@ -243,7 +262,7 @@ program
       pwd = password;
     }
 
-    await saveConfig(config, projectPath);
+    await saveConfig(config, projectPath, { global: useGlobal });
 
     const modeLabel = securityChoice === 'none' ? 'no encryption' : securityChoice;
     console.log(chalk.green('EnvCP initialized!'));
@@ -284,7 +303,7 @@ program
           // Create session for encrypted mode
           if (pwd) {
             const sessionManager = new SessionManager(
-              path.join(projectPath, config.session?.path || '.envcp/.session'),
+              resolveSessionPath(projectPath, config),
               config.session?.timeout_minutes || 30,
               config.session?.max_extensions || 5
             );
@@ -360,7 +379,7 @@ program
       if (await hsm.isAvailable()) {
         try {
           await hsm.protectVaultPassword(pwd);
-          await saveConfig(config, projectPath);
+          await saveConfig(config, projectPath, { global: useGlobal });
           console.log('');
           console.log(chalk.green(`  Vault password protected by ${hsm.backendName}`));
           console.log(chalk.gray(`  Future sessions will authenticate via hardware`));
@@ -372,7 +391,7 @@ program
         console.log(chalk.yellow(`  HSM device (${hsm.backendName}) not available at init time.`));
         console.log(chalk.gray('  Run "envcp unlock --setup-hsm" later to enable hardware authentication.'));
         config.auth = { method: authMethod as 'hsm' | 'multi', multi_factors: ['password', 'hsm'], fallback: 'password' };
-        await saveConfig(config, projectPath);
+        await saveConfig(config, projectPath, { global: useGlobal });
       }
     }
 
@@ -390,10 +409,10 @@ program
   .option('--hsm-type <type>', 'HSM type: yubikey | gpg | pkcs11 (default: yubikey)')
   .option('--key-id <id>', 'GPG key ID or PKCS#11 key label')
   .option('--pkcs11-lib <path>', 'Path to PKCS#11 shared library (.so / .dll)')
+  .option('--global', 'Unlock the global vault at ~/.envcp')
   .action(async (options) => {
-    const projectPath = process.cwd();
-    const config = await loadConfig(projectPath);
-    
+    const { projectPath, config } = await resolveCliContext(options.global ? 'global' : undefined);
+
 let password = options.password;
 
 if (!password) {
@@ -410,8 +429,8 @@ const { valid: passwordValid, warning: passwordWarning } = validatePassword(pass
       console.log(chalk.yellow('⚠ Weak password detected'));
     }
 
-    const sessionDir = path.join(projectPath, path.dirname(config.session?.path || '.envcp/.session'));
-    
+    const sessionDir = path.dirname(resolveSessionPath(projectPath, config));
+
     let lockoutManager: LockoutManager = new LockoutManager(path.join(sessionDir, '.lockout'));
     
     // Handle recovery key if provided
@@ -462,7 +481,7 @@ const { valid: passwordValid, warning: passwordWarning } = validatePassword(pass
     const permanentThreshold = bfpConfig?.permanent_lockout_threshold ?? 0;
 
     const sessionManager = new SessionManager(
-      path.join(projectPath, config.session?.path || '.envcp/.session'),
+      resolveSessionPath(projectPath, config),
       config.session?.timeout_minutes || 30,
       config.session?.max_extensions || 5
     );
@@ -473,8 +492,9 @@ const { valid: passwordValid, warning: passwordWarning } = validatePassword(pass
     const logManager = new LogManager(path.join(projectPath, '.envcp', 'logs'), config.audit);
     await logManager.init();
 
+    const vaultPathForUnlock = await resolveVaultPath(projectPath, config);
     const storage = new StorageManager(
-      path.join(projectPath, config.storage.path),
+      vaultPathForUnlock,
       config.storage.encrypted
     );
     storage.setPassword(password);
@@ -719,31 +739,31 @@ const confirmPasswordValue = await promptPassword('Confirm password:');
 program
   .command('lock')
   .description('Lock EnvCP session')
-  .action(async () => {
-    const projectPath = process.cwd();
-    const config = await loadConfig(projectPath);
-    
+  .option('--global', 'Lock the global vault session at ~/.envcp/.session')
+  .action(async (options) => {
+    const { projectPath, config } = await resolveCliContext(options.global ? 'global' : undefined);
+
     const sessionManager = new SessionManager(
-      path.join(projectPath, config.session?.path || '.envcp/.session'),
+      resolveSessionPath(projectPath, config),
       config.session?.timeout_minutes || 30,
       config.session?.max_extensions || 5
     );
 
     await sessionManager.init();
     await sessionManager.destroy();
-    
+
     console.log(chalk.green('Session locked'));
   });
 
 program
   .command('status')
   .description('Check session status')
-  .action(async () => {
-    const projectPath = process.cwd();
-    const config = await loadConfig(projectPath);
-    
+  .option('--global', 'Check status of the global vault session at ~/.envcp/.session')
+  .action(async (options) => {
+    const { projectPath, config } = await resolveCliContext(options.global ? 'global' : undefined);
+
     const sessionManager = new SessionManager(
-      path.join(projectPath, config.session?.path || '.envcp/.session'),
+      resolveSessionPath(projectPath, config),
       config.session?.timeout_minutes || 30,
       config.session?.max_extensions || 5
     );
@@ -792,12 +812,12 @@ const password = await promptPassword('Enter password to reload config:');
 program
   .command('extend')
   .description('Extend session timeout')
-  .action(async () => {
-    const projectPath = process.cwd();
-    const config = await loadConfig(projectPath);
-    
+  .option('--global', 'Extend the global vault session at ~/.envcp/.session')
+  .action(async (options) => {
+    const { projectPath, config } = await resolveCliContext(options.global ? 'global' : undefined);
+
     const sessionManager = new SessionManager(
-      path.join(projectPath, config.session?.path || '.envcp/.session'),
+      resolveSessionPath(projectPath, config),
       config.session?.timeout_minutes || 30,
       config.session?.max_extensions || 5
     );
@@ -901,7 +921,7 @@ program
 
     // Create a session with new password
     const sessionManager = new SessionManager(
-      path.join(projectPath, config.session?.path || '.envcp/.session'),
+      resolveSessionPath(projectPath, config),
       config.session?.timeout_minutes || 30,
       config.session?.max_extensions || 5
     );
@@ -1158,10 +1178,43 @@ program
   .option('--port <port>', 'HTTP port (for non-MCP modes)', '3456')
   .option('--host <host>', 'HTTP host', '127.0.0.1')
   .option('-k, --api-key <key>', 'API key for HTTP authentication')
+  .option('--global', 'Force the global vault at ~/.envcp (skip project lookup)')
 .action(async (options) => {
-  const projectPath = process.cwd();
+  const home = process.env.HOME || process.env.USERPROFILE || os.homedir();
+  const globalConfigPath = path.join(home, '.envcp', 'config.yaml');
+
+  // Resolve where the vault lives: --global forces home; otherwise walk up
+  // from cwd looking for envcp.yaml; otherwise fall back to a global install.
+  let projectPath: string;
+  let forceGlobalMode = false;
+  if (options.global) {
+    projectPath = home;
+    forceGlobalMode = true;
+  } else {
+    const found = await findProjectRoot(process.cwd());
+    if (found) {
+      projectPath = found;
+    } else if (await pathExists(globalConfigPath)) {
+      projectPath = home;
+      forceGlobalMode = true;
+    } else {
+      process.stderr.write(
+        'Error: No envcp.yaml found in cwd or any ancestor, and no global config at ~/.envcp/config.yaml.\n' +
+        'Run `envcp init` (project) or `envcp init --global` first.\n'
+      );
+      process.exit(1);
+    }
+  }
+
   const configGuard = new ConfigGuard(projectPath);
   const config = await configGuard.loadAndLock();
+  if (forceGlobalMode) {
+    config.vault = { ...config.vault, mode: 'global' };
+  }
+
+  const vaultPath = await resolveVaultPath(projectPath, config);
+  const sessionPath = resolveSessionPath(projectPath, config);
+
   const mode = options.mode as string;
     const port = parseInt(options.port, 10);
     const host = options.host;
@@ -1173,14 +1226,14 @@ program
     if (config.encryption?.enabled === false) {
       if (mode === 'mcp') {
         const { EnvCPServer } = await import('../mcp/server.js');
-        const server = new EnvCPServer(config, projectPath);
+        const server = new EnvCPServer(config, projectPath, undefined, vaultPath, sessionPath);
         await server.start();
         return;
       }
     } else {
       // Encrypted mode: need password
       const sessionManager = new SessionManager(
-        path.join(projectPath, config.session?.path || '.envcp/.session'),
+        sessionPath,
         config.session?.timeout_minutes || 30,
         config.session?.max_extensions || 5
       );
@@ -1191,7 +1244,7 @@ program
       if (!session && !password) {
         // MCP mode uses stdio — can't prompt interactively
         if (mode === 'mcp') {
-          process.stderr.write('Error: No active session. Run `envcp unlock` first, or use --password flag.\n');
+          process.stderr.write(`Error: No active session at ${sessionPath}. Run \`envcp unlock${forceGlobalMode ? ' --global' : ''}\` first, or use --password flag.\n`);
           process.exit(1);
         }
 
@@ -1215,7 +1268,7 @@ password = await promptPassword('Enter password:');
       // MCP mode uses stdio
       if (mode === 'mcp') {
         const { EnvCPServer } = await import('../mcp/server.js');
-        const server = new EnvCPServer(config, projectPath, password);
+        const server = new EnvCPServer(config, projectPath, password, vaultPath, sessionPath);
         await server.start();
         return;
       }
@@ -1563,7 +1616,7 @@ program
       // 5. Session status
       if (encrypted) {
         const sessionManager = new SessionManager(
-          path.join(projectPath, config.session?.path || '.envcp/.session'),
+          resolveSessionPath(projectPath, config),
           config.session?.timeout_minutes || 30,
           config.session?.max_extensions || 5
         );

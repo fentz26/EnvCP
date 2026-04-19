@@ -1,4 +1,5 @@
 import * as fs from 'fs/promises';
+import * as path from 'path';
 
 export async function pathExists(p: string): Promise<boolean> {
   try {
@@ -11,6 +12,16 @@ export async function pathExists(p: string): Promise<boolean> {
 
 export async function ensureDir(p: string): Promise<void> {
   await fs.mkdir(p, { recursive: true });
+}
+
+export async function findProjectRoot(startDir: string): Promise<string | null> {
+  let dir = path.resolve(startDir);
+  while (true) {
+    if (await pathExists(path.join(dir, 'envcp.yaml'))) return dir;
+    const parent = path.dirname(dir);
+    if (parent === dir) return null;
+    dir = parent;
+  }
 }
 
 export function parseEnv(content: string): Record<string, string> {

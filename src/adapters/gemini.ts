@@ -8,8 +8,8 @@ export class GeminiAdapter extends BaseAdapter {
   private server: http.Server | null = null;
   private rateLimiter = new RateLimiter(60, 60000);
 
-  constructor(config: EnvCPConfig, projectPath: string, password?: string, vaultPath?: string) {
-    super(config, projectPath, password, vaultPath);
+  constructor(config: EnvCPConfig, projectPath: string, password?: string, vaultPath?: string, sessionPath?: string) {
+    super(config, projectPath, password, vaultPath, sessionPath);
   }
 
   protected registerTools(): void {

@@ -51,6 +51,7 @@ export const EnvCPConfigSchema = z.object({
   project: z.string().optional(),
 
   vault: z.object({
+    mode: VaultModeSchema.optional(),
     default: VaultModeSchema.default('project'),
     global_path: z.string().default('.envcp/store.enc'),
   }).default({}),

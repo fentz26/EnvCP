@@ -3,6 +3,7 @@ import { EnvCPConfig, RESTResponse, ToolDefinition, RateLimitConfig } from '../t
 import { VERSION } from '../version.js';
 import { setCorsHeaders, sendJson, parseBody, validateApiKey, RateLimiter, rateLimitMiddleware } from '../utils/http.js';
 import { LockoutManager } from '../utils/lockout.js';
+import { resolveSessionPath } from '../vault/index.js';
 import * as http from 'http';
 import * as path from 'path';
 
@@ -11,8 +12,8 @@ export class RESTAdapter extends BaseAdapter {
   private rateLimiter = new RateLimiter(60, 60000);
   private lockoutManager?: LockoutManager;
 
-  constructor(config: EnvCPConfig, projectPath: string, password?: string, vaultPath?: string) {
-    super(config, projectPath, password, vaultPath);
+  constructor(config: EnvCPConfig, projectPath: string, password?: string, vaultPath?: string, sessionPath?: string) {
+    super(config, projectPath, password, vaultPath, sessionPath);
     
     // If password is provided (vault already unlocked), clear any API key lockout
     if (password) {
@@ -23,7 +24,7 @@ export class RESTAdapter extends BaseAdapter {
   }
 
   private async clearApiKeyLockout(): Promise<void> {
-    const sessionDir = path.join(this.projectPath, path.dirname(this.config.session?.path || '.envcp/.session'));
+    const sessionDir = path.dirname(resolveSessionPath(this.projectPath, this.config));
     const lockoutPath = path.join(sessionDir, '.lockout-api');
     const lockoutManager = new LockoutManager(lockoutPath);
     await lockoutManager.reset();
@@ -127,7 +128,7 @@ async startServer(port: number, host: string, apiKey?: string, rateLimitConfig?:
   // Initialize lockout manager for API key authentication failures
   const bfpConfig = this.config.security?.brute_force_protection;
   if (bfpConfig && bfpConfig.enabled !== false) {
-    const sessionDir = path.join(this.projectPath, path.dirname(this.config.session?.path || '.envcp/.session'));
+    const sessionDir = path.dirname(resolveSessionPath(this.projectPath, this.config));
     const lockoutPath = path.join(sessionDir, '.lockout-api');
     
     this.lockoutManager = new LockoutManager(lockoutPath);

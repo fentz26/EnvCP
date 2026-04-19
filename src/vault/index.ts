@@ -16,6 +16,19 @@ export function getProjectVaultPath(projectPath: string, config: EnvCPConfig): s
   return path.join(projectPath, config.storage.path);
 }
 
+export function getEffectiveVaultMode(config: EnvCPConfig): 'project' | 'global' {
+  return config.vault?.mode ?? config.vault?.default ?? 'project';
+}
+
+export function resolveSessionPath(projectPath: string, config: EnvCPConfig): string {
+  const sessionRel = config.session?.path || '.envcp/.session';
+  if (getEffectiveVaultMode(config) === 'global') {
+    const home = process.env.HOME || process.env.USERPROFILE || os.homedir();
+    return path.join(home, sessionRel);
+  }
+  return path.join(projectPath, sessionRel);
+}
+
 export async function resolveVaultPath(projectPath: string, config: EnvCPConfig): Promise<string> {
   const activeVault = await getActiveVault(projectPath);
   if (activeVault) {
@@ -30,8 +43,7 @@ export async function resolveVaultPath(projectPath: string, config: EnvCPConfig)
       return path.join(namedDir, 'store.enc');
     }
   }
-  const mode = config.vault.default;
-  if (mode === 'global') {
+  if (getEffectiveVaultMode(config) === 'global') {
     return getGlobalVaultPath(config);
   }
   return getProjectVaultPath(projectPath, config);

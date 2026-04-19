@@ -94,10 +94,20 @@ envcp vault-list                                 # List all available vaults
 ### Session Management
 
 ```bash
-envcp unlock   # Unlock with password
-envcp lock     # Lock immediately
-envcp status   # Check session status
+envcp unlock            # Unlock with password (project vault)
+envcp unlock --global   # Unlock the global vault at ~/.envcp/.session
+envcp lock              # Lock immediately
+envcp lock --global     # Lock the global vault session
+envcp status            # Check session status
+envcp status --global   # Check global vault session status
+envcp extend            # Extend session timeout
+envcp extend --global   # Extend global vault session
 ```
+
+`--global` operates on the global vault at `~/.envcp` (config, store, and
+session) regardless of the current working directory. Without the flag,
+the active vault is determined by the project's `envcp.yaml` (or the
+global config if no project config is found in any ancestor directory).
 
 ### Sync and Export
 
@@ -115,7 +125,14 @@ envcp serve [options]
   --host          HTTP host (default: 127.0.0.1)
   --api-key, -k   API key for authentication
   --password, -p  Encryption password
+  --global        Force the global vault at ~/.envcp (skip project lookup)
 ```
+
+When invoked without `--global`, `envcp serve` walks up from the current
+working directory looking for an `envcp.yaml`. If none is found, it falls
+back to `~/.envcp/config.yaml`. This means an MCP client can launch
+`envcp serve --mode mcp` from any cwd and still find the right vault and
+session as long as one of those paths exists.
 
 ---
 
@@ -308,6 +325,34 @@ All protocols expose the same tools:
 ---
 
 ## Vault Management
+
+### Project vs Global vault
+
+EnvCP supports two top-level vault modes:
+
+- **Project mode (default)** — config in `./envcp.yaml`, store in
+  `./.envcp/store.enc`, session in `./.envcp/.session`. Best for
+  per-repo secrets that should not leak across projects.
+- **Global mode** — config in `~/.envcp/config.yaml`, store in
+  `~/.envcp/store.enc`, session in `~/.envcp/.session`. Best for
+  secrets shared across projects (e.g. a personal API key).
+
+Initialize a global vault:
+
+```bash
+envcp init --global       # creates ~/.envcp/config.yaml with vault.mode: global
+envcp unlock --global     # writes ~/.envcp/.session
+envcp serve --mode mcp    # auto-detects ~/.envcp/config.yaml when no project found
+```
+
+You can also opt into global mode declaratively in config:
+
+```yaml
+# ~/.envcp/config.yaml
+vault:
+  mode: global   # canonical key (preferred)
+  # default: global  # legacy key, still honored if `mode` is unset
+```
 
 ### Global Vault
 
