@@ -397,23 +397,27 @@ export class HsmManager {
     return decrypted.toString('utf8');
   }
 
-  /** Derive a combined key from an HSM-provided secret and a user password.
-   * Note: This is NOT password hashing (which uses Argon2id in crypto.ts).
-   * This combines two independent secrets to create a composite encryption key.
-   * HMAC-SHA256 is appropriate here as both inputs are high-entropy secrets.
-   */
-  static combineSecrets(hsmSecret: string, userPassword: string): string {
-    const combined = Buffer.concat([
-      Buffer.from(hsmSecret, 'utf8'),
-      Buffer.from(':', 'utf8'),
-      Buffer.from(userPassword, 'utf8'),
-    ]);
-    try {
-      // lgtm[js/insufficient-password-hash] - combining secrets, not hashing passwords
-      return crypto
-        .createHmac('sha256', 'envcp-multi-factor')
-        .update(combined)
-        .digest('hex');
+/**
+ * Derive a combined key from an HSM-provided secret and a user password.
+ * SECURITY: This is NOT password hashing (which uses Argon2id in crypto.ts).
+ * This combines two independent high-entropy secrets to create a composite key.
+ * HMAC-SHA256 is appropriate here because:
+ * - hsmSecret: Cryptographically random key from HSM (TPM/YubiKey)
+ * - userPassword: Already Argon2id-hashed in encryption layer
+ * CodeQL false positive: js/insufficient-password-hash does not apply here.
+ * @see https://github.com/fentz26/EnvCP/security/code-scanning/36
+ */
+static combineSecrets(hsmSecret: string, userPassword: string): string {
+const combined = Buffer.concat([
+Buffer.from(hsmSecret, 'utf8'),
+Buffer.from(':', 'utf8'),
+Buffer.from(userPassword, 'utf8'),
+]);
+try {
+return crypto
+.createHmac('sha256', 'envcp-multi-factor')
+.update(combined)
+.digest('hex');
     } finally {
       secureZero(combined);
     }
