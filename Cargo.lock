@@ -221,7 +221,7 @@ dependencies = [
 
 [[package]]
 name = "envcp-core"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "aes-gcm",
  "argon2",
@@ -240,7 +240,7 @@ dependencies = [
 
 [[package]]
 name = "envcp-node"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "envcp-core",
  "napi",
@@ -251,7 +251,7 @@ dependencies = [
 
 [[package]]
 name = "envcp-python"
-version = "1.1.0"
+version = "1.2.0"
 dependencies = [
  "envcp-core",
  "pyo3",
