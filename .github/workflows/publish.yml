@@ -3,18 +3,18 @@ name: Publish to npm, PyPI, Docker Hub, and MCP Registry
 on:
   push:
     tags: ['v*']
-workflow_dispatch:
-inputs:
-npm_tag:
-description: 'npm dist-tag (latest, beta, experimental, canary)'
-required: false
-default: 'latest'
-type: choice
-options:
-- latest
-- beta
-- experimental
-- canary
+  workflow_dispatch:
+    inputs:
+      npm_tag:
+        description: 'npm dist-tag (latest, beta, experimental, canary)'
+        required: false
+        default: 'latest'
+        type: choice
+        options:
+          - latest
+          - beta
+          - experimental
+          - canary
 
 permissions:
   contents: write
