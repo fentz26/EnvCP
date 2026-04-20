@@ -183,11 +183,29 @@ program
   .option('--key-id <id>', 'GPG key ID or PKCS#11 key label for HSM auth')
   .option('--pkcs11-lib <path>', 'Path to PKCS#11 shared library for --hsm-type pkcs11')
   .option('--global', 'Initialize a global vault at ~/.envcp/ (config + store live in $HOME)')
+  .option('--force', 'Overwrite existing envcp.yaml (DESTRUCTIVE: existing vault may become inaccessible)')
   .action(async (options) => {
     const useGlobal = !!options.global;
     const home = process.env.HOME || process.env.USERPROFILE || os.homedir();
     const projectPath = useGlobal ? home : process.cwd();
     const projectName = options.project || (useGlobal ? 'global' : path.basename(projectPath));
+
+    const configPath = path.join(projectPath, 'envcp.yaml');
+    if (await pathExists(configPath) && !options.force) {
+      const vaultRelPath = path.join('.envcp', 'store.enc');
+      console.log(chalk.yellow('EnvCP is already initialized here.'));
+      console.log(chalk.gray(`  Config: ${configPath}`));
+      if (await pathExists(path.join(projectPath, vaultRelPath))) {
+        console.log(chalk.gray(`  Vault:  ${path.join(projectPath, vaultRelPath)}`));
+      }
+      console.log('');
+      console.log(chalk.gray('Running init again would overwrite your config and may make'));
+      console.log(chalk.gray('existing encrypted variables permanently inaccessible.'));
+      console.log('');
+      console.log(chalk.gray('To reconfigure: edit envcp.yaml directly'));
+      console.log(chalk.gray('To force re-init (DESTRUCTIVE): envcp init --force'));
+      process.exit(1);
+    }
 
     console.log(chalk.blue(useGlobal ? 'Initializing EnvCP (global vault)...' : 'Initializing EnvCP...'));
     console.log('');
