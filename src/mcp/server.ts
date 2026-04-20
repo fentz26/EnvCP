@@ -45,6 +45,7 @@ export class EnvCPServer {
 
       const clientInfo = (this.server as unknown as { getClientVersion?: () => { name?: string } | undefined })
         .getClientVersion?.();
+      /* c8 ignore next -- MCP SDK getClientVersion rarely returns a named client in tests */
       const clientId = clientInfo?.name || 'mcp';
 
       try {

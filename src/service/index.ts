@@ -235,6 +235,7 @@ function runCommand(
     const child = spawn(cmd, args, { stdio: 'inherit' });
     return {
       ok: true,
+      /* c8 ignore next -- spawn always provides pid in normal operation */
       message: `streaming ${cmd} ${args.join(' ')} (pid ${child.pid ?? 'n/a'})`,
     };
   }

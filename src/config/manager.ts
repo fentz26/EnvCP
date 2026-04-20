@@ -100,7 +100,7 @@ function deepMerge(target: Record<string, unknown>, source: Record<string, unkno
     if (srcVal && typeof srcVal === 'object' && !Array.isArray(srcVal) && tgtVal && typeof tgtVal === 'object' && !Array.isArray(tgtVal)) {
       result[key] = deepMerge(tgtVal as Record<string, unknown>, srcVal as Record<string, unknown>);
     } else {
-      /* istanbul ignore next -- branch mapped incorrectly, statement covered */
+      /* c8 ignore next -- branch mapped incorrectly, statement covered */
       result[key] = srcVal;
     }
   }
@@ -350,7 +350,7 @@ export function writeToConfig(
 }
 
 export async function registerMcpConfig(projectPath: string): Promise<{ registered: string[]; alreadyConfigured: string[]; manual: string[] }> {
-  /* istanbul ignore next -- HOME or USERPROFILE always set in supported environments */
+  /* c8 ignore next -- HOME or USERPROFILE always set in supported environments */
   const home = process.env.HOME || process.env.USERPROFILE || '';
   const platform = process.platform;
   const targets = getMcpTargets();
@@ -394,7 +394,7 @@ if (result.alreadyExists) {
       await fs.writeFile(configPath, JSON.stringify(config, null, 2), 'utf8');
       registered.push(target.name);
     } catch {
-      /* istanbul ignore next -- rare: invalid JSON or permission errors are silently skipped */
+      /* c8 ignore next -- rare: invalid JSON or permission errors are silently skipped */
     }
   }
 

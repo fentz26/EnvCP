@@ -252,6 +252,36 @@ describe('UnifiedServer edge cases for coverage', () => {
     });
   });
 
+  describe('No api_key configured (line 184 false branch)', () => {
+    it('allows requests through when no api_key is set', async () => {
+      const port = await getFreePort();
+      const noAiConfig = EnvCPConfigSchema.parse({
+        access: {
+          allow_ai_read: false, allow_ai_write: false, allow_ai_delete: false,
+          allow_ai_export: false, allow_ai_execute: false, allow_ai_active_check: false,
+          require_user_reference: false, require_confirmation: false,
+          mask_values: false, blacklist_patterns: [],
+        },
+        encryption: { enabled: false },
+        storage: { encrypted: false, path: '.envcp/store.json' },
+        sync: { enabled: false },
+      });
+      const serverConfig: ServerConfig = {
+        mode: 'auto', port, host: '127.0.0.1', cors: true,
+        auto_detect: true, adapters: { openai: true, gemini: true, rest: true },
+      };
+      const server = new UnifiedServer(noAiConfig, serverConfig, tmpDir);
+      await server.start();
+
+      try {
+        const { status } = await fetchHttp(port, 'GET', '/api/health', undefined, {});
+        expect([200, 404]).toContain(status);
+      } finally {
+        await server.stop();
+      }
+    });
+  });
+
   describe('Gemini function call with non-string name (line 469)', () => {
     it('handles Gemini function call with non-string name', async () => {
       const port = await getFreePort();

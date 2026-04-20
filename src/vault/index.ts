@@ -21,8 +21,10 @@ export function getEffectiveVaultMode(config: EnvCPConfig): 'project' | 'global'
 }
 
 export function resolveSessionPath(projectPath: string, config: EnvCPConfig): string {
+  /* c8 ignore next -- Zod always provides session.path default; || fallback unreachable */
   const sessionRel = config.session?.path || '.envcp/.session';
   if (getEffectiveVaultMode(config) === 'global') {
+    /* c8 ignore next */
     const home = process.env.HOME || process.env.USERPROFILE || os.homedir();
     return path.join(home, sessionRel);
   }

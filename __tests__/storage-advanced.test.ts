@@ -4,6 +4,7 @@ import * as nativeFs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import { StorageManager, LogManager, LogFilter } from '../src/storage/index';
+import { AuditConfigSchema } from '../src/types';
 
 describe('StorageManager advanced', () => {
   let tmpDir: string;
@@ -779,5 +780,101 @@ describe('StorageManager — tryRestoreFromBackup (lines 132-159)', () => {
     await fs.writeFile(storePath, 'corrupt');
     const result = await (storage2 as any).tryRestoreFromBackup();
     expect(result).toBeNull();
+  });
+});
+
+import { resolveLogPath } from '../src/storage/index';
+
+describe('resolveLogPath', () => {
+  const projectPath = '/some/project';
+
+  it('returns default log path when audit is undefined', () => {
+    expect(resolveLogPath(undefined, projectPath)).toBe(
+      path.join(projectPath, '.envcp', 'logs')
+    );
+  });
+
+  it('resolves ~ prefix using HOME', () => {
+    const orig = process.env.HOME;
+    try {
+      process.env.HOME = '/home/testuser';
+      const result = resolveLogPath({ log_path: '~/mylogs' } as any, projectPath);
+      expect(result).toBe('/home/testuser/mylogs');
+    } finally {
+      if (orig !== undefined) process.env.HOME = orig;
+    }
+  });
+
+  it('resolves ~ prefix using USERPROFILE when HOME is unset', () => {
+    const origHome = process.env.HOME;
+    const origUp = process.env.USERPROFILE;
+    try {
+      delete process.env.HOME;
+      process.env.USERPROFILE = '/users/win';
+      const result = resolveLogPath({ log_path: '~/mylogs' } as any, projectPath);
+      expect(result).toBe('/users/win/mylogs');
+    } finally {
+      if (origHome !== undefined) process.env.HOME = origHome;
+      if (origUp !== undefined) process.env.USERPROFILE = origUp;
+      else delete process.env.USERPROFILE;
+    }
+  });
+
+  it('returns absolute path as-is', () => {
+    const result = resolveLogPath({ log_path: '/abs/path/logs' } as any, projectPath);
+    expect(result).toBe('/abs/path/logs');
+  });
+});
+
+describe('LogManager filter fields', () => {
+  let tmpDir: string;
+  let logDir: string;
+
+  beforeEach(async () => {
+    tmpDir = nativeFs.mkdtempSync(path.join(os.tmpdir(), 'envcp-logfilter-'));
+    logDir = path.join(tmpDir, 'logs');
+  });
+
+  afterEach(async () => {
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  });
+
+  it('includes ip, user_agent, purpose, duration_ms in filtered output', async () => {
+    const auditConfig = AuditConfigSchema.parse({ fields: { user_agent: true, purpose: true } });
+    const logger = new LogManager(logDir, auditConfig);
+    await logger.init();
+
+    const ts = new Date().toISOString();
+    await logger.log({
+      timestamp: ts,
+      operation: 'get',
+      variable: 'MY_VAR',
+      source: 'api',
+      success: true,
+      ip: '127.0.0.1',
+      user_agent: 'curl/7.68.0',
+      purpose: 'testing',
+      duration_ms: 42,
+    } as any);
+
+    const results = await logger.getLogs({});
+    expect(results.length).toBeGreaterThan(0);
+    const entry = results[results.length - 1];
+    expect((entry as any).ip).toBe('127.0.0.1');
+    expect((entry as any).user_agent).toBe('curl/7.68.0');
+    expect((entry as any).purpose).toBe('testing');
+    expect((entry as any).duration_ms).toBe(42);
+  });
+
+  it('triggers loadLastChainState on first log call (empty log dir)', async () => {
+    const logger = new LogManager(logDir);
+    await logger.init();
+    // First log triggers loadLastChainState; logDir has no existing logs
+    await expect(logger.log({
+      timestamp: new Date().toISOString(),
+      operation: 'list',
+      source: 'cli',
+      success: true,
+    })).resolves.not.toThrow();
   });
 });

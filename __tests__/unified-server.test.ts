@@ -765,6 +765,23 @@ describe('UnifiedServer rate_limit disabled', () => {
     expect(status).toBe(200);
     srv.stop();
   });
+
+  it('uses custom requests_per_minute when rate_limit.enabled=true', async () => {
+    const port = await getFreePort();
+    const serverConfig = makeServerConfig({
+      mode: 'all',
+      port,
+      host: '127.0.0.1',
+      cors: true,
+      auto_detect: true,
+      rate_limit: { enabled: true, requests_per_minute: 120 },
+    });
+    const srv = new UnifiedServer(makeConfig(), serverConfig, tmpDir);
+    await srv.start();
+    const { status } = await fetch(port, 'GET', '/api/health');
+    expect(status).toBe(200);
+    srv.stop();
+  });
 });
 
 describe('UnifiedServer non-Error throws in catch blocks', () => {

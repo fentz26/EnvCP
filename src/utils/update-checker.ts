@@ -34,11 +34,11 @@ export interface ReleaseInfo {
 
 export function getCurrentVersion(): string {
   try {
-    /* istanbul ignore next -- ts-jest ESM __dirname source-mapping artifact */
+    /* c8 ignore next -- ts-jest ESM __dirname source-mapping artifact */
     const pkgPath = path.join(__dirname, '..', '..', 'package.json');
-    /* istanbul ignore next */
+    /* c8 ignore next */
     const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
-    /* istanbul ignore next */
+    /* c8 ignore next */
     return pkg.version;
   } catch {
     return '0.0.0';
@@ -105,6 +105,7 @@ export function writeCache(projectPath: string, data: CachedCheck): void {
       fs.mkdirSync(cacheDir, { recursive: true });
     }
     fs.writeFileSync(cachePath, JSON.stringify(data, null, 2), { encoding: 'utf8', mode: 0o600 });
+  /* c8 ignore next -- cache write errors are silently ignored */
   } catch { /* ignore */ }
 }
 
@@ -283,5 +284,6 @@ export async function logUpdateCheck(projectPath: string, info: VersionInfo): Pr
     const logPath = path.join(logDir, 'audit.log');
     const line = `${new Date().toISOString()} UPDATE_CHECK current=${info.current} latest=${info.latest} available=${info.updateAvailable}\n`;
     fs.appendFileSync(logPath, line, { encoding: 'utf8', mode: 0o600 });
+  /* c8 ignore next -- log write errors are silently ignored */
   } catch { /* ignore */ }
 }

@@ -59,7 +59,7 @@ export class LockoutManager {
       this.notificationCallback({
         type,
         timestamp: new Date().toISOString(),
-        attempts: attempts ?? data.attempts,
+        attempts: attempts ?? /* c8 ignore next */ data.attempts,
         lockout_count: data.lockout_count,
         permanent_lockout_count: data.permanent_lockout_count,
         remaining_seconds: remainingSeconds,

@@ -401,6 +401,48 @@ describe('BaseAdapter tool operations', () => {
       const result = await adapter.callTool('envcp_check_access', { name: 'CHECK_V' });
       expect(result.accessible).toBe(true);
     });
+
+    it('calls envcp_logs via callTool handler', async () => {
+      const logsAdapter = new TestAdapter(makeConfig({ allow_ai_logs: true }), tmpDir);
+      await logsAdapter.init();
+      const result = await logsAdapter.callTool('envcp_logs', {});
+      expect(result).toBeDefined();
+    });
+
+    it('calls envcp_logs with variable and source filters', async () => {
+      const logsAdapter = new TestAdapter(makeConfig({ allow_ai_logs: true }), tmpDir);
+      await logsAdapter.init();
+      const result = await logsAdapter.callTool('envcp_logs', { variable: 'SOME_VAR', source: 'cli' });
+      expect(result).toBeDefined();
+    });
+  });
+
+  describe('resolveLogsRole', () => {
+    it('returns role from logs_roles when clientId matches', async () => {
+      const a = new TestAdapter(makeConfig({ allow_ai_logs: true, logs_roles: { myClient: 'full' } }), tmpDir);
+      await a.init();
+      const result = await a.callTool('envcp_logs', {}, 'myClient');
+      expect((result as any).role).toBe('full');
+    });
+
+    it('returns logs_default_role when clientId not in logs_roles', async () => {
+      const a = new TestAdapter(makeConfig({ allow_ai_logs: true, logs_default_role: 'full' }), tmpDir);
+      await a.init();
+      const result = await a.callTool('envcp_logs', {}, 'unknownClient');
+      expect((result as any).role).toBe('full');
+    });
+
+    it('throws when role is none', async () => {
+      const a = new TestAdapter(makeConfig({ allow_ai_logs: true, logs_roles: { blockedClient: 'none' } }), tmpDir);
+      await a.init();
+      await expect(a.callTool('envcp_logs', {}, 'blockedClient')).rejects.toThrow('Logs access denied');
+    });
+
+    it('uses (unidentified) in error when clientId is empty and default role is none', async () => {
+      const a = new TestAdapter(makeConfig({ allow_ai_logs: true, logs_default_role: 'none' }), tmpDir);
+      await a.init();
+      await expect(a.callTool('envcp_logs', {})).rejects.toThrow('(unidentified)');
+    });
   });
 
   describe('syncToEnv', () => {

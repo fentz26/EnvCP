@@ -33,6 +33,7 @@ export async function withLock<T>(filePath: string, fn: () => Promise<T>): Promi
   try {
     return await fn();
   } finally {
+    /* c8 ignore next -- lock file may already be gone; error is intentionally swallowed */
     try { await fs.unlink(lockPath); } catch { /* ignore: lock file already gone */ }
   }
 }

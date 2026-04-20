@@ -170,6 +170,20 @@ describe('service/index', () => {
       const body = await fs.readFile(target, 'utf-8');
       expect(body.length).toBeGreaterThan(0);
     });
+
+    it('does not overwrite config file when it already exists', async () => {
+      await fs.mkdir(path.dirname(cfgPath), { recursive: true });
+      await fs.writeFile(cfgPath, 'existing: true\n');
+      const result = await installService({ configPath: cfgPath });
+      expect(result.ok).toBe(true);
+      const body = await fs.readFile(cfgPath, 'utf-8');
+      expect(body).toBe('existing: true\n');
+    });
+
+    it('works when called with no arguments (uses defaults)', async () => {
+      const result = await installService();
+      expect(result.ok).toBe(true);
+    });
   });
 
   describe('installService (macos)', () => {
@@ -267,6 +281,12 @@ describe('service/index', () => {
 
     it('returns ok on macos when unit missing', async () => {
       setPlatform('macos');
+      const result = await uninstallService();
+      expect(result.ok).toBe(true);
+    });
+
+    it('removes scheduled task on windows without bat file present', async () => {
+      setPlatform('windows');
       const result = await uninstallService();
       expect(result.ok).toBe(true);
     });
@@ -383,6 +403,12 @@ describe('service/index', () => {
   });
 
   describe('logsService', () => {
+    it('uses journalctl on linux with no argument (default follow=false)', async () => {
+      setPlatform('linux');
+      const result = await logsService();
+      expect(result.ok).toBe(true);
+    });
+
     it('uses journalctl on linux (no-follow)', async () => {
       setPlatform('linux');
       const result = await logsService(false);

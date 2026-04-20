@@ -93,6 +93,7 @@ async startServer(port: number, host: string, apiKey?: string, rateLimitConfig?:
       const pathname = parsedUrl.pathname;
 
       const clientIdHeader = req.headers['x-envcp-client-id'];
+      /* c8 ignore next -- HTTP/1.1 joins duplicate headers; array branch unreachable in practice */
       const clientId = (Array.isArray(clientIdHeader) ? clientIdHeader[0] : clientIdHeader) || 'openai';
 
       try {

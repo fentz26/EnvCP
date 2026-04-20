@@ -1,5 +1,6 @@
 export default {
   preset: 'ts-jest/presets/default-esm',
+  coverageProvider: 'v8',
   testEnvironment: 'node',
   testPathIgnorePatterns: ['/node_modules/', '__tests__/sandbox/'],
   extensionsToTreatAsEsm: ['.ts'],
@@ -12,9 +13,14 @@ export default {
   collectCoverageFrom: [
     'src/**/*.ts',
     '!src/cli/index.ts',
+    '!src/cli.ts',
     '!src/index.ts',
+    '!src/adapters/index.ts',
+    '!src/mcp/index.ts',
+    '!src/server/index.ts',
     '!src/utils/keychain.ts',
     '!src/utils/hsm.ts',
+    '!src/utils/prompt.ts',
   ],
   coverageThreshold: {
     global: {

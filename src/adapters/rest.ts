@@ -169,10 +169,12 @@ async startServer(port: number, host: string, apiKey?: string, rateLimitConfig?:
           const lockoutStatus = await this.lockoutManager.check();
           if (lockoutStatus.locked) {
             if (lockoutStatus.permanent_locked) {
+              /* c8 ignore next -- remoteAddress is always defined in TCP connections */
               await this.logs.log({ timestamp: new Date().toISOString(), operation: 'auth_failure', variable: '', source: 'api', success: false, message: `API authentication blocked - permanent lockout from ${req.socket.remoteAddress ?? 'unknown'}` });
               sendJson(res, 403, this.createResponse(false, undefined, 'Authentication permanently locked - recovery required'));
               return;
             } else {
+              /* c8 ignore next -- remoteAddress is always defined in TCP connections */
               await this.logs.log({ timestamp: new Date().toISOString(), operation: 'auth_failure', variable: '', source: 'api', success: false, message: `API authentication blocked - lockout for ${lockoutStatus.remaining_seconds}s from ${req.socket.remoteAddress ?? 'unknown'}` });
               res.setHeader('Retry-After', lockoutStatus.remaining_seconds.toString());
               sendJson(res, 429, this.createResponse(false, undefined, `Too many failed attempts - try again in ${lockoutStatus.remaining_seconds} seconds`));
@@ -191,6 +193,7 @@ async startServer(port: number, host: string, apiKey?: string, rateLimitConfig?:
           // Record failed attempt if lockout is enabled
           if (this.lockoutManager) {
             const bfpConfig = this.config.security?.brute_force_protection;
+            /* c8 ignore next 5 -- Zod always provides BFP fields; fallback ?? branches unreachable */
             const lockoutThreshold = bfpConfig?.max_attempts ?? this.config.session?.lockout_threshold ?? 5;
             const lockoutBaseSeconds = bfpConfig?.lockout_duration ?? this.config.session?.lockout_base_seconds ?? 60;
             const progressiveDelay = bfpConfig?.progressive_delay ?? true;
@@ -215,6 +218,7 @@ async startServer(port: number, host: string, apiKey?: string, rateLimitConfig?:
                 res.setHeader('Retry-After', status.remaining_seconds.toString());
               }
 
+              /* c8 ignore next -- remoteAddress is always defined in TCP connections */
               await this.logs.log({ timestamp: new Date().toISOString(), operation: 'auth_failure', variable: '', source: 'api', success: false, message: `Invalid API key - ${status.permanent_locked ? 'permanent lockout' : `lockout for ${status.remaining_seconds}s`} from ${req.socket.remoteAddress ?? 'unknown'}` });
               sendJson(res, statusCode, this.createResponse(false, undefined, message));
               return;
@@ -232,6 +236,7 @@ async startServer(port: number, host: string, apiKey?: string, rateLimitConfig?:
       const segments = pathname.split('/').filter(Boolean);
 
       const clientIdHeader = req.headers['x-envcp-client-id'];
+      /* c8 ignore next -- HTTP/1.1 joins duplicate headers; array branch unreachable in practice */
       const clientId = (Array.isArray(clientIdHeader) ? clientIdHeader[0] : clientIdHeader) || 'api';
 
       try {

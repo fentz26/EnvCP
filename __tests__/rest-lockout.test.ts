@@ -242,3 +242,82 @@ describe('RESTAdapter — brute-force lockout on invalid API key', () => {
     }
   });
 });
+
+describe('RESTAdapter — permanent lockout from recordFailure (line 209 branch 0)', () => {
+  let tmpDir: string;
+
+  beforeEach(async () => {
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-rest-perm-'));
+  });
+
+  afterEach(async () => {
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  });
+
+  it('returns 403 immediately when recordFailure triggers permanent lockout', async () => {
+    // permanent_lockout_threshold=1: after 1 lockout, next attempt triggers permanent lockout
+    const cfg = makeConfig({
+      security: {
+        brute_force_protection: {
+          enabled: true,
+          max_attempts: 1,
+          lockout_duration: 1,
+          progressive_delay: false,
+          max_delay: 0,
+          permanent_lockout_threshold: 1,
+        },
+      },
+    });
+    const a = new RESTAdapter(cfg, tmpDir);
+    const port = await getFreePort();
+    await a.startServer(port, '127.0.0.1', 'key');
+
+    try {
+      // First bad request → temp lockout, permanent_lockout_count = 1
+      const r1 = await fetch(port, 'GET', '/api/health', { 'x-api-key': 'bad' });
+      expect([401, 429]).toContain(r1.status);
+
+      // Wait for temp lockout to expire
+      await new Promise((r) => setTimeout(r, 1200));
+
+      // Second bad request → permanent_lockout_count(1) >= threshold(1) → PERMANENT → 403
+      const r2 = await fetch(port, 'GET', '/api/health', { 'x-api-key': 'bad' });
+      expect(r2.status).toBe(403);
+      expect(r2.data.error).toMatch(/permanently locked/i);
+    } finally {
+      a.stopServer();
+      await new Promise((r) => setTimeout(r, 10));
+    }
+  });
+});
+
+describe('RESTAdapter — API key without brute-force protection (BFP disabled)', () => {
+  let tmpDir: string;
+  let adapter: RESTAdapter;
+  let port: number;
+
+  beforeEach(async () => {
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-rest-nobfp-'));
+    const cfg = makeConfig({ security: { brute_force_protection: { enabled: false } } });
+    adapter = new RESTAdapter(cfg, tmpDir);
+    port = await getFreePort();
+    await adapter.startServer(port, '127.0.0.1', 'correct-api-key');
+  });
+
+  afterEach(async () => {
+    adapter.stopServer();
+    await fs.rm(tmpDir, { recursive: true, force: true });
+    await new Promise((r) => setTimeout(r, 10));
+  });
+
+  it('returns 401 on wrong API key with no lockout manager', async () => {
+    const result = await fetch(port, 'GET', '/api/health', { 'x-api-key': 'wrong-key' });
+    expect(result.status).toBe(401);
+    expect(result.data.error).toMatch(/invalid api key/i);
+  });
+
+  it('allows request through with correct API key', async () => {
+    const result = await fetch(port, 'GET', '/api/health', { 'x-api-key': 'correct-api-key' });
+    expect([200, 404]).toContain(result.status);
+  });
+});

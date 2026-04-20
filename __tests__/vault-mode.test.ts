@@ -76,6 +76,22 @@ describe('vault.mode and session path resolution', () => {
         path.join(tmpDir, 'custom/session.json')
       );
     });
+
+    it('falls back to USERPROFILE when HOME is unset', () => {
+      const origHome = process.env.HOME;
+      const origUserProfile = process.env.USERPROFILE;
+      try {
+        delete process.env.HOME;
+        process.env.USERPROFILE = tmpDir;
+        const config = makeConfig({ vault: { mode: 'global' } });
+        const result = resolveSessionPath('/anywhere', config);
+        expect(result).toBe(path.join(tmpDir, '.envcp/.session'));
+      } finally {
+        if (origHome !== undefined) process.env.HOME = origHome;
+        if (origUserProfile !== undefined) process.env.USERPROFILE = origUserProfile;
+        else delete process.env.USERPROFILE;
+      }
+    });
   });
 
   describe('resolveVaultPath honors vault.mode', () => {

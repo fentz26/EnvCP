@@ -1,4 +1,4 @@
-/* istanbul ignore file - tested via integration tests in __tests__/utils/prompt.test.ts */
+/* c8 ignore file - tested via integration tests in __tests__/utils/prompt.test.ts */
 import * as readline from 'readline';
 
 /** Prompt for masked input (passwords). Characters echo as '*'. */

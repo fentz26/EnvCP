@@ -704,6 +704,41 @@ describe('Adapter rateLimitEnabled=false branch', () => {
   });
 });
 
+describe('Adapter rateLimitEnabled=true with explicit requests_per_minute', () => {
+  it('REST adapter applies custom requests_per_minute', async () => {
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-rest-rpm-'));
+    const adapter = new RESTAdapter(makeConfig(), tmpDir);
+    const port = await getFreePort();
+    await adapter.startServer(port, '127.0.0.1', undefined, { enabled: true, requests_per_minute: 120 });
+    const { status } = await fetch(port, 'GET', '/api/health');
+    expect(status).toBe(200);
+    adapter.stopServer();
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  });
+
+  it('OpenAI adapter applies custom requests_per_minute', async () => {
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-oai-rpm-'));
+    const adapter = new OpenAIAdapter(makeConfig(), tmpDir);
+    const port = await getFreePort();
+    await adapter.startServer(port, '127.0.0.1', undefined, { enabled: true, requests_per_minute: 120 });
+    const { status } = await fetch(port, 'GET', '/v1/models');
+    expect(status).toBe(200);
+    adapter.stopServer();
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  });
+
+  it('Gemini adapter applies custom requests_per_minute', async () => {
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-gem-rpm-'));
+    const adapter = new GeminiAdapter(makeConfig(), tmpDir);
+    const port = await getFreePort();
+    await adapter.startServer(port, '127.0.0.1', undefined, { enabled: true, requests_per_minute: 120 });
+    const { status } = await fetch(port, 'GET', '/v1/models');
+    expect(status).toBe(200);
+    adapter.stopServer();
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  });
+});
+
 describe('RESTAdapter non-api path and edge-case routes', () => {
   let tmpDir: string;
   let adapter: RESTAdapter;

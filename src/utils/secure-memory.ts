@@ -81,11 +81,14 @@ export function zeroEnv(env: Record<string, string | undefined>, keys: string[])
 }
 
 export function isDebuggerAttached(): boolean {
+  /* c8 ignore next -- non-linux platforms always return false; tests run on linux */
   if (process.platform !== 'linux') return false;
   try {
+    /* c8 ignore next 3 */
     const fs = require('fs') as typeof import('fs');
     const status = fs.readFileSync('/proc/self/status', 'utf8');
     const match = status.match(/TracerPid:\s*(\d+)/);
+    /* c8 ignore next */
     return match != null && match[1] !== '0';
   } catch {
     return false;

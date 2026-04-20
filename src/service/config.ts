@@ -111,6 +111,7 @@ export async function saveServiceConfig(
   await fs.writeFile(p, body, { mode: 0o600 });
   try {
     await fs.chmod(p, 0o600);
+  /* c8 ignore next -- chmod not available on all platforms */
   } catch {
     // ignore on platforms without chmod
   }
