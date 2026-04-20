@@ -965,22 +965,82 @@ program
 program
   .command('add <name>')
   .description('Add a new environment variable')
-  .option('-v, --value <value>', 'Variable value')
+  .option('-v, --value <value>', 'Variable value (WARNING: leaks in shell history; prefer --from-env/--from-file/--stdin)')
+  .option('--from-env <envVar>', 'Read value from the named environment variable')
+  .option('--from-file <path>', 'Read value from a file (trailing newline trimmed)')
+  .option('--stdin', 'Read value from piped stdin')
   .option('-t, --tags <tags>', 'Tags (comma-separated)')
   .option('-d, --description <desc>', 'Description')
   .action(async (name, options) => {
+    const sourceFlags = [
+      options.value !== undefined ? '--value' : null,
+      options.fromEnv !== undefined ? '--from-env' : null,
+      options.fromFile !== undefined ? '--from-file' : null,
+      options.stdin ? '--stdin' : null,
+    ].filter(Boolean) as string[];
+
+    if (sourceFlags.length > 1) {
+      console.error(chalk.red(`Error: ${sourceFlags.join(', ')} are mutually exclusive — pick one`));
+      process.exit(1);
+    }
+
+    let value: string | undefined;
+    let sourced = false;
+
+    if (options.value !== undefined) {
+      value = options.value;
+      sourced = true;
+      if (process.stdout.isTTY) {
+        console.warn(chalk.yellow('⚠  --value is visible in shell history and process list. Use --from-env, --from-file, or --stdin for secrets.'));
+      }
+    } else if (options.fromEnv) {
+      const envValue = process.env[options.fromEnv];
+      if (envValue === undefined) {
+        console.error(chalk.red(`Error: environment variable '${options.fromEnv}' is not set`));
+        process.exit(1);
+      }
+      value = envValue;
+      sourced = true;
+    } else if (options.fromFile) {
+      try {
+        const raw = await fs.readFile(options.fromFile, 'utf-8');
+        value = raw.replace(/\r?\n$/, '');
+        sourced = true;
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error(chalk.red(`Error: cannot read '${options.fromFile}': ${msg}`));
+        process.exit(1);
+      }
+    } else if (options.stdin) {
+      if (process.stdin.isTTY) {
+        console.error(chalk.red('Error: --stdin requires piped input (e.g., `echo "$SECRET" | envcp add NAME --stdin`)'));
+        process.exit(1);
+      }
+      value = await new Promise<string>((resolve, reject) => {
+        const chunks: Buffer[] = [];
+        process.stdin.on('data', (c) => chunks.push(typeof c === 'string' ? Buffer.from(c) : c));
+        process.stdin.on('end', () => resolve(Buffer.concat(chunks).toString('utf-8').replace(/\r?\n$/, '')));
+        process.stdin.on('error', reject);
+      });
+      sourced = true;
+    }
+
     await withSession(async (storage, _password, config) => {
-      let value = options.value;
       let tags: string[] = [];
       let description = options.description;
 
-if (!value) {
-      value = await promptPassword('Enter value:');
-      const tagsInput = await promptInput('Tags (comma-separated):');
-      tags = tagsInput.split(',').map((t: string) => t.trim()).filter(Boolean);
-      description = await promptInput('Description:');
+      if (!sourced) {
+        value = await promptPassword('Enter value:');
+        const tagsInput = await promptInput('Tags (comma-separated):');
+        tags = tagsInput.split(',').map((t: string) => t.trim()).filter(Boolean);
+        description = await promptInput('Description:');
       } else if (options.tags) {
         tags = options.tags.split(',').map((t: string) => t.trim()).filter(Boolean);
+      }
+
+      if (value === undefined) {
+        console.error(chalk.red('Error: no value provided'));
+        process.exit(1);
       }
 
       const now = new Date().toISOString();
