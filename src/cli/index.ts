@@ -7,7 +7,7 @@ import { promptPassword, promptInput, promptConfirm, promptList } from '../utils
 import { ensureDir, pathExists } from '../utils/fs.js';
 import { loadConfig, initConfig, saveConfig, parseEnvFile, registerMcpConfig, isBlacklisted, canAccess } from '../config/manager.js';
 import { ConfigGuard } from '../config/config-guard.js';
-import { StorageManager, LogManager } from '../storage/index.js';
+import { StorageManager, LogManager, resolveLogPath } from '../storage/index.js';
 import { VERSION } from '../version.js';
 import { SessionManager } from '../utils/session.js';
 import { maskValue, validatePassword, encrypt, decrypt, generateRecoveryKey, createRecoveryData, recoverPassword } from '../utils/crypto.js';
@@ -57,7 +57,7 @@ async function withSession(fn: (storage: StorageManager, password: string, confi
 
   if (config.encryption?.enabled === false) {
     const storage = new StorageManager(vaultPath, false);
-    const logManager = new LogManager(path.join(projectPath, '.envcp', 'logs'), config.audit);
+    const logManager = new LogManager(resolveLogPath(config.audit, projectPath), config.audit);
     await logManager.init();
     await fn(storage, '', config, projectPath, logManager);
     return;
@@ -72,7 +72,7 @@ async function withSession(fn: (storage: StorageManager, password: string, confi
     await sessionManager.init();
 
     // Initialize audit logging
-    const logManager = new LogManager(path.join(projectPath, '.envcp', 'logs'), config.audit);
+    const logManager = new LogManager(resolveLogPath(config.audit, projectPath), config.audit);
     await logManager.init();
 
   let session = await sessionManager.load();
@@ -467,7 +467,7 @@ const { valid: passwordValid, warning: passwordWarning } = validatePassword(pass
         console.log(chalk.green('Permanent lockout cleared.'));
         
         // Log recovery event
-        const logManager = new LogManager(path.join(projectPath, '.envcp', 'logs'), config.audit);
+        const logManager = new LogManager(resolveLogPath(config.audit, projectPath), config.audit);
         await logManager.init();
         await logManager.log({
           timestamp: new Date().toISOString(),
@@ -507,7 +507,7 @@ const { valid: passwordValid, warning: passwordWarning } = validatePassword(pass
     await sessionManager.init();
 
     // Initialize audit logging
-    const logManager = new LogManager(path.join(projectPath, '.envcp', 'logs'), config.audit);
+    const logManager = new LogManager(resolveLogPath(config.audit, projectPath), config.audit);
     await logManager.init();
 
     const vaultPathForUnlock = await resolveVaultPath(projectPath, config);
@@ -2111,7 +2111,7 @@ program
   .action(async (options) => {
     const projectPath = process.cwd();
     const config = await loadConfig(projectPath);
-    const logDir = path.join(projectPath, '.envcp', 'logs');
+    const logDir = resolveLogPath(config.audit, projectPath);
     const logs = new LogManager(logDir, config.audit);
     await logs.init();
 
@@ -2177,7 +2177,7 @@ program
   .action(async (options) => {
     const projectPath = process.cwd();
     const config = await loadConfig(projectPath);
-    const logDir = path.join(projectPath, '.envcp', 'logs');
+    const logDir = resolveLogPath(config.audit, projectPath);
     const logs = new LogManager(logDir, config.audit);
     await logs.init();
 
@@ -2203,7 +2203,7 @@ program
   .action(async () => {
     const projectPath = process.cwd();
     const config = await loadConfig(projectPath);
-    const logDir = path.join(projectPath, '.envcp', 'logs');
+    const logDir = resolveLogPath(config.audit, projectPath);
     const logs = new LogManager(logDir, config.audit);
     await logs.init();
 

@@ -47,7 +47,7 @@ describe('EnvCPServer', () => {
     const server = new EnvCPServer(config, tmpDir);
     const adapter = (server as any).adapter;
     const tools = adapter.getToolDefinitions();
-    expect(tools.length).toBe(8);
+    expect(tools.length).toBe(9);
   });
 
   it('setupHandlers registers ListTools and CallTool handlers', async () => {

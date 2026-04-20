@@ -92,6 +92,9 @@ async startServer(port: number, host: string, apiKey?: string, rateLimitConfig?:
       const parsedUrl = new URL(req.url || '/', `http://${req.headers.host ?? 'localhost'}`);
       const pathname = parsedUrl.pathname;
 
+      const clientIdHeader = req.headers['x-envcp-client-id'];
+      const clientId = (Array.isArray(clientIdHeader) ? clientIdHeader[0] : clientIdHeader) || 'openai';
+
       try {
         // OpenAI-compatible endpoints
 
@@ -128,7 +131,7 @@ async startServer(port: number, host: string, apiKey?: string, rateLimitConfig?:
             return;
           }
 
-          const result = await this.callTool(name, args || {});
+          const result = await this.callTool(name, args || {}, clientId);
           sendJson(res, 200, {
             object: 'function_result',
             name,

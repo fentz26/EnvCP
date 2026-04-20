@@ -1,5 +1,5 @@
-import { StorageManager, LogManager } from '../storage/index.js';
-import { EnvCPConfig, Variable, ToolDefinition } from '../types.js';
+import { StorageManager, LogManager, resolveLogPath } from '../storage/index.js';
+import { EnvCPConfig, Variable, ToolDefinition, LogsRole } from '../types.js';
 import { maskValue, hashVariablePassword, verifyVariablePassword, encryptVariableValue, decryptVariableValue, scrubOutput } from '../utils/crypto.js';
 import { canAccess, isBlacklisted, canAIActiveCheck, validateVariableName, matchesPattern } from '../config/manager.js';
 import { SessionManager } from '../utils/session.js';
@@ -34,7 +34,7 @@ export abstract class BaseAdapter {
       this.storage.setPassword(password);
     }
 
-    this.logs = new LogManager(path.join(projectPath, '.envcp', 'logs'), config.audit);
+    this.logs = new LogManager(resolveLogPath(config.audit, projectPath), config.audit);
     this.tools = new Map();
     this.registerTools();
   }
@@ -142,9 +142,56 @@ export abstract class BaseAdapter {
         },
         handler: async (params) => this.checkAccess(params as { name: string }),
       },
+      {
+        name: 'envcp_logs',
+        description: 'Read filtered audit log entries (requires access.allow_ai_logs: true). Log entries contain operation metadata only — variable values are never logged.',
+        parameters: {
+          type: 'object',
+          properties: {
+            date: { type: 'string', description: 'Log date (YYYY-MM-DD, default: today)' },
+            operation: { type: 'string', description: 'Filter by operation (add, get, update, delete, list, sync, export, unlock, lock, check_access, run, auth_failure, etc.)' },
+            variable: { type: 'string', description: 'Filter by variable name' },
+            source: { type: 'string', enum: ['cli', 'mcp', 'api'], description: 'Filter by source' },
+            success: { type: 'boolean', description: 'Filter by success (true) or failure (false)' },
+            tail: { type: 'number', description: 'Return only the last N entries (max 100)' },
+          },
+        },
+        handler: async (params) => this.readLogs(params as {
+          date?: string; operation?: string; variable?: string; source?: string; success?: boolean; tail?: number;
+        }),
+      },
     ];
 
     tools.forEach(tool => this.tools.set(tool.name, tool));
+  }
+
+  protected async readLogs(args: {
+    date?: string; operation?: string; variable?: string; source?: string; success?: boolean; tail?: number;
+  }): Promise<{ entries: import('../types.js').OperationLog[]; count: number; role: LogsRole }> {
+    if (!this.config.access.allow_ai_logs) {
+      throw new Error('AI log access is disabled (set access.allow_ai_logs: true in envcp.yaml)');
+    }
+
+    const role = this.resolveLogsRole(this.currentClientId);
+    if (role === 'none') {
+      throw new Error(`Logs access denied for client "${this.currentClientId || '(unidentified)'}" (role: none)`);
+    }
+
+    const MAX_TAIL = 100;
+    const tail = args.tail === undefined ? MAX_TAIL : Math.min(Math.max(1, Math.floor(args.tail)), MAX_TAIL);
+
+    const filter: import('../storage/index.js').LogFilter = { tail };
+    if (args.date) filter.date = args.date;
+    if (args.operation) filter.operation = args.operation;
+    if (args.variable) filter.variable = args.variable;
+    if (args.source) filter.source = args.source;
+    if (args.success !== undefined) filter.success = args.success;
+
+    let entries = await this.logs.getLogs(filter);
+    if (role === 'own_sessions') {
+      entries = entries.filter((e) => e.client_id === this.currentClientId);
+    }
+    return { entries, count: entries.length, role };
   }
 
   async init(): Promise<void> {
@@ -168,13 +215,36 @@ export abstract class BaseAdapter {
     return Array.from(this.tools.values());
   }
 
-  async callTool(name: string, params: Record<string, unknown>): Promise<unknown> {
+  protected currentClientId = '';
+
+  async callTool(name: string, params: Record<string, unknown>, clientId = ''): Promise<unknown> {
     const tool = this.tools.get(name);
     if (!tool) {
       throw new Error(`Unknown tool: ${name}`);
     }
     await this.ensurePassword();
-    return tool.handler(params);
+    const previousClientId = this.currentClientId;
+    this.currentClientId = clientId;
+    try {
+      return await tool.handler(params);
+    } finally {
+      this.currentClientId = previousClientId;
+    }
+  }
+
+  protected resolveLogsRole(clientId: string): LogsRole {
+    const roles = this.config.access.logs_roles || {};
+    if (clientId && Object.prototype.hasOwnProperty.call(roles, clientId)) {
+      return roles[clientId];
+    }
+    return this.config.access.logs_default_role ?? 'own_sessions';
+  }
+
+  protected async logEvent(entry: import('../types.js').OperationLog): Promise<void> {
+    await this.logs.log({
+      ...entry,
+      client_id: entry.client_id || this.currentClientId || '',
+    });
   }
 
   // Shared tool implementations
@@ -201,7 +271,7 @@ export abstract class BaseAdapter {
 
     const hasAnyProtected = filtered.some(name => allVars[name]?.protected);
 
-    await this.logs.log({
+    await this.logEvent({
       timestamp: new Date().toISOString(),
       operation: 'list',
       source: 'api',
@@ -255,7 +325,7 @@ export abstract class BaseAdapter {
     // Protected variable: require variable_password to access value
     if (variable.protected) {
       if (!args.variable_password) {
-        await this.logs.log({
+        await this.logEvent({
           timestamp: new Date().toISOString(),
           operation: 'get',
           variable: args.name,
@@ -267,7 +337,7 @@ export abstract class BaseAdapter {
       }
 
       if (!variable.password_hash || !await verifyVariablePassword(args.variable_password, variable.password_hash)) {
-        await this.logs.log({
+        await this.logEvent({
           timestamp: new Date().toISOString(),
           operation: 'get',
           variable: args.name,
@@ -287,7 +357,7 @@ export abstract class BaseAdapter {
       const canReveal = args.show_value && !this.config.access.mask_values && !this.config.access.require_confirmation;
       const value = canReveal ? decryptedValue : maskValue(decryptedValue);
 
-      await this.logs.log({
+      await this.logEvent({
         timestamp: new Date().toISOString(),
         operation: 'get',
         variable: args.name,
@@ -312,7 +382,7 @@ export abstract class BaseAdapter {
     const canReveal = args.show_value && !this.config.access.mask_values && !this.config.access.require_confirmation;
     const value = canReveal ? variable.value : maskValue(variable.value);
 
-    await this.logs.log({
+    await this.logEvent({
       timestamp: new Date().toISOString(),
       operation: 'get',
       variable: args.name,
@@ -392,7 +462,7 @@ export abstract class BaseAdapter {
 
       await this.storage.set(args.name, variable);
 
-      await this.logs.log({
+      await this.logEvent({
         timestamp: now,
         operation: 'update',
         variable: args.name,
@@ -436,7 +506,7 @@ export abstract class BaseAdapter {
 
       await this.storage.set(args.name, variable);
 
-      await this.logs.log({
+      await this.logEvent({
         timestamp: now,
         operation: existing ? 'update' : 'add',
         variable: args.name,
@@ -470,7 +540,7 @@ export abstract class BaseAdapter {
 
     await this.storage.set(args.name, variable);
 
-    await this.logs.log({
+    await this.logEvent({
       timestamp: new Date().toISOString(),
       operation: existing ? 'update' : 'add',
       variable: args.name,
@@ -493,7 +563,7 @@ export abstract class BaseAdapter {
 
     const deleted = await this.storage.delete(args.name);
 
-    await this.logs.log({
+    await this.logEvent({
       timestamp: new Date().toISOString(),
       operation: 'delete',
       variable: args.name,
@@ -572,7 +642,7 @@ export abstract class BaseAdapter {
 
     await fs.writeFile(envPath, lines.join('\n'), 'utf8');
 
-    await this.logs.log({
+    await this.logEvent({
       timestamp: new Date().toISOString(),
       operation: 'sync',
       source: 'api',
@@ -626,7 +696,7 @@ export abstract class BaseAdapter {
 
     await fs.writeFile(envPath, content, 'utf8');
 
-    await this.logs.log({
+    await this.logEvent({
       timestamp: new Date().toISOString(),
       operation: 'add',
       variable: args.name,
@@ -652,7 +722,7 @@ export abstract class BaseAdapter {
     const blacklisted = isBlacklisted(args.name, this.config);
     const accessible = exists && !blacklisted && canAccess(args.name, this.config);
 
-    await this.logs.log({
+    await this.logEvent({
       timestamp: new Date().toISOString(),
       operation: 'check_access',
       variable: args.name,
@@ -808,7 +878,7 @@ export abstract class BaseAdapter {
 
       if (blacklisted || !accessible) {
         excludedVariables.push(name);
-        await this.logs.log({
+        await this.logEvent({
           timestamp: new Date().toISOString(),
           operation: 'check_access',
           variable: name,
@@ -873,7 +943,7 @@ export abstract class BaseAdapter {
     });
 
     // Audit log: command start (variable names only — never values)
-    await this.logs.log({
+    await this.logEvent({
       timestamp: new Date().toISOString(),
       operation: 'run',
       variable: args.command,
@@ -897,7 +967,7 @@ export abstract class BaseAdapter {
     }
 
     // Audit log: command exit (exit code only — no stdout/stderr values)
-    await this.logs.log({
+    await this.logEvent({
       timestamp: new Date().toISOString(),
       operation: 'run',
       variable: args.command,

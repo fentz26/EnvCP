@@ -100,6 +100,21 @@ export class RESTAdapter extends BaseAdapter {
         },
         handler: async (params) => this.runCommand(params as { command: string; variables: string[] }),
       },
+      {
+        name: 'envcp_logs',
+        description: 'Read filtered audit log entries (requires access.allow_ai_logs: true)',
+        parameters: {
+          date: { type: 'string', description: 'Log date (YYYY-MM-DD, default: today)' },
+          operation: { type: 'string', description: 'Filter by operation' },
+          variable: { type: 'string', description: 'Filter by variable name' },
+          source: { type: 'string', description: 'Filter by source (cli/mcp/api)' },
+          success: { type: 'boolean', description: 'Filter by success or failure' },
+          tail: { type: 'number', description: 'Return only the last N entries (max 100)' },
+        },
+        handler: async (params) => this.readLogs(params as {
+          date?: string; operation?: string; variable?: string; source?: string; success?: boolean; tail?: number;
+        }),
+      },
     ];
 
     tools.forEach(tool => this.tools.set(tool.name, tool));
@@ -216,6 +231,9 @@ async startServer(port: number, host: string, apiKey?: string, rateLimitConfig?:
       const pathname = parsedUrl.pathname;
       const segments = pathname.split('/').filter(Boolean);
 
+      const clientIdHeader = req.headers['x-envcp-client-id'];
+      const clientId = (Array.isArray(clientIdHeader) ? clientIdHeader[0] : clientIdHeader) || 'api';
+
       try {
         // Routes:
         // GET  /api/variables         - List variables
@@ -256,7 +274,7 @@ async startServer(port: number, host: string, apiKey?: string, rateLimitConfig?:
           if (resource === 'tools' && segments[2] && req.method === 'POST') {
             const toolName = segments[2];
             const body = await parseBody(req);
-            const result = await this.callTool(toolName, body);
+            const result = await this.callTool(toolName, body, clientId);
             sendJson(res, 200, this.createResponse(true, result));
             return;
           }
@@ -268,34 +286,34 @@ async startServer(port: number, host: string, apiKey?: string, rateLimitConfig?:
             if (!varName && req.method === 'GET') {
               const tagsParam = parsedUrl.searchParams.getAll('tags');
               const tags = tagsParam.length > 0 ? tagsParam : undefined;
-              const result = await this.callTool('envcp_list', { tags });
+              const result = await this.callTool('envcp_list', { tags }, clientId);
               sendJson(res, 200, this.createResponse(true, result));
               return;
             }
 
             if (!varName && req.method === 'POST') {
               const body = await parseBody(req);
-              const result = await this.callTool('envcp_set', body);
+              const result = await this.callTool('envcp_set', body, clientId);
               sendJson(res, 201, this.createResponse(true, result));
               return;
             }
 
             if (varName && req.method === 'GET') {
               const showValue = parsedUrl.searchParams.get('show_value') === 'true';
-              const result = await this.callTool('envcp_get', { name: varName, show_value: showValue });
+              const result = await this.callTool('envcp_get', { name: varName, show_value: showValue }, clientId);
               sendJson(res, 200, this.createResponse(true, result));
               return;
             }
 
             if (varName && req.method === 'PUT') {
               const body = await parseBody(req);
-              const result = await this.callTool('envcp_set', { ...body, name: varName });
+              const result = await this.callTool('envcp_set', { ...body, name: varName }, clientId);
               sendJson(res, 200, this.createResponse(true, result));
               return;
             }
 
             if (varName && req.method === 'DELETE') {
-              const result = await this.callTool('envcp_delete', { name: varName });
+              const result = await this.callTool('envcp_delete', { name: varName }, clientId);
               sendJson(res, 200, this.createResponse(true, result));
               return;
             }
@@ -303,7 +321,7 @@ async startServer(port: number, host: string, apiKey?: string, rateLimitConfig?:
 
           // Sync
           if (resource === 'sync' && req.method === 'POST') {
-            const result = await this.callTool('envcp_sync', {});
+            const result = await this.callTool('envcp_sync', {}, clientId);
             sendJson(res, 200, this.createResponse(true, result));
             return;
           }
@@ -311,14 +329,14 @@ async startServer(port: number, host: string, apiKey?: string, rateLimitConfig?:
           // Run
           if (resource === 'run' && req.method === 'POST') {
             const body = await parseBody(req);
-            const result = await this.callTool('envcp_run', body);
+            const result = await this.callTool('envcp_run', body, clientId);
             sendJson(res, 200, this.createResponse(true, result));
             return;
           }
 
           // Check access
           if (resource === 'access' && segments[2] && req.method === 'GET') {
-            const result = await this.callTool('envcp_check_access', { name: segments[2] });
+            const result = await this.callTool('envcp_check_access', { name: segments[2] }, clientId);
             sendJson(res, 200, this.createResponse(true, result));
             return;
           }

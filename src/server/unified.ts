@@ -6,8 +6,7 @@ import { GeminiAdapter } from '../adapters/gemini.js';
 import { EnvCPServer } from '../mcp/server.js';
 import { resolveVaultPath, resolveSessionPath } from '../vault/index.js';
 import { setCorsHeaders, sendJson, parseBody, validateApiKey, RateLimiter, rateLimitMiddleware } from '../utils/http.js';
-import { LogManager } from '../storage/index.js';
-import * as path from 'path';
+import { LogManager, resolveLogPath } from '../storage/index.js';
 import * as http from 'http';
 
 export class UnifiedServer {
@@ -114,7 +113,7 @@ export class UnifiedServer {
     const sessionPath = resolveSessionPath(this.projectPath, this.config);
 
     // Initialize audit log for HTTP modes
-    this.logs = new LogManager(path.join(this.projectPath, '.envcp', 'logs'), this.config.audit);
+    this.logs = new LogManager(resolveLogPath(this.config.audit, this.projectPath), this.config.audit);
     await this.logs.init();
 
     // MCP mode uses stdio, not HTTP

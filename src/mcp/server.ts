@@ -43,8 +43,12 @@ export class EnvCPServer {
     this.server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const { name, arguments: args } = request.params;
 
+      const clientInfo = (this.server as unknown as { getClientVersion?: () => { name?: string } | undefined })
+        .getClientVersion?.();
+      const clientId = clientInfo?.name || 'mcp';
+
       try {
-        const result = await this.adapter.callTool(name, (args || {}) as Record<string, unknown>);
+        const result = await this.adapter.callTool(name, (args || {}) as Record<string, unknown>, clientId);
         return {
           content: [
             {

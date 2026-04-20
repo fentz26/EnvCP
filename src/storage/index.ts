@@ -254,6 +254,41 @@ export interface LogFilter {
   tail?: number;
 }
 
+/**
+ * Resolve the absolute directory to store audit logs in.
+ *
+ * Honors `audit.log_path` with these forms:
+ *   - unset           → default `<projectPath>/.envcp/logs` (backward compatible)
+ *   - "project:REL"   → `<projectPath>/REL`
+ *   - starts with `~` → expanded against $HOME (or projectPath if unavailable)
+ *   - absolute path   → used as-is
+ *   - relative path   → treated as project-relative
+ *
+ * Rejects `..` traversal in the `project:` form.
+ */
+export function resolveLogPath(audit: AuditConfig | undefined, projectPath: string): string {
+  const raw = audit?.log_path;
+  if (!raw) return path.join(projectPath, '.envcp', 'logs');
+
+  if (raw.startsWith('project:')) {
+    const rel = raw.slice('project:'.length);
+    const joined = path.resolve(projectPath, rel);
+    if (!joined.startsWith(path.resolve(projectPath) + path.sep) && joined !== path.resolve(projectPath)) {
+      throw new Error(`audit.log_path "${raw}" escapes project directory`);
+    }
+    return joined;
+  }
+
+  if (raw.startsWith('~')) {
+    const home = process.env.HOME || process.env.USERPROFILE || projectPath;
+    return path.resolve(home, raw.replace(/^~\/?/, ''));
+  }
+
+  if (path.isAbsolute(raw)) return raw;
+
+  return path.resolve(projectPath, raw);
+}
+
 export class LogManager {
   private logDir: string;
   private auditConfig: AuditConfig;

@@ -34,6 +34,7 @@ export const AuditConfigSchema = z.object({
   hmac: z.boolean().default(false),
   hmac_key_path: z.string().default('.envcp/.audit-hmac-key'),
   hmac_chain: z.boolean().default(false),
+  log_path: z.string().optional(),
   protection: z.enum(['none', 'append_only', 'immutable', 'remote']).default('none'),
   remote_ship: z.object({
     type: z.enum(['syslog', 'http', 'file']).optional(),
@@ -68,6 +69,9 @@ export const EnvCPConfigSchema = z.object({
     allow_ai_export: z.boolean().default(false),
     allow_ai_execute: z.boolean().default(false),
     allow_ai_active_check: z.boolean().default(false),
+    allow_ai_logs: z.boolean().default(false),
+    logs_default_role: z.enum(['full', 'own_sessions', 'readonly', 'none']).default('own_sessions'),
+    logs_roles: z.record(z.enum(['full', 'own_sessions', 'readonly', 'none'])).default({ cli: 'full' }),
     require_user_reference: z.boolean().default(true),
     allowed_commands: z.array(z.string()).optional(),
     require_confirmation: z.boolean().default(true),
@@ -199,6 +203,8 @@ export const VariableSchema = z.object({
 });
 
 export type Variable = z.infer<typeof VariableSchema>;
+
+export type LogsRole = 'full' | 'own_sessions' | 'readonly' | 'none';
 
 export const OperationLogSchema = z.object({
   timestamp: z.string(),

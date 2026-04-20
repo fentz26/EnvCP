@@ -328,7 +328,7 @@ describe('BaseAdapter tool operations', () => {
   describe('getToolDefinitions', () => {
     it('returns all registered tools', () => {
       const tools = adapter.getToolDefinitions();
-      expect(tools.length).toBe(8);
+      expect(tools.length).toBe(9);
       const names = tools.map(t => t.name);
       expect(names).toContain('envcp_list');
       expect(names).toContain('envcp_get');
@@ -338,6 +338,7 @@ describe('BaseAdapter tool operations', () => {
       expect(names).toContain('envcp_run');
       expect(names).toContain('envcp_add_to_env');
       expect(names).toContain('envcp_check_access');
+      expect(names).toContain('envcp_logs');
     });
   });
 
