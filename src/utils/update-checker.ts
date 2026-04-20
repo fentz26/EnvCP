@@ -108,6 +108,52 @@ export function writeCache(projectPath: string, data: CachedCheck): void {
   } catch { /* ignore */ }
 }
 
+export async function fetchReleases(perPage = 50): Promise<ReleaseInfo[]> {
+  const https = await import('https');
+
+  return new Promise((resolve, reject) => {
+    const options = {
+      hostname: 'api.github.com',
+      path: `/repos/${GITHUB_REPO}/releases?per_page=${perPage}`,
+      method: 'GET',
+      headers: {
+        'User-Agent': 'envcp-update-checker',
+        'Accept': 'application/vnd.github+json',
+      },
+      timeout: 5000,
+    };
+
+    const req = https.request(options, (res) => {
+      let body = '';
+      res.on('data', (chunk: Buffer) => { body += chunk.toString(); });
+      res.on('end', () => {
+        try {
+          const data = JSON.parse(body);
+          if (res.statusCode !== 200 || !Array.isArray(data)) {
+            reject(new Error((data as Record<string, unknown>).message as string || `GitHub API returned ${res.statusCode}`));
+            return;
+          }
+          resolve((data as unknown[]).map(parseRelease));
+        } catch { reject(new Error('Failed to parse response')); }
+      });
+    });
+
+    req.on('error', reject);
+    req.on('timeout', () => { req.destroy(); reject(new Error('Request timed out')); });
+    req.end();
+  });
+}
+
+export type ReleaseChannel = 'latest' | 'experimental' | 'canary';
+
+export function filterByChannel(releases: ReleaseInfo[], channel: ReleaseChannel): ReleaseInfo[] {
+  return releases.filter(r => {
+    if (channel === 'experimental') return r.tag.includes('-exp.');
+    if (channel === 'canary') return r.tag.includes('-canary.');
+    return !r.tag.includes('-exp.') && !r.tag.includes('-canary.') && !r.tag.includes('-beta');
+  });
+}
+
 export async function fetchLatestRelease(): Promise<ReleaseInfo> {
   const https = await import('https');
 

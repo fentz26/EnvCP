@@ -13,7 +13,8 @@ import { SessionManager } from '../utils/session.js';
 import { maskValue, validatePassword, encrypt, decrypt, generateRecoveryKey, createRecoveryData, recoverPassword } from '../utils/crypto.js';
 import { KeychainManager } from '../utils/keychain.js';
 import { HsmManager } from '../utils/hsm.js';
-import { checkForUpdate, formatUpdateMessage, logUpdateCheck } from '../utils/update-checker.js';
+import { checkForUpdate, formatUpdateMessage, logUpdateCheck, fetchReleases, filterByChannel, ReleaseChannel } from '../utils/update-checker.js';
+import { spawnSync } from 'child_process';
 import { LockoutManager } from '../utils/lockout.js';
 
 import { Variable, EnvCPConfig } from '../types.js';
@@ -420,7 +421,6 @@ program
 program
   .command('unlock')
   .description('Unlock EnvCP session with password')
-  .option('-p, --password <password>', 'Password (will prompt if not provided)')
   .option('--recovery-key <key>', 'Recovery key to clear permanent lockout')
   .option('--save-to-keychain', 'Save password to OS keychain for auto-unlock')
   .option('--setup-hsm', 'Protect vault password with hardware security module')
@@ -431,11 +431,7 @@ program
   .action(async (options) => {
     const { projectPath, config } = await resolveCliContext(options.global ? 'global' : undefined);
 
-let password = options.password;
-
-if (!password) {
-  password = await promptPassword('Enter password:');
-}
+const password = await promptPassword('Enter password:');
 
 const { valid: passwordValid, warning: passwordWarning } = validatePassword(password, config.password || {});
     if (!passwordValid) {
@@ -1251,7 +1247,6 @@ program
 program
   .command('serve')
   .description('Start EnvCP server')
-  .option('-p, --password <password>', 'Encryption password')
   .option('-m, --mode <mode>', 'Server mode: mcp, rest, openai, gemini, all, auto', 'auto')
   .option('--port <port>', 'HTTP port (for non-MCP modes)', '3456')
   .option('--host <host>', 'HTTP host', '127.0.0.1')
@@ -1298,7 +1293,7 @@ program
     const host = options.host;
     const apiKey = options.apiKey;
 
-    let password = options.password || '';
+    let password = '';
 
     // Passwordless mode: skip all session/password logic
     if (config.encryption?.enabled === false) {
@@ -1322,7 +1317,7 @@ program
       if (!session && !password) {
         // MCP mode uses stdio — can't prompt interactively
         if (mode === 'mcp') {
-          process.stderr.write(`Error: No active session at ${sessionPath}. Run \`envcp unlock${forceGlobalMode ? ' --global' : ''}\` first, or use --password flag.\n`);
+          process.stderr.write(`Error: No active session at ${sessionPath}. Run \`envcp unlock${forceGlobalMode ? ' --global' : ''}\` first.\n`);
           process.exit(1);
         }
 
@@ -1777,32 +1772,89 @@ program
 
 program
   .command('update')
-  .description('Check for EnvCP updates')
-  .option('--check', 'Check for available updates')
+  .description('Check for or install EnvCP updates')
+  .option('-l, --latest', 'List and install latest stable versions')
+  .option('-e, --experimental', 'List and install experimental versions')
+  .option('-c, --canary', 'List and install canary versions')
+  .option('--backup', 'Backup vault before installing')
   .action(async (options) => {
     const projectPath = process.cwd();
+    const home = os.homedir();
 
-    if (options.check || Object.keys(options).length === 0) {
+    const channel: ReleaseChannel | null =
+      options.latest ? 'latest' :
+      options.experimental ? 'experimental' :
+      options.canary ? 'canary' : null;
+
+    if (!channel) {
+      // Original behaviour: just check and notify
       console.log(chalk.blue('Checking for updates...'));
       try {
         const info = await checkForUpdate(projectPath);
         const message = formatUpdateMessage(info);
-
         await logUpdateCheck(projectPath, info);
-
         if (info.updateAvailable) {
-          if (info.critical) {
-            console.log(chalk.red.bold(message));
-          } else {
-            console.log(chalk.yellow(message));
-          }
+          console.log(info.critical ? chalk.red.bold(message) : chalk.yellow(message));
         } else {
           console.log(chalk.green(message));
         }
-      } catch (error) {
+      } catch {
         console.log(chalk.yellow('Could not check for updates (offline or rate-limited)'));
-        console.log(chalk.gray(`  Current version: v${require('../../package.json').version}`));
       }
+      return;
+    }
+
+    console.log(chalk.blue(`Fetching ${channel} releases...`));
+    let releases;
+    try {
+      const all = await fetchReleases();
+      releases = filterByChannel(all, channel).slice(0, 3);
+    } catch {
+      console.log(chalk.red('Could not fetch releases (offline or rate-limited)'));
+      return;
+    }
+
+    if (releases.length === 0) {
+      console.log(chalk.yellow(`No ${channel} releases found.`));
+      return;
+    }
+
+    console.log(chalk.bold(`\n  Available ${channel} versions:\n`));
+    releases.forEach((r, i) => {
+      console.log(chalk.cyan(`  [${i + 1}] v${r.tag}`));
+    });
+    console.log(chalk.gray('\n  [0] Cancel\n'));
+
+    const answer = await promptInput('Pick a version (0 to cancel):');
+    const picked = parseInt(answer.trim(), 10);
+    if (!picked || picked < 1 || picked > releases.length) {
+      console.log(chalk.gray('Cancelled.'));
+      return;
+    }
+
+    const chosen = releases[picked - 1];
+
+    if (options.backup) {
+      const backupPath = path.join(home, `.envcp.bak.${Date.now()}`);
+      const vaultDir = path.join(home, '.envcp');
+      const confirmed = await promptConfirm(`Backup ~/.envcp → ${backupPath}?`);
+      if (confirmed) {
+        try {
+          await fs.cp(vaultDir, backupPath, { recursive: true });
+          console.log(chalk.green(`  ✓ Backed up to ${backupPath}`));
+        } catch (e) {
+          console.log(chalk.red(`  Backup failed: ${(e as Error).message}`));
+          return;
+        }
+      }
+    }
+
+    console.log(chalk.blue(`\nInstalling @fentz26/envcp@${chosen.tag}...`));
+    const result = spawnSync('npm', ['install', '-g', `@fentz26/envcp@${chosen.tag}`], { stdio: 'inherit' });
+    if (result.status === 0) {
+      console.log(chalk.green(`\n  ✓ Installed v${chosen.tag}`));
+    } else {
+      console.log(chalk.red('\n  Installation failed.'));
     }
   });
 
