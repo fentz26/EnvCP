@@ -1,25 +1,26 @@
-FROM node:20-alpine
+FROM node:20-alpine AS builder
 
 WORKDIR /app
 
-# Install dependencies
+RUN apk add --no-cache python3 make g++
+
 COPY package*.json ./
 RUN npm ci --only=production
 
-# Copy built files
+FROM node:20-alpine AS runtime
+
+WORKDIR /app
+
+COPY --from=builder /app/node_modules ./node_modules
 COPY dist/ ./dist/
 COPY scripts/ ./scripts/
 COPY README.md LICENSE ./
 
-# Create data directory
 RUN mkdir -p /data
 
-# Set environment
 ENV NODE_ENV=production
 ENV ENCP_DATA_DIR=/data
 
-# Expose ports (REST API, MCP stdio doesn't need port)
 EXPOSE 3456
 
-# Default to MCP serve mode
 CMD ["node", "dist/index.js"]
