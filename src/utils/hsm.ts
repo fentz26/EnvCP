@@ -161,16 +161,20 @@ export class YubiKeyPivBackend implements HsmBackend {
     }
 
     const aesKey = await this._pivDecrypt(Buffer.from(encKey, 'hex'));
+    const ivBuffer = Buffer.from(iv, 'hex');
+    const authTagBuffer = Buffer.from(authTag, 'hex');
 
     try {
-      const decipher = crypto.createDecipheriv('aes-256-gcm', aesKey, Buffer.from(iv, 'hex'));
-      decipher.setAuthTag(Buffer.from(authTag, 'hex'));
+      const decipher = crypto.createDecipheriv('aes-256-gcm', aesKey, ivBuffer, { authTagLength: authTagBuffer.length });
+      decipher.setAuthTag(authTagBuffer);
       return Buffer.concat([
         decipher.update(Buffer.from(ciphertext, 'hex')),
         decipher.final(),
       ]);
     } finally {
       secureZero(aesKey);
+      secureZero(ivBuffer);
+      secureZero(authTagBuffer);
     }
   }
 

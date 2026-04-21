@@ -78,7 +78,7 @@ function decryptV1(data: string, password: string): string {
 
   const key = deriveKey(password, salt);
   try {
-    const decipher = crypto.createDecipheriv(ALGORITHM, key, iv);
+    const decipher = crypto.createDecipheriv(ALGORITHM, key, iv, { authTagLength: AUTH_TAG_LENGTH });
     decipher.setAuthTag(authTag);
 
     let decrypted = decipher.update(encrypted, 'hex', 'utf8');
@@ -100,7 +100,7 @@ async function decryptV2(data: string, password: string): Promise<string> {
 
   const key = await argon2.hash(password, { ...ARGON2_OPTS, salt }) as Buffer;
   try {
-    const decipher = crypto.createDecipheriv(ALGORITHM, key, iv);
+    const decipher = crypto.createDecipheriv(ALGORITHM, key, iv, { authTagLength: AUTH_TAG_LENGTH });
     decipher.setAuthTag(authTag);
 
     let decrypted = decipher.update(encryptedHex, 'hex', 'utf8');
