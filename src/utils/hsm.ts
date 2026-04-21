@@ -407,17 +407,18 @@ export class HsmManager {
  * CodeQL false positive: js/insufficient-password-hash does not apply here.
  * @see https://github.com/fentz26/EnvCP/security/code-scanning/36
  */
-static combineSecrets(hsmSecret: string, userPassword: string): string {
-const combined = Buffer.concat([
-Buffer.from(hsmSecret, 'utf8'),
-Buffer.from(':', 'utf8'),
-Buffer.from(userPassword, 'utf8'),
-]);
-try {
-return crypto
-.createHmac('sha256', 'envcp-multi-factor')
-.update(combined)
-.digest('hex');
+  static combineSecrets(hsmSecret: string, userPassword: string): string {
+    const combined = Buffer.concat([
+      Buffer.from(hsmSecret, 'utf8'),
+      Buffer.from(':', 'utf8'),
+      Buffer.from(userPassword, 'utf8'),
+    ]);
+    try {
+      const hmacKey = crypto.createHash('sha256').update(combined.slice(0, 32)).digest();
+      return crypto
+        .createHmac('sha256', hmacKey)
+        .update(combined)
+        .digest('hex');
     } finally {
       secureZero(combined);
     }
