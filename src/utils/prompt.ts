@@ -229,6 +229,17 @@ function createRawMenuSession<T>(
   };
 }
 
+async function readListAnswer(hint: string, defaultIndex: number): Promise<string> {
+  try {
+    return await promptInput(`Enter choice${hint}:`);
+  } catch (error) {
+    if (!process.stdin.isTTY && defaultIndex < 0 && error instanceof Error && error.message.includes('EOF')) {
+      throw new Error('No selection made and no default available');
+    }
+    throw error;
+  }
+}
+
 /** Prompt to select from a list of choices (numbered menu). */
 export async function promptList(message: string, choices: ListChoice[], defaultValue?: string): Promise<string> {
   if (choices.length === 0) {
@@ -244,18 +255,9 @@ export async function promptList(message: string, choices: ListChoice[], default
   const hint = defaultIndex >= 0 ? ` [${defaultIndex + 1}]` : '';
 
   while (true) {
-    let answer = '';
-    try {
-      answer = await promptInput(`Enter choice${hint}:`);
-    } catch (error) {
-      if (!process.stdin.isTTY && defaultIndex < 0 && error instanceof Error && error.message.includes('EOF')) {
-        throw new Error('No selection made and no default available');
-      }
-      throw error;
-    }
+    const answer = await readListAnswer(hint, defaultIndex);
     // Handle EOF (empty responses when stdin is exhausted)
     if (answer === '' && defaultIndex < 0 && !process.stdin.isTTY) {
-      // No default and no input - could indicate EOF; avoid infinite loop
       throw new Error('No selection made and no default available');
     }
     if (answer.trim() === '' && defaultIndex >= 0) {

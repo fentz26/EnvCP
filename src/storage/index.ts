@@ -315,30 +315,32 @@ export class LogManager {
     await this.pruneOldLogs(this.auditConfig.retain_days);
   }
 
+  private async findLastChainEntry(dates: string[]): Promise<OperationLog | undefined> {
+    for (const date of dates.slice().reverse()) {
+      const entries = await this.getLogs({ date });
+      if (entries.length > 0) {
+        return entries.at(-1);
+      }
+    }
+    return undefined;
+  }
+
   private async loadLastChainState(): Promise<void> {
     /* c8 ignore next -- guarded by !this.chainLoaded at all call sites */
     if (this.chainLoaded) return;
-    
+
     const dates = await this.getLogDates();
     if (dates.length === 0) {
       this.chainLoaded = true;
       return;
     }
 
-    for (const date of dates.slice().reverse()) {
-      const entries = await this.getLogs({ date });
-      if (entries.length > 0) {
-        const lastEntry = entries.at(-1);
-        if (lastEntry) {
-          if (lastEntry.hmac) {
-            this.lastHmac = lastEntry.hmac;
-          }
-          if (lastEntry.chain_index !== undefined) {
-            this.chainIndex = lastEntry.chain_index + 1;
-          }
-        }
-        break;
-      }
+    const lastEntry = await this.findLastChainEntry(dates);
+    if (lastEntry?.hmac) {
+      this.lastHmac = lastEntry.hmac;
+    }
+    if (lastEntry?.chain_index !== undefined) {
+      this.chainIndex = lastEntry.chain_index + 1;
     }
     this.chainLoaded = true;
   }
@@ -424,15 +426,15 @@ export class LogManager {
       source: entry.source,
       success: entry.success,
     };
-    if (f.variable && entry.variable !== undefined) filtered.variable = entry.variable;
-    if (f.message && entry.message !== undefined) filtered.message = entry.message;
-    if (f.session_id && entry.session_id !== undefined) filtered.session_id = entry.session_id;
-    if (f.client_id && entry.client_id !== undefined) filtered.client_id = entry.client_id;
-    if (f.client_type && entry.client_type !== undefined) filtered.client_type = entry.client_type;
-    if (f.ip && entry.ip !== undefined) filtered.ip = entry.ip;
-    if (f.user_agent && entry.user_agent !== undefined) filtered.user_agent = entry.user_agent;
-    if (f.purpose && entry.purpose !== undefined) filtered.purpose = entry.purpose;
-    if (f.duration_ms && entry.duration_ms !== undefined) filtered.duration_ms = entry.duration_ms;
+    const optionalFields: Array<keyof OperationLog> = [
+      'variable', 'message', 'session_id', 'client_id', 'client_type',
+      'ip', 'user_agent', 'purpose', 'duration_ms',
+    ];
+    for (const key of optionalFields) {
+      if ((f as Record<string, boolean>)[key] && entry[key] !== undefined) {
+        (filtered as Record<string, unknown>)[key] = entry[key];
+      }
+    }
     /* c8 ignore next 2 -- prev_hmac and chain_index are added to filtered after this call, never to the input entry */
     if (entry.prev_hmac !== undefined) filtered.prev_hmac = entry.prev_hmac;
     if (entry.chain_index !== undefined) filtered.chain_index = entry.chain_index;

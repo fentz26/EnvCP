@@ -319,6 +319,57 @@ export abstract class BaseAdapter {
     return { variables: filtered, count: filtered.length };
   }
 
+  private ensureReadAccess(name: string): void {
+    if (!validateVariableName(name)) {
+      throw new Error(`Invalid variable name '${name}'. Must match [A-Za-z_][A-Za-z0-9_]*`);
+    }
+
+    if (!getDefaultAccessFlag(this.config, 'read', this.currentClientId)
+      && !resolveAccessRuleFlag(name, this.config, 'read', this.currentClientId)) {
+      throw new Error('AI read access is disabled');
+    }
+
+    if (isBlacklisted(name, this.config)) {
+      throw new Error(`Variable '${name}' is blacklisted and cannot be accessed`);
+    }
+
+    if (!canAccessVariable(name, this.config, 'read', this.currentClientId)) {
+      throw new Error(`Access denied to variable '${name}'`);
+    }
+  }
+
+  private async resolveProtectedValue(
+    name: string,
+    variable: Variable,
+    providedPassword: string | undefined,
+  ): Promise<string> {
+    if (!providedPassword) {
+      await this.logEvent({
+        timestamp: new Date().toISOString(),
+        operation: 'get',
+        variable: name,
+        source: 'api',
+        success: false,
+        message: 'Protected variable access denied — no password provided',
+      });
+      throw new Error(`Variable '${name}' is protected. Provide variable_password to access it.`);
+    }
+
+    if (!variable.password_hash || !await verifyVariablePassword(providedPassword, variable.password_hash)) {
+      await this.logEvent({
+        timestamp: new Date().toISOString(),
+        operation: 'get',
+        variable: name,
+        source: 'api',
+        success: false,
+        message: 'Protected variable access denied — wrong password',
+      });
+      throw new Error(`Invalid password for protected variable '${name}'`);
+    }
+
+    return decryptVariableValue(variable.protected_value!, providedPassword);
+  }
+
   protected async getVariable(args: { name: string; show_value?: boolean; variable_password?: string }): Promise<{
     name: string;
     value: string;
@@ -327,14 +378,7 @@ export abstract class BaseAdapter {
     encrypted: boolean;
     protected: boolean;
   }> {
-    if (!validateVariableName(args.name)) {
-      throw new Error(`Invalid variable name '${args.name}'. Must match [A-Za-z_][A-Za-z0-9_]*`);
-    }
-
-    if (!getDefaultAccessFlag(this.config, 'read', this.currentClientId)
-      && !resolveAccessRuleFlag(args.name, this.config, 'read', this.currentClientId)) {
-      throw new Error('AI read access is disabled');
-    }
+    this.ensureReadAccess(args.name);
 
     const variable = await this.storage.get(args.name);
 
@@ -342,47 +386,16 @@ export abstract class BaseAdapter {
       throw new Error(`Variable '${args.name}' not found`);
     }
 
-    if (isBlacklisted(args.name, this.config)) {
-      throw new Error(`Variable '${args.name}' is blacklisted and cannot be accessed`);
-    }
+    const canReveal = args.show_value
+      && !this.config.access.mask_values
+      && !requiresConfirmationForVariable(args.name, this.config, this.currentClientId);
 
-    if (!canAccessVariable(args.name, this.config, 'read', this.currentClientId)) {
-      throw new Error(`Access denied to variable '${args.name}'`);
-    }
-
-    // Protected variable: require variable_password to access value
     if (variable.protected) {
-      if (!args.variable_password) {
-        await this.logEvent({
-          timestamp: new Date().toISOString(),
-          operation: 'get',
-          variable: args.name,
-          source: 'api',
-          success: false,
-          message: 'Protected variable access denied — no password provided',
-        });
-        throw new Error(`Variable '${args.name}' is protected. Provide variable_password to access it.`);
-      }
-
-      if (!variable.password_hash || !await verifyVariablePassword(args.variable_password, variable.password_hash)) {
-        await this.logEvent({
-          timestamp: new Date().toISOString(),
-          operation: 'get',
-          variable: args.name,
-          source: 'api',
-          success: false,
-          message: 'Protected variable access denied — wrong password',
-        });
-        throw new Error(`Invalid password for protected variable '${args.name}'`);
-      }
-
-      // Decrypt the protected value
-      const decryptedValue = await decryptVariableValue(variable.protected_value!, args.variable_password);
+      const decryptedValue = await this.resolveProtectedValue(args.name, variable, args.variable_password);
 
       variable.accessed = new Date().toISOString();
       await this.storage.set(args.name, variable);
 
-      const canReveal = args.show_value && !this.config.access.mask_values && !requiresConfirmationForVariable(args.name, this.config, this.currentClientId);
       const value = canReveal ? decryptedValue : maskValue(decryptedValue);
 
       await this.logEvent({
@@ -407,7 +420,6 @@ export abstract class BaseAdapter {
     variable.accessed = new Date().toISOString();
     await this.storage.set(args.name, variable);
 
-    const canReveal = args.show_value && !this.config.access.mask_values && !requiresConfirmationForVariable(args.name, this.config, this.currentClientId);
     const value = canReveal ? variable.value : maskValue(variable.value);
 
     await this.logEvent({
@@ -427,6 +439,93 @@ export abstract class BaseAdapter {
       encrypted: variable.encrypted,
       protected: false,
     };
+  }
+
+  private async handleUnprotect(
+    args: { name: string; value: string; tags?: string[]; description?: string; variable_password?: string },
+    existing: Variable | undefined,
+    now: string,
+  ): Promise<{ success: boolean; message: string }> {
+    if (!existing?.protected) {
+      throw new Error(`Variable '${args.name}' is not protected`);
+    }
+    if (!args.variable_password) {
+      throw new Error('variable_password is required to remove protection');
+    }
+    if (!await verifyVariablePassword(args.variable_password, existing.password_hash!)) {
+      throw new Error(`Invalid password for protected variable '${args.name}'`);
+    }
+
+    const decryptedValue = await decryptVariableValue(existing.protected_value!, args.variable_password);
+
+    const variable: Variable = {
+      name: args.name,
+      value: args.value ?? decryptedValue,
+      encrypted: this.config.storage.encrypted,
+      tags: args.tags ?? existing.tags,
+      description: args.description ?? existing.description,
+      created: existing.created,
+      updated: now,
+      sync_to_env: true,
+      protected: false,
+    };
+
+    await this.storage.set(args.name, variable);
+
+    await this.logEvent({
+      timestamp: now,
+      operation: 'update',
+      variable: args.name,
+      source: 'api',
+      success: true,
+      message: 'Variable protection removed',
+    });
+
+    return { success: true, message: `Variable '${args.name}' protection removed` };
+  }
+
+  private async handleProtect(
+    args: { name: string; value: string; tags?: string[]; description?: string; variable_password?: string },
+    existing: Variable | undefined,
+    now: string,
+  ): Promise<{ success: boolean; message: string }> {
+    if (!args.variable_password) {
+      throw new Error('variable_password is required when protect=true');
+    }
+
+    if (existing?.protected && !await verifyVariablePassword(args.variable_password, existing.password_hash!)) {
+      throw new Error(`Invalid password for protected variable '${args.name}'`);
+    }
+
+    const passwordHash = await hashVariablePassword(args.variable_password);
+    const protectedValue = await encryptVariableValue(args.value, args.variable_password);
+
+    const variable: Variable = {
+      name: args.name,
+      value: '[PROTECTED]',
+      encrypted: this.config.storage.encrypted,
+      tags: args.tags ?? existing?.tags,
+      description: args.description ?? existing?.description,
+      created: existing?.created || now,
+      updated: now,
+      sync_to_env: true,
+      protected: true,
+      password_hash: passwordHash,
+      protected_value: protectedValue,
+    };
+
+    await this.storage.set(args.name, variable);
+
+    await this.logEvent({
+      timestamp: now,
+      operation: existing ? 'update' : 'add',
+      variable: args.name,
+      source: 'api',
+      success: true,
+      message: `Protected variable ${existing ? 'updated' : 'created'}`,
+    });
+
+    return { success: true, message: `Protected variable '${args.name}' ${existing ? 'updated' : 'created'}` };
   }
 
   protected async setVariable(args: {
@@ -453,7 +552,6 @@ export abstract class BaseAdapter {
       `AI write access is denied for variable '${args.name}'`,
     );
 
-    // Enforce require_variable_password config
     if (this.config.access.require_variable_password && !args.protect && !args.unprotect) {
       const existing = await this.storage.get(args.name);
       if (!existing) {
@@ -464,92 +562,14 @@ export abstract class BaseAdapter {
     const existing = await this.storage.get(args.name);
     const now = new Date().toISOString();
 
-    // Handle unprotect: verify existing password, then remove protection
     if (args.unprotect) {
-      if (!existing?.protected) {
-        throw new Error(`Variable '${args.name}' is not protected`);
-      }
-      if (!args.variable_password) {
-        throw new Error('variable_password is required to remove protection');
-      }
-      if (!await verifyVariablePassword(args.variable_password, existing.password_hash!)) {
-        throw new Error(`Invalid password for protected variable '${args.name}'`);
-      }
-
-      // Decrypt the protected value to restore it as the plain value
-      const decryptedValue = await decryptVariableValue(existing.protected_value!, args.variable_password);
-
-      const variable: Variable = {
-        name: args.name,
-        value: args.value ?? decryptedValue,
-        encrypted: this.config.storage.encrypted,
-        tags: args.tags ?? existing.tags,
-        description: args.description ?? existing.description,
-        created: existing.created,
-        updated: now,
-        sync_to_env: true,
-        protected: false,
-      };
-
-      await this.storage.set(args.name, variable);
-
-      await this.logEvent({
-        timestamp: now,
-        operation: 'update',
-        variable: args.name,
-        source: 'api',
-        success: true,
-        message: 'Variable protection removed',
-      });
-
-      return { success: true, message: `Variable '${args.name}' protection removed` };
+      return this.handleUnprotect(args, existing, now);
     }
 
-    // Handle protect: encrypt value with variable-specific password
     if (args.protect) {
-      if (!args.variable_password) {
-        throw new Error('variable_password is required when protect=true');
-      }
-
-      // If updating an already-protected variable, verify existing password
-      if (existing?.protected) {
-        if (!await verifyVariablePassword(args.variable_password, existing.password_hash!)) {
-          throw new Error(`Invalid password for protected variable '${args.name}'`);
-        }
-      }
-
-      const passwordHash = await hashVariablePassword(args.variable_password);
-      const protectedValue = await encryptVariableValue(args.value, args.variable_password);
-
-      const variable: Variable = {
-        name: args.name,
-        value: '[PROTECTED]',
-        encrypted: this.config.storage.encrypted,
-        tags: args.tags ?? existing?.tags,
-        description: args.description ?? existing?.description,
-        created: existing?.created || now,
-        updated: now,
-        sync_to_env: true,
-        protected: true,
-        password_hash: passwordHash,
-        protected_value: protectedValue,
-      };
-
-      await this.storage.set(args.name, variable);
-
-      await this.logEvent({
-        timestamp: now,
-        operation: existing ? 'update' : 'add',
-        variable: args.name,
-        source: 'api',
-        success: true,
-        message: `Protected variable ${existing ? 'updated' : 'created'}`,
-      });
-
-      return { success: true, message: `Protected variable '${args.name}' ${existing ? 'updated' : 'created'}` };
+      return this.handleProtect(args, existing, now);
     }
 
-    // If updating an existing protected variable without protect/unprotect, require password
     if (existing?.protected) {
       /* c8 ignore next -- protected variables are always updated via protect/unprotect flow in public API; this guard remains defensive */
       if (!args.variable_password) {

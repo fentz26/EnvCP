@@ -167,6 +167,75 @@ export class RESTAdapter extends BaseAdapter {
     sendJson(res, statusCode, this.createResponse(false, undefined, responseMessage));
   }
 
+  private buildLockoutMessages(
+    remainingSeconds: number,
+    permanentLocked: boolean,
+    kind: 'blocked' | 'invalid',
+  ): { logMessage: string; responseMessage: string } {
+    const logPrefix = kind === 'blocked' ? 'API authentication blocked' : 'Invalid API key';
+    const logMessage = permanentLocked
+      ? `${logPrefix} - permanent lockout`
+      : `${logPrefix} - lockout for ${remainingSeconds}s`;
+    const responseMessage = permanentLocked
+      ? 'Authentication permanently locked - recovery required'
+      : `Too many failed attempts - try again in ${remainingSeconds} seconds`;
+    return { logMessage, responseMessage };
+  }
+
+  private async checkExistingLockout(req: http.IncomingMessage, res: http.ServerResponse): Promise<boolean> {
+    if (!this.lockoutManager) return true;
+    const lockoutStatus = await this.lockoutManager.check();
+    if (lockoutStatus.locked) {
+      const { logMessage, responseMessage } = this.buildLockoutMessages(
+        lockoutStatus.remaining_seconds,
+        lockoutStatus.permanent_locked,
+        'blocked',
+      );
+      await this.rejectLockedRequest(
+        res,
+        logMessage,
+        responseMessage,
+        lockoutStatus.permanent_locked ? 403 : 429,
+        req,
+      );
+      return false;
+    }
+    const ip = req.socket.remoteAddress || 'unknown';
+    const userAgent = req.headers['user-agent'] || 'unknown';
+    this.lockoutManager.setNotificationSource('api', ip, userAgent);
+    return true;
+  }
+
+  private async recordInvalidKey(req: http.IncomingMessage, res: http.ServerResponse): Promise<boolean> {
+    if (!this.lockoutManager) return true;
+    const bfpConfig = this.config.security?.brute_force_protection;
+    /* c8 ignore next 5 -- Zod always provides BFP fields; fallback ?? branches unreachable */
+    const lockoutThreshold = bfpConfig?.max_attempts ?? this.config.session?.lockout_threshold ?? 5;
+    const lockoutBaseSeconds = bfpConfig?.lockout_duration ?? this.config.session?.lockout_base_seconds ?? 60;
+    const progressiveDelay = bfpConfig?.progressive_delay ?? true;
+    const maxDelay = bfpConfig?.max_delay ?? 60;
+    const permanentThreshold = bfpConfig?.permanent_lockout_threshold ?? 0;
+
+    const status = await this.lockoutManager.recordFailure(
+      lockoutThreshold,
+      lockoutBaseSeconds,
+      progressiveDelay,
+      maxDelay,
+      permanentThreshold,
+    );
+
+    if (status.locked) {
+      const { logMessage, responseMessage } = this.buildLockoutMessages(
+        status.remaining_seconds,
+        status.permanent_locked,
+        'invalid',
+      );
+      await this.rejectLockedRequest(res, logMessage, responseMessage, status.permanent_locked ? 403 : 429, req);
+      return false;
+    }
+    return true;
+  }
+
   private async enforceApiKey(
     req: http.IncomingMessage,
     res: http.ServerResponse,
@@ -176,28 +245,8 @@ export class RESTAdapter extends BaseAdapter {
       return true;
     }
 
-    if (this.lockoutManager) {
-      const lockoutStatus = await this.lockoutManager.check();
-      if (lockoutStatus.locked) {
-        const logMessage = lockoutStatus.permanent_locked
-          ? 'API authentication blocked - permanent lockout'
-          : `API authentication blocked - lockout for ${lockoutStatus.remaining_seconds}s`;
-        const responseMessage = lockoutStatus.permanent_locked
-          ? 'Authentication permanently locked - recovery required'
-          : `Too many failed attempts - try again in ${lockoutStatus.remaining_seconds} seconds`;
-        await this.rejectLockedRequest(
-          res,
-          logMessage,
-          responseMessage,
-          lockoutStatus.permanent_locked ? 403 : 429,
-          req,
-        );
-        return false;
-      }
-
-      const ip = req.socket.remoteAddress || 'unknown';
-      const userAgent = req.headers['user-agent'] || 'unknown';
-      this.lockoutManager.setNotificationSource('api', ip, userAgent);
+    if (!(await this.checkExistingLockout(req, res))) {
+      return false;
     }
 
     const providedKey = (req.headers['x-api-key'] || req.headers['authorization']?.replace(/^Bearer\s+/i, '')) as string | undefined;
@@ -205,33 +254,8 @@ export class RESTAdapter extends BaseAdapter {
       return true;
     }
 
-    if (this.lockoutManager) {
-      const bfpConfig = this.config.security?.brute_force_protection;
-      /* c8 ignore next 5 -- Zod always provides BFP fields; fallback ?? branches unreachable */
-      const lockoutThreshold = bfpConfig?.max_attempts ?? this.config.session?.lockout_threshold ?? 5;
-      const lockoutBaseSeconds = bfpConfig?.lockout_duration ?? this.config.session?.lockout_base_seconds ?? 60;
-      const progressiveDelay = bfpConfig?.progressive_delay ?? true;
-      const maxDelay = bfpConfig?.max_delay ?? 60;
-      const permanentThreshold = bfpConfig?.permanent_lockout_threshold ?? 0;
-
-      const status = await this.lockoutManager.recordFailure(
-        lockoutThreshold,
-        lockoutBaseSeconds,
-        progressiveDelay,
-        maxDelay,
-        permanentThreshold,
-      );
-
-      if (status.locked) {
-        const logMessage = status.permanent_locked
-          ? 'Invalid API key - permanent lockout'
-          : `Invalid API key - lockout for ${status.remaining_seconds}s`;
-        const responseMessage = status.permanent_locked
-          ? 'Authentication permanently locked - recovery required'
-          : `Too many failed attempts - try again in ${status.remaining_seconds} seconds`;
-        await this.rejectLockedRequest(res, logMessage, responseMessage, status.permanent_locked ? 403 : 429, req);
-        return false;
-      }
+    if (!(await this.recordInvalidKey(req, res))) {
+      return false;
     }
 
     await this.logs.log({
