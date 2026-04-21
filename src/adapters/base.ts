@@ -1,12 +1,14 @@
 import { StorageManager, LogManager, resolveLogPath } from '../storage/index.js';
-import { EnvCPConfig, Variable, ToolDefinition, LogsRole } from '../types.js';
+import { EnvCPConfig, Variable, ToolDefinition, LogsRole, RateLimitConfig } from '../types.js';
 import { maskValue, hashVariablePassword, verifyVariablePassword, encryptVariableValue, decryptVariableValue, scrubOutput } from '../utils/crypto.js';
 import { canAccess, isBlacklisted, canAIActiveCheck, validateVariableName, matchesPattern } from '../config/manager.js';
 import { SessionManager } from '../utils/session.js';
 import { resolveSessionPath } from '../vault/index.js';
+import { setCorsHeaders, sendJson, validateApiKey, RateLimiter, rateLimitMiddleware } from '../utils/http.js';
 import * as fs from 'node:fs/promises';
 import { pathExists, parseEnv } from '../utils/fs.js';
 import * as path from 'node:path';
+import * as http from 'node:http';
 
 export abstract class BaseAdapter {
   protected storage: StorageManager;
@@ -39,7 +41,9 @@ export abstract class BaseAdapter {
     this.registerTools();
   }
 
-  protected abstract registerTools(): void;
+  protected registerTools(): void {
+    this.registerDefaultTools();
+  }
 
   protected registerDefaultTools(): void {
     const tools: ToolDefinition[] = [
@@ -213,6 +217,29 @@ export abstract class BaseAdapter {
 
   getToolDefinitions(): ToolDefinition[] {
     return Array.from(this.tools.values());
+  }
+
+  protected getStructuredToolDefinitions(): Array<{
+    name: string;
+    description: string;
+    parameters: {
+      type: 'object';
+      properties: Record<string, unknown>;
+      required?: string[];
+    };
+  }> {
+    return this.getToolDefinitions().map(tool => {
+      const parameters = tool.parameters as Record<string, unknown>;
+      return {
+        name: tool.name,
+        description: tool.description,
+        parameters: {
+          type: 'object',
+          properties: (parameters.properties as Record<string, unknown>) || {},
+          required: parameters.required as string[] | undefined,
+        },
+      };
+    });
   }
 
   protected currentClientId = '';
@@ -980,5 +1007,67 @@ export abstract class BaseAdapter {
     });
 
     return result;
+  }
+
+  protected createHttpServer(
+    opts: {
+      port: number;
+      host: string;
+      apiKey?: string;
+      rateLimitConfig?: RateLimitConfig;
+      defaultClientId: string;
+      authHeaderFn: (req: http.IncomingMessage) => string | undefined;
+      onRequest: (req: http.IncomingMessage, res: http.ServerResponse, pathname: string, clientId: string) => Promise<void>;
+      authFailureResponse?: (message: string) => unknown;
+      internalErrorResponse?: (message: string) => unknown;
+      healthEndpoints: string[];
+      mode: string;
+    },
+  ): Promise<http.Server> {
+    const rateLimiter = new RateLimiter(opts.rateLimitConfig?.requests_per_minute ?? 60, 60000);
+    const rateLimitEnabled = opts.rateLimitConfig?.enabled !== false;
+    const whitelist = opts.rateLimitConfig?.whitelist ?? [];
+
+    const server = http.createServer(async (req, res) => {
+      setCorsHeaders(res, undefined, req.headers.origin);
+
+      if (req.method === 'OPTIONS') {
+        res.writeHead(204);
+        res.end();
+        return;
+      }
+
+      if (rateLimitEnabled && !rateLimitMiddleware(rateLimiter, req, res, whitelist)) {
+        return;
+      }
+
+      if (opts.apiKey) {
+        const providedKey = opts.authHeaderFn(req);
+        if (!validateApiKey(providedKey, opts.apiKey)) {
+          await this.logs.log({ timestamp: new Date().toISOString(), operation: 'auth_failure', variable: '', source: 'api', success: false, message: `Invalid API key from ${req.socket.remoteAddress ?? 'unknown'}` });
+          sendJson(res, 401, opts.authFailureResponse?.('Invalid API key') ?? { error: { code: 401, message: 'Invalid API key', status: 'UNAUTHENTICATED' } });
+          return;
+        }
+      }
+
+      const parsedUrl = new URL(req.url || '/', `http://${req.headers.host ?? 'localhost'}`);
+      const pathname = parsedUrl.pathname;
+
+      const clientIdHeader = req.headers['x-envcp-client-id'];
+      const clientId = (Array.isArray(clientIdHeader) ? clientIdHeader[0] : clientIdHeader) || opts.defaultClientId;
+
+      try {
+        await opts.onRequest(req, res, pathname, clientId);
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error);
+        sendJson(res, 500, opts.internalErrorResponse?.(message) ?? { error: { code: 500, message, status: 'INTERNAL' } });
+      }
+    });
+
+    return new Promise((resolve) => {
+      server.listen(opts.port, opts.host, () => {
+        resolve(server);
+      });
+    });
   }
 }

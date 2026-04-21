@@ -107,6 +107,16 @@ function deepMerge(target: Record<string, unknown>, source: Record<string, unkno
   return result;
 }
 
+async function loadYamlObjectIfExists(filePath: string): Promise<Record<string, unknown> | null> {
+  if (!await pathExists(filePath)) {
+    return null;
+  }
+
+  const content = await fs.readFile(filePath, 'utf8');
+  const parsed = yaml.load(content, { schema: yaml.JSON_SCHEMA });
+  return parsed && typeof parsed === 'object' ? parsed as Record<string, unknown> : null;
+}
+
 export async function loadConfig(projectPath: string): Promise<EnvCPConfig> {
   /* c8 ignore next -- at least HOME or USERPROFILE is always set in supported environments */
   const home = process.env.HOME || process.env.USERPROFILE || '';
@@ -129,21 +139,15 @@ export async function loadConfig(projectPath: string): Promise<EnvCPConfig> {
   let merged: Record<string, unknown> = DEFAULT_CONFIG as Record<string, unknown>;
 
   // Layer 1: global config (~/.envcp/config.yaml)
-  if (await pathExists(globalConfigPath)) {
-    const content = await fs.readFile(globalConfigPath, 'utf8');
-    const parsed = yaml.load(content, { schema: yaml.JSON_SCHEMA }) as Record<string, unknown>;
-    if (parsed && typeof parsed === 'object') {
-      merged = deepMerge(merged, parsed);
-    }
+  const globalConfig = await loadYamlObjectIfExists(globalConfigPath);
+  if (globalConfig) {
+    merged = deepMerge(merged, globalConfig);
   }
 
   // Layer 2: project config (envcp.yaml) — overrides global
-  if (await pathExists(projectConfigPath)) {
-    const content = await fs.readFile(projectConfigPath, 'utf8');
-    const parsed = yaml.load(content, { schema: yaml.JSON_SCHEMA }) as Record<string, unknown>;
-    if (parsed && typeof parsed === 'object') {
-      merged = deepMerge(merged, parsed);
-    }
+  const projectConfig = await loadYamlObjectIfExists(projectConfigPath);
+  if (projectConfig) {
+    merged = deepMerge(merged, projectConfig);
   }
 
   return EnvCPConfigSchema.parse(merged);

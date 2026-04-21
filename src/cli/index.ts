@@ -47,6 +47,45 @@ async function resolveCliContext(vaultOverride?: 'global' | 'project'): Promise<
   return { projectPath, config };
 }
 
+function buildSecuritySettings(securityChoice: 'none' | 'recoverable' | 'hard-lock'): {
+  encryption: EnvCPConfig['encryption'];
+  storageEncrypted: boolean;
+  security: EnvCPConfig['security'];
+} {
+  const bruteForceProtection = {
+    enabled: true,
+    max_attempts: 5,
+    lockout_duration: 300,
+    progressive_delay: true,
+    max_delay: 60,
+    permanent_lockout_threshold: 50,
+    permanent_lockout_action: 'require_recovery_key' as const,
+    notifications: {},
+  };
+
+  if (securityChoice === 'none') {
+    return {
+      encryption: { enabled: false },
+      storageEncrypted: false,
+      security: {
+        mode: 'recoverable',
+        recovery_file: '.envcp/.recovery',
+        brute_force_protection: bruteForceProtection,
+      },
+    };
+  }
+
+  return {
+    encryption: { enabled: true },
+    storageEncrypted: true,
+    security: {
+      mode: securityChoice,
+      recovery_file: '.envcp/.recovery',
+      brute_force_protection: bruteForceProtection,
+    },
+  };
+}
+
 async function withSession(fn: (storage: StorageManager, password: string, config: EnvCPConfig, projectPath: string, logManager: LogManager) => Promise<void>, vaultOverride?: 'global' | 'project'): Promise<void> {
   const { projectPath, config } = await resolveCliContext(vaultOverride);
 
@@ -230,42 +269,10 @@ program
       ) as 'none' | 'recoverable' | 'hard-lock';
     }
 
-// Apply security choice to config
-    if (securityChoice === 'none') {
-      config.encryption = { enabled: false };
-      config.storage.encrypted = false;
-      config.security = { 
-        mode: 'recoverable', 
-        recovery_file: '.envcp/.recovery',
-        brute_force_protection: {
-          enabled: true,
-          max_attempts: 5,
-          lockout_duration: 300,
-          progressive_delay: true,
-          max_delay: 60,
-          permanent_lockout_threshold: 50,
-          permanent_lockout_action: 'require_recovery_key',
-          notifications: {}
-        }
-      };
-    } else {
-      config.encryption = { enabled: true };
-      config.storage.encrypted = true;
-          config.security = {
-            mode: securityChoice,
-            recovery_file: '.envcp/.recovery',
-            brute_force_protection: {
-              enabled: true,
-              max_attempts: 5,
-              lockout_duration: 300,
-              progressive_delay: true,
-              max_delay: 60,
-              permanent_lockout_threshold: 50,
-              permanent_lockout_action: 'require_recovery_key',
-              notifications: {},
-            }
-          };
-        }
+    const securitySettings = buildSecuritySettings(securityChoice);
+    config.encryption = securitySettings.encryption;
+    config.storage.encrypted = securitySettings.storageEncrypted;
+    config.security = securitySettings.security;
 
 // For encrypted modes: get password now
   let pwd = '';
