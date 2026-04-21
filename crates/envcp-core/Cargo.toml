@@ -1,6 +1,6 @@
 [package]
 name = "envcp-core"
-version = "1.2.0"
+version = "1.2.0-exp.6ca9c2b"
 edition = "2021"
 description = "Core crypto and storage library for EnvCP"
 license-file = "../../LICENSE"

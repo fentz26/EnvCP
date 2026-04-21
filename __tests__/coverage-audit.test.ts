@@ -619,14 +619,44 @@ describe('npm ci vs npm install in CI (M5)', () => {
 });
 
 describe('version consistency (L3)', () => {
-  it('VERSION file matches package.json version', async () => {
+  it('VERSION file matches all release metadata files', async () => {
     const versionPath = path.join(projectRoot, 'VERSION');
-    const pkgPath = path.join(projectRoot, 'package.json');
-
     const version = (await fs.readFile(versionPath, 'utf8')).trim();
-    const pkg = JSON.parse(await fs.readFile(pkgPath, 'utf8'));
+    const pkg = JSON.parse(await fs.readFile(path.join(projectRoot, 'package.json'), 'utf8'));
+    const lockfile = JSON.parse(await fs.readFile(path.join(projectRoot, 'package-lock.json'), 'utf8'));
+    const plugin = JSON.parse(await fs.readFile(path.join(projectRoot, 'plugins/envcp/.claude-plugin/plugin.json'), 'utf8'));
+    const marketplace = JSON.parse(await fs.readFile(path.join(projectRoot, '.claude-plugin/marketplace.json'), 'utf8'));
+    const nodeBindingPkg = JSON.parse(await fs.readFile(path.join(projectRoot, 'crates/envcp-node/package.json'), 'utf8'));
+    const serverJson = JSON.parse(await fs.readFile(path.join(projectRoot, 'server.json'), 'utf8'));
+    const coreCargo = await fs.readFile(path.join(projectRoot, 'crates/envcp-core/Cargo.toml'), 'utf8');
+    const nodeCargo = await fs.readFile(path.join(projectRoot, 'crates/envcp-node/Cargo.toml'), 'utf8');
+    const pythonCargo = await fs.readFile(path.join(projectRoot, 'crates/envcp-python/Cargo.toml'), 'utf8');
+    const pythonBindingPyproject = await fs.readFile(path.join(projectRoot, 'crates/envcp-python/pyproject.toml'), 'utf8');
+    const pythonPyproject = await fs.readFile(path.join(projectRoot, 'python/pyproject.toml'), 'utf8');
+    const pythonInit = await fs.readFile(path.join(projectRoot, 'python/envcp/__init__.py'), 'utf8');
+    const wrangler = await fs.readFile(path.join(projectRoot, 'cloudflare/wrangler.toml'), 'utf8');
+    const citation = await fs.readFile(path.join(projectRoot, 'CITATION.cff'), 'utf8');
 
     expect(version).toBe(pkg.version);
+    expect(version).toBe(lockfile.version);
+    expect(version).toBe(lockfile.packages[''].version);
+    expect(version).toBe(plugin.version);
+    expect(version).toBe(marketplace.version);
+    expect(marketplace.plugins.map((entry: { version: string }) => entry.version)).toEqual(
+      expect.arrayContaining([version]),
+    );
+    expect(marketplace.plugins.every((entry: { version: string }) => entry.version === version)).toBe(true);
+    expect(version).toBe(nodeBindingPkg.version);
+    expect(version).toBe(serverJson.version);
+    expect(serverJson.packages.every((entry: { version: string }) => entry.version === version)).toBe(true);
+    expect(coreCargo).toContain(`version = "${version}"`);
+    expect(nodeCargo).toContain(`version = "${version}"`);
+    expect(pythonCargo).toContain(`version = "${version}"`);
+    expect(pythonBindingPyproject).toContain(`version = "${version}"`);
+    expect(pythonPyproject).toContain(`version = "${version}"`);
+    expect(pythonInit).toContain(`__version__ = "${version}"`);
+    expect(wrangler).toContain(`VERSION = "${version}"`);
+    expect(citation).toContain(`version: "${version}"`);
   });
 });
 

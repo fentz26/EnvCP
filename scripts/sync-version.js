@@ -2,15 +2,8 @@
 /**
  * sync-version.js
  *
- * Reads VERSION from the repo root and propagates it to:
- *   - package.json
- *   - plugins/envcp/.claude-plugin/plugin.json
- *   - .claude-plugin/marketplace.json
- *   - crates/envcp-core/Cargo.toml
- *   - crates/envcp-node/Cargo.toml
- *   - crates/envcp-node/package.json
- *   - crates/envcp-python/Cargo.toml
- *   - crates/envcp-python/pyproject.toml
+ * Reads VERSION from the repo root and propagates it to all release metadata
+ * files that should stay aligned with the repo's current release line.
  *
  * Usage:
  *   node scripts/sync-version.js
@@ -31,16 +24,39 @@ if (!/^\d+\.\d+\.\d+/.test(version)) {
   process.exit(1);
 }
 
+function rel(filePath) {
+  return filePath.replace(root + '/', '');
+}
+
 function syncJson(filePath, updater) {
   const data = JSON.parse(readFileSync(filePath, 'utf8'));
   updater(data);
   writeFileSync(filePath, JSON.stringify(data, null, 2) + '\n');
-  console.log(`✓ ${filePath.replace(root + '/', '')} → ${version}`);
+  console.log(`✓ ${rel(filePath)} → ${version}`);
+}
+
+function syncTextPattern(relPath, pattern, replacement, description = relPath) {
+  const filePath = join(root, relPath);
+  const content = readFileSync(filePath, 'utf8');
+  const updated = content.replace(pattern, replacement);
+  if (updated === content) {
+    throw new Error(`Could not update ${description}`);
+  }
+  writeFileSync(filePath, updated);
+  console.log(`✓ ${description} → ${version}`);
 }
 
 // package.json
 syncJson(join(root, 'package.json'), (pkg) => {
   pkg.version = version;
+});
+
+// package-lock.json
+syncJson(join(root, 'package-lock.json'), (lockfile) => {
+  lockfile.version = version;
+  if (lockfile.packages && lockfile.packages['']) {
+    lockfile.packages[''].version = version;
+  }
 });
 
 // plugins/envcp/.claude-plugin/plugin.json
@@ -53,6 +69,19 @@ syncJson(join(root, '.claude-plugin/marketplace.json'), (mkt) => {
   mkt.version = version;
   if (Array.isArray(mkt.plugins)) {
     mkt.plugins = mkt.plugins.map((p) => ({ ...p, version }));
+  }
+});
+
+// crates/envcp-node/package.json
+syncJson(join(root, 'crates/envcp-node/package.json'), (pkg) => {
+  pkg.version = version;
+});
+
+// server.json
+syncJson(join(root, 'server.json'), (server) => {
+  server.version = version;
+  if (Array.isArray(server.packages)) {
+    server.packages = server.packages.map((pkg) => ({ ...pkg, version }));
   }
 });
 
@@ -69,20 +98,33 @@ syncCargoToml('crates/envcp-core/Cargo.toml');
 syncCargoToml('crates/envcp-node/Cargo.toml');
 syncCargoToml('crates/envcp-python/Cargo.toml');
 
-// crates/envcp-node/package.json
-syncJson(join(root, 'crates/envcp-node/package.json'), (pkg) => {
-  pkg.version = version;
-});
-
-// crates/envcp-python/pyproject.toml — sync [project].version
-const pyprojectPath = join(root, 'crates/envcp-python/pyproject.toml');
-const pyprojectContent = readFileSync(pyprojectPath, 'utf8');
-const updatedPyproject = pyprojectContent.replace(
-  /^version = ".*"/m,
+// Python metadata
+syncTextPattern(
+  'crates/envcp-python/pyproject.toml',
+  /^version = ".*"$/m,
   `version = "${version}"`,
 );
-writeFileSync(pyprojectPath, updatedPyproject);
-console.log(`✓ crates/envcp-python/pyproject.toml → ${version}`);
+syncTextPattern(
+  'python/pyproject.toml',
+  /^version = ".*"$/m,
+  `version = "${version}"`,
+);
+syncTextPattern(
+  'python/envcp/__init__.py',
+  /^__version__ = ".*"$/m,
+  `__version__ = "${version}"`,
+);
+
+// Other release metadata
+syncTextPattern(
+  'cloudflare/wrangler.toml',
+  /^VERSION = ".*"$/m,
+  `VERSION = "${version}"`,
+);
+syncTextPattern(
+  'CITATION.cff',
+  /^version: ".*"$/m,
+  `version: "${version}"`,
+);
 
 console.log(`\nVersion synced: ${version}`);
-console.log('Run `npm install` to update package-lock.json.');

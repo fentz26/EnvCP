@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "envcp-core"
-version = "1.2.0"
+version = "1.2.0-exp.6ca9c2b"
 description = "Native Python binding for envcp-core (Rust)"
 requires-python = ">=3.9"
 license = { file = "../../LICENSE" }

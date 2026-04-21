@@ -1,7 +1,7 @@
 {
   "name": "envcp",
   "description": "Secure environment variable management for AI agents — encrypted vault with MCP tools for read, write, delete, and run operations.",
-  "version": "1.2.0",
+  "version": "1.2.0-exp.6ca9c2b",
   "author": {
     "name": "fentz26",
     "url": "https://github.com/fentz26/EnvCP"

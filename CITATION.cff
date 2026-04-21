@@ -2,7 +2,7 @@ cff-version: 1.2.0
 message: "If you use EnvCP, please cite it using the metadata below."
 type: software
 title: "EnvCP"
-version: "1.2.0"
+version: "1.2.0-exp.6ca9c2b"
 abstract: "Secure environment variable management for AI-assisted coding with local, encrypted, reference-only secret access."
 authors:
   - family-names: "fentz26"

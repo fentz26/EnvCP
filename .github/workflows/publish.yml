@@ -68,10 +68,11 @@ jobs:
 
       - run: npm run build
 
-      - name: Sync version with git tag
+      - name: Sync VERSION and release metadata with git tag
         run: |
           VERSION="${GITHUB_REF#refs/tags/v}"
-          npm version "$VERSION" --no-git-tag-version
+          printf '%s\n' "$VERSION" > VERSION
+          node scripts/sync-version.js
 
       - run: npm publish --access=public --tag ${{ needs.determine-channel.outputs.npm_tag }} --provenance
         env:
@@ -82,10 +83,11 @@ jobs:
           node-version: '20'
           registry-url: 'https://npm.pkg.github.com'
 
-      - name: Sync version with git tag (GitHub Packages)
+      - name: Sync VERSION and release metadata with git tag (GitHub Packages)
         run: |
           VERSION="${GITHUB_REF#refs/tags/v}"
-          npm version "$VERSION" --no-git-tag-version
+          printf '%s\n' "$VERSION" > VERSION
+          node scripts/sync-version.js
 
       - run: npm publish --access=public --tag ${{ needs.determine-channel.outputs.npm_tag }} --provenance
         env:
@@ -97,10 +99,15 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
-      - name: Sync Python version with tag
+      - uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6
+        with:
+          node-version: '20'
+
+      - name: Sync VERSION and release metadata with git tag
         run: |
           VERSION="${GITHUB_REF#refs/tags/v}"
-          sed -i "s/^version = \".*\"/version = \"$VERSION\"/" python/pyproject.toml
+          printf '%s\n' "$VERSION" > VERSION
+          node scripts/sync-version.js
 
       - name: Set up Python
         uses: actions/setup-python@a309ff8b58ec0e2a45f0f869d46889d02405 # v6.2.0
@@ -137,6 +144,12 @@ jobs:
       - uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6
         with:
           node-version: '20'
+
+      - name: Sync VERSION and release metadata with git tag
+        run: |
+          VERSION="${GITHUB_REF#refs/tags/v}"
+          printf '%s\n' "$VERSION" > VERSION
+          node scripts/sync-version.js
 
       - run: npm ci
 
@@ -339,6 +352,10 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
+      - uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6
+        with:
+          node-version: '20'
+
       - name: Install mcp-publisher
         env:
           MCP_PUBLISHER_VERSION: v1.2.0
@@ -356,10 +373,11 @@ jobs:
           sudo mv mcp-publisher /usr/local/bin/
           rm -f mcp-publisher.tgz
 
-      - name: Update server.json version
+      - name: Sync VERSION and release metadata with git tag
         run: |
           VERSION="${GITHUB_REF#refs/tags/v}"
-          sed -i "s/\"version\": \".*\"/\"version\": \"$VERSION\"/" server.json
+          printf '%s\n' "$VERSION" > VERSION
+          node scripts/sync-version.js
 
       - name: Login to MCP Registry
         env:
