@@ -260,7 +260,7 @@ export function scrubOutput(output: string, secrets: string[], extraPatterns: st
     if (secret.length < 4) continue; // too short — would redact noise
     const escaped = secret.replaceAll(/[.*+?^${}()|[\]\\]/g, '\\$&');
     // eslint-disable-next-line security/detect-non-literal-regexp -- input is fully escaped above
-    result = result.replace(new RegExp(escaped, 'g'), '[REDACTED]');
+    result = result.replaceAll(new RegExp(escaped, 'g'), '[REDACTED]');
   }
 
   // Apply built-in patterns
@@ -273,7 +273,7 @@ export function scrubOutput(output: string, secrets: string[], extraPatterns: st
   for (const patternStr of extraPatterns) {
     try {
       // eslint-disable-next-line security/detect-non-literal-regexp -- user-supplied config pattern; wrapped in try/catch to handle invalid regex
-      result = result.replace(new RegExp(patternStr, 'g'), '[REDACTED]');
+      result = result.replaceAll(new RegExp(patternStr, 'g'), '[REDACTED]');
     } catch {
       // Ignore invalid regex patterns from config
     }

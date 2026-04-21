@@ -1334,7 +1334,7 @@ program
   const sessionPath = resolveSessionPath(projectPath, config);
 
   const mode = options.mode as string;
-    const port = parseInt(options.port, 10);
+    const port = Number.parseInt(options.port, 10);
     const host = options.host;
     const apiKey = options.apiKey;
 
@@ -1857,7 +1857,7 @@ program
     console.log(chalk.gray('\n  [0] Cancel\n'));
 
     const answer = await promptInput('Pick a version (0 to cancel):');
-    const picked = parseInt(answer.trim(), 10);
+    const picked = Number.parseInt(answer.trim(), 10);
     if (!picked || picked < 1 || picked > releases.length) {
       console.log(chalk.gray('Cancelled.'));
       return;
@@ -2188,7 +2188,7 @@ program
   .option('--source <source>', 'Filter by source (cli, mcp, api)')
   .option('--success', 'Show only successful operations')
   .option('--failure', 'Show only failed operations')
-  .option('--tail <n>', 'Show last N entries', parseInt)
+  .option('--tail <n>', 'Show last N entries', (value) => Number.parseInt(value, 10))
   .option('--dates', 'List all available log dates')
   .option('--verify', 'Verify HMAC integrity of log entries')
   .action(async (options) => {
