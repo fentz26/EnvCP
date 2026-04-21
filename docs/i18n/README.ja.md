@@ -1,7 +1,7 @@
 # EnvCP
 
 <p align="center">
-  <a href="https://envcp.org/docs"><img src="../../assets/logo-ascii.png" alt="EnvCP" width="100%"></a>
+  <a href="https://envcp.org/docs"><img src="../../assets/logo-ascii.png" alt="EnvCP" width="100%" /></a>
 </p>
 
 <p align="center">
@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  AIアシストコーディングのための安全な環境変数管理。<br>
+  AIアシストコーディングのための安全な環境変数管理。<br />
   AIが秘密を名前で参照できるMCPサーバー — 値を見ることなく。
 </p>
 

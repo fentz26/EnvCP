@@ -1,7 +1,7 @@
 # EnvCP
 
 <p align="center">
-  <a href="https://envcp.org/docs"><img src="../../assets/logo-ascii.png" alt="EnvCP" width="100%"></a>
+  <a href="https://envcp.org/docs"><img src="../../assets/logo-ascii.png" alt="EnvCP" width="100%" /></a>
 </p>
 
 <p align="center">
@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  AI 보조 코딩을 위한 안전한 환경 변수 관리.<br>
+  AI 보조 코딩을 위한 안전한 환경 변수 관리.<br />
   AI가 시크릿을 값이 아닌 이름으로 참조하게 하는 MCP 서버.
 </p>
 

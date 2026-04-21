@@ -1,7 +1,7 @@
 # EnvCP
 
 <p align="center">
-  <a href="https://envcp.org/docs"><img src="../../assets/logo-ascii.png" alt="EnvCP" width="100%"></a>
+  <a href="https://envcp.org/docs"><img src="../../assets/logo-ascii.png" alt="EnvCP" width="100%" /></a>
 </p>
 
 <p align="center">
@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  面向 AI 辅助编程的安全环境变量管理。<br>
+  面向 AI 辅助编程的安全环境变量管理。<br />
   MCP 服务器，让 AI 通过名称引用您的密钥 — 而非实际值。
 </p>
 

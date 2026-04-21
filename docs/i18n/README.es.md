@@ -1,7 +1,7 @@
 # EnvCP
 
 <p align="center">
-  <a href="https://envcp.org/docs"><img src="../../assets/logo-ascii.png" alt="EnvCP" width="100%"></a>
+  <a href="https://envcp.org/docs"><img src="../../assets/logo-ascii.png" alt="EnvCP" width="100%" /></a>
 </p>
 
 <p align="center">
@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  Gestión segura de variables de entorno para el desarrollo asistido por IA.<br>
+  Gestión segura de variables de entorno para el desarrollo asistido por IA.<br />
   Servidor MCP que permite a la IA referenciar tus secretos por nombre — nunca por valor.
 </p>
 
