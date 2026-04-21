@@ -85,8 +85,8 @@ envcp remove <이름>          # 변수 삭제
 envcp vault --global init|add|list|get|delete
 envcp vault --project init|add|list|get|delete
 envcp vault --name <이름> init|add|list|get|delete
-envcp vault-switch <이름>
-envcp vault-list
+envcp vault use <이름>
+envcp vault contexts
 ```
 
 ### 세션 관리
@@ -112,7 +112,7 @@ envcp serve [옵션]
   --port          HTTP 포트 (기본값: 3456)
   --host          HTTP 호스트 (기본값: 127.0.0.1)
   --api-key, -k   인증용 API 키
-  --password, -p  암호화 비밀번호
+  --global        홈 디렉터리의 전역 vault 사용
 ```
 
 ---

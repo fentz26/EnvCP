@@ -116,7 +116,7 @@ vault:
 - **default**: Default vault context — `project` (per-project store) or `global` (shared across projects). Default: `project`
 - **global_path**: Path to the global vault file. Default: `.envcp/store.enc`
 
-See [vault-switch](/cli-reference/commands#vault-switch) to change the active vault at runtime.
+See [`vault use`](/cli-reference/commands#vault-use) to change the active vault at runtime.
 
 ---
 
@@ -242,10 +242,44 @@ access:
 | `allow_ai_write` | `false` | AI can create/update variables |
 | `allow_ai_delete` | `false` | AI can delete variables |
 | `allow_ai_export` | `false` | AI can export variables |
-| `allow_ai_execute` | `false` | AI can run commands via `envcp run` |
+| `allow_ai_execute` | `false` | AI tools may execute commands when an adapter/server exposes that capability |
 | `allow_ai_active_check` | `false` | AI can proactively list/check variables without being asked |
 
 When `allow_ai_active_check` is `false`, the AI can only access variables when you explicitly ask it to.
+
+#### variable_rules
+
+- **Type**: object keyed by variable name — Default: `{}`
+- Override access for specific variables. Each variable may define `allow_ai_read`, `allow_ai_write`, `allow_ai_delete`, `allow_ai_export`, `allow_ai_execute`, `require_confirmation`, and an optional `active_window`.
+
+```yaml
+access:
+  variable_rules:
+    OPENAI_API_KEY:
+      allow_ai_read: true
+      allow_ai_execute: false
+      require_confirmation: true
+      active_window:
+        start: "09:00"
+        end: "18:00"
+```
+
+#### client_rules
+
+- **Type**: object keyed by client id — Default: `{}`
+- Override default access or per-variable rules for one client such as `mcp`, `openai`, `gemini`, `api`, or a custom client id.
+
+```yaml
+access:
+  client_rules:
+    openai:
+      allow_ai_active_check: true
+      allow_ai_read: true
+      variable_rules:
+        OPENAI_API_KEY:
+          allow_ai_read: true
+          allow_ai_execute: false
+```
 
 #### require_user_reference
 
@@ -275,7 +309,7 @@ When `allow_ai_active_check` is `false`, the AI can only access variables when y
 #### allowed_commands
 
 - **Type**: array of strings — Default: `[]` (all commands)
-- Restrict which shell commands AI can run via `envcp run`. Empty list = no restriction.
+- Restrict which shell commands AI tools can run through EnvCP-managed adapters. Empty list = no restriction.
 
 ```yaml
 allowed_commands:
@@ -487,8 +521,9 @@ envcp.test.yaml
 Use a specific config:
 
 ```bash
-envcp --config envcp.prod.yaml serve
-envcp --config envcp.dev.yaml list
+# Open the matching project/config directory first
+cd /path/to/prod-project && envcp serve
+cd /path/to/dev-project && envcp list
 ```
 
 ---

@@ -54,30 +54,27 @@ describe('envcp init — re-init guard (issue #202)', () => {
     await fs.access(path.join(tmpDir, 'envcp.yaml'));
   });
 
-  it('second init without --force aborts with status message', async () => {
+  it('second init keeps existing setup and points user to setup', async () => {
     const first = execCLI(['init', '--no-encrypt', '--skip-env', '--skip-mcp'], { cwd: tmpDir });
     expect(first.status).toBe(0);
 
     const configBefore = await fs.readFile(path.join(tmpDir, 'envcp.yaml'), 'utf-8');
 
     const second = execCLI(['init', '--no-encrypt', '--skip-env', '--skip-mcp'], { cwd: tmpDir });
-    expect(second.status).not.toBe(0);
-    expect(second.stdout + second.stderr).toMatch(/already initialized/i);
-    expect(second.stdout + second.stderr).toMatch(/--force/);
+    expect(second.status).toBe(0);
+    expect(second.stdout + second.stderr).toMatch(/already set up/i);
+    expect(second.stdout + second.stderr).toMatch(/envcp setup/i);
 
     const configAfter = await fs.readFile(path.join(tmpDir, 'envcp.yaml'), 'utf-8');
     expect(configAfter).toBe(configBefore);
   });
 
-  it('--force allows re-init and overwrites config', async () => {
+  it('setup opens project configuration after init', async () => {
     const first = execCLI(['init', '--no-encrypt', '--skip-env', '--skip-mcp', '-p', 'original'], { cwd: tmpDir });
     expect(first.status).toBe(0);
 
-    const forced = execCLI(['init', '--no-encrypt', '--skip-env', '--skip-mcp', '-p', 'renamed', '--force'], { cwd: tmpDir });
-    expect(forced.status).toBe(0);
-    expect(forced.stdout).toMatch(/initialized/i);
-
-    const config = await fs.readFile(path.join(tmpDir, 'envcp.yaml'), 'utf-8');
-    expect(config).toContain('renamed');
+    const setup = execCLI(['setup'], { cwd: tmpDir });
+    expect(setup.status).toBe(0);
+    expect(setup.stdout + setup.stderr).toMatch(/EnvCP config/i);
   });
 });

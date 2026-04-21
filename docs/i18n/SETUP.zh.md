@@ -85,8 +85,8 @@ envcp remove <名称>          # 删除变量
 envcp vault --global init|add|list|get|delete
 envcp vault --project init|add|list|get|delete
 envcp vault --name <名称> init|add|list|get|delete
-envcp vault-switch <名称>
-envcp vault-list
+envcp vault use <名称>
+envcp vault contexts
 ```
 
 ### 会话管理
@@ -112,7 +112,7 @@ envcp serve [选项]
   --port          HTTP 端口（默认：3456）
   --host          HTTP 主机（默认：127.0.0.1）
   --api-key, -k   认证 API 密钥
-  --password, -p  加密密码
+  --global        使用 home 目录中的全局 vault
 ```
 
 ---

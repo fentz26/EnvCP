@@ -144,8 +144,11 @@ envcp unlock
 
 **Options:**
 ```bash
-# Unlock with password argument (not recommended - exposes in shell history)
-envcp unlock --password mypass
+# Unlock interactively
+envcp unlock
+
+# Save the password to the OS keychain for future sessions
+envcp unlock --save-to-keychain
 ```
 
 **Use Cases:**
@@ -396,14 +399,9 @@ Add to `.gitignore`:
 For automated scripts, disable sessions:
 
 ```bash
-# Always prompt for password (more secure for scripts)
-envcp --no-session get API_KEY
-```
-
-Or provide password via environment variable:
-
-```bash
-ENVCP_PASSWORD=mypass envcp get API_KEY
+# Prefer unlocking once, then using the normal commands
+envcp unlock
+envcp get API_KEY
 ```
 
 ### 6. Server Mode Sessions
@@ -411,8 +409,9 @@ ENVCP_PASSWORD=mypass envcp get API_KEY
 When running as a server, sessions work differently:
 
 ```bash
-# Provide password at startup
-envcp serve --mode auto --password mypass
+# Unlock first, then start the server
+envcp unlock
+envcp serve --mode auto
 
 # Session persists for server lifetime
 # No auto-expire (server controls access)
@@ -585,15 +584,14 @@ await session.destroy();
 
 ### Session in CI/CD
 
-For CI/CD, disable sessions and use password directly:
+For CI/CD, prefer passwordless mode or pre-created session state:
 
 ```yaml
 # .github/workflows/deploy.yml
 - name: Run with EnvCP
-  env:
-    ENVCP_PASSWORD: ${{ secrets.ENVCP_PASSWORD }}
   run: |
-    envcp --no-session run deploy -- npm run deploy
+    envcp init --no-encrypt --skip-env --skip-mcp
+    envcp export --format env > .env
 ```
 
 Or use config:

@@ -13,7 +13,7 @@ envcp [command] [options]
 - `--help, -h` - Show help
 - `--version, -v` - Show version number
 - `--config <path>` - Use custom config file (default: `envcp.yaml`)
-- `--password, -p <password>` - Provide password inline (use carefully)
+- There is no global password flag. Commands prompt when needed or use an active session.
 
 ## Commands
 
@@ -27,8 +27,13 @@ envcp init [options]
 
 **Options**:
 - `--project <name>` - Project name (default: directory name)
-- `--password, -p <password>` - Set password inline
-- `--force` - Overwrite existing configuration
+- `--no-encrypt` - Skip encryption and use passwordless mode
+- `--skip-env` - Skip optional `.env` import
+- `--skip-mcp` - Skip MCP auto-registration
+- `--auth-method <method>` - `password`, `keychain`, `hsm`, or `multi`
+- `--hsm-type <type>` - `yubikey`, `gpg`, or `pkcs11`
+- `--key-id <id>` - GPG key ID or PKCS#11 label for HSM auth
+- `--pkcs11-lib <path>` - Path to PKCS#11 shared library
 
 **Examples**:
 
@@ -39,11 +44,11 @@ envcp init
 # With project name
 envcp init --project my-awesome-app
 
-# With password (careful: visible in shell history)
-envcp init --password mysecret
+# Passwordless mode
+envcp init --no-encrypt
 
-# Force re-initialization
-envcp init --force
+# HSM-backed setup
+envcp init --auth-method hsm --hsm-type yubikey
 ```
 
 **What it creates**:
@@ -63,9 +68,12 @@ envcp add <name> [options]
 ```
 
 **Options**:
-- `--value, -v <value>` - Variable value (prompts if not provided)
+- `--value, -v <value>` - Variable value (visible in shell history; prefer the secure options below)
+- `--from-env <envVar>` - Read the value from an existing environment variable
+- `--from-file <path>` - Read the value from a file
+- `--stdin` - Read the value from piped stdin
+- `--tags, -t <tags>` - Tags (comma-separated)
 - `--description, -d <desc>` - Variable description
-- `--password, -p <password>` - Unlock password
 
 **Examples**:
 
@@ -79,14 +87,15 @@ envcp add API_KEY --value "sk-1234567890"
 # With description
 envcp add API_KEY --value "sk-123" --description "OpenAI API key for dev"
 
-# With password
-envcp add API_KEY --value "sk-123" --password mysecret
+# With safer input sources
+envcp add API_KEY --from-env SRC_API_KEY
+printf '%s' "$API_KEY" | envcp add API_KEY --stdin
 ```
 
 **Notes**:
 - Overwrites existing variables with the same name
 - Value is encrypted immediately
-- Session must be unlocked (or provide password)
+- If encryption is enabled, unlock first with `envcp unlock`
 
 ---
 
@@ -99,9 +108,7 @@ envcp list [options]
 ```
 
 **Options**:
-- `--show-values` - Show variable values (not just names)
-- `--format <format>` - Output format: `table`, `json`, `yaml` (default: `table`)
-- `--password, -p <password>` - Unlock password
+- `--show-values` - Show actual values instead of masked values
 
 **Examples**:
 
@@ -112,27 +119,17 @@ envcp list
 # Show values too
 envcp list --show-values
 
-# JSON format
-envcp list --format json
-
-# JSON with values
-envcp list --show-values --format json
-
-# YAML format
-envcp list --show-values --format yaml
 ```
 
 **Output**:
 
 ```bash
 $ envcp list
-╭────────────────┬──────────────────────────╮
-│ Name           │ Description              │
-├────────────────┼──────────────────────────┤
-│ API_KEY        │ OpenAI API key           │
-│ DATABASE_URL   │ Postgres connection      │
-│ STRIPE_KEY     │ Stripe secret key        │
-╰────────────────┴──────────────────────────╯
+Variables (3):
+
+  API_KEY = ********
+  DATABASE_URL = ********
+  STRIPE_KEY = ********
 ```
 
 ---
@@ -146,9 +143,7 @@ envcp get <name> [options]
 ```
 
 **Options**:
-- `--mask` - Mask the value (show only first/last chars)
-- `--format <format>` - Output format: `value`, `json`, `yaml` (default: `value`)
-- `--password, -p <password>` - Unlock password
+- `--show-value` - Reveal the unmasked value
 
 **Examples**:
 
@@ -156,24 +151,20 @@ envcp get <name> [options]
 # Get value
 envcp get API_KEY
 
-# Masked value
-envcp get API_KEY --mask
-
-# JSON format
-envcp get API_KEY --format json
-
-# Just the value (for scripts)
-API_KEY=$(envcp get API_KEY)
+# Reveal the raw value
+envcp get API_KEY --show-value
 ```
 
 **Output**:
 
 ```bash
 $ envcp get API_KEY
-sk-1234567890abcdef
+API_KEY
+  Value: ********
 
-$ envcp get API_KEY --mask
-sk-123...def (masked)
+$ envcp get API_KEY --show-value
+API_KEY
+  Value: sk-1234567890abcdef
 ```
 
 ---
@@ -183,14 +174,8 @@ sk-123...def (masked)
 Remove an environment variable.
 
 ```bash
-envcp remove <name> [options]
+envcp remove <name>
 ```
-
-**Aliases**: `delete`, `rm`
-
-**Options**:
-- `--force, -f` - Skip confirmation prompt
-- `--password, -p <password>` - Unlock password
 
 **Examples**:
 
@@ -198,20 +183,13 @@ envcp remove <name> [options]
 # With confirmation
 envcp remove OLD_API_KEY
 
-# Skip confirmation
-envcp remove OLD_API_KEY --force
-
-# Alias
-envcp delete OLD_API_KEY
-envcp rm OLD_API_KEY
 ```
 
 **Output**:
 
 ```bash
 $ envcp remove API_KEY
-Are you sure you want to remove API_KEY? (y/N): y
-Variable 'API_KEY' removed successfully
+Variable 'API_KEY' removed
 ```
 
 ---
@@ -225,10 +203,7 @@ envcp sync [options]
 ```
 
 **Options**:
-- `--target <file>` - Target file (default from config: `.env`)
-- `--format <format>` - Format: `env`, `json`, `yaml` (default: `env`)
-- `--no-backup` - Don't create backup
-- `--password, -p <password>` - Unlock password
+- `--dry-run` - Preview the sync without writing files
 
 **Examples**:
 
@@ -236,14 +211,8 @@ envcp sync [options]
 # Sync to .env
 envcp sync
 
-# Sync to custom file
-envcp sync --target .env.local
-
-# JSON format
-envcp sync --target config.json --format json
-
-# No backup
-envcp sync --no-backup
+# Preview what would change
+envcp sync --dry-run
 ```
 
 **Output**:
@@ -251,39 +220,6 @@ envcp sync --no-backup
 ```bash
 $ envcp sync
 Synced 5 variables to .env
-Backup created: .envcp/backups/.env.backup.20260408_123456
-```
-
----
-
-### run
-
-Run a command with environment variables injected.
-
-```bash
-envcp run <command> [args...] [options]
-```
-
-**Options**:
-- `--password, -p <password>` - Unlock password
-
-**Examples**:
-
-```bash
-# Run npm script
-envcp run npm test
-
-# Run Node.js script
-envcp run node server.js
-
-# Run with arguments
-envcp run node script.js --arg1 --arg2
-
-# Docker compose
-envcp run docker-compose up
-
-# Custom command
-envcp run ./my-script.sh
 ```
 
 **How it works**:
@@ -303,8 +239,13 @@ envcp unlock [options]
 ```
 
 **Options**:
-- `--password, -p <password>` - Password (prompts if not provided)
-- `--timeout <seconds>` - Session timeout in seconds (overrides config)
+- `--recovery-key <key>` - Clear permanent lockout with the recovery key
+- `--save-to-keychain` - Save the password to the OS keychain
+- `--setup-hsm` - Protect the vault password with an HSM
+- `--hsm-type <type>` - `yubikey`, `gpg`, or `pkcs11`
+- `--key-id <id>` - GPG key ID or PKCS#11 label
+- `--pkcs11-lib <path>` - Path to PKCS#11 shared library
+- `--global` - Unlock the global vault
 
 **Examples**:
 
@@ -312,11 +253,11 @@ envcp unlock [options]
 # Interactive (prompts for password)
 envcp unlock
 
-# With password inline
-envcp unlock --password mysecret
+# Save password to keychain
+envcp unlock --save-to-keychain
 
-# Custom timeout (1 hour)
-envcp unlock --timeout 3600
+# Unlock global vault
+envcp unlock --global
 ```
 
 **Output**:
@@ -362,7 +303,7 @@ envcp status [options]
 ```
 
 **Options**:
-- `--format <format>` - Format: `text`, `json` (default: `text`)
+- `--global` - Check the global vault session instead of the current project
 
 **Examples**:
 
@@ -370,25 +311,18 @@ envcp status [options]
 # Human-readable
 envcp status
 
-# JSON format (for scripts)
-envcp status --format json
+# Check global vault status
+envcp status --global
 ```
 
 **Output**:
 
 ```bash
 $ envcp status
-Session: Unlocked
-Time remaining: 25 minutes 30 seconds
-Auto-extend: Enabled
-
-$ envcp status --format json
-{
-  "locked": false,
-  "remaining": 1530,
-  "expiresAt": "2026-04-08T14:30:00Z",
-  "autoExtend": true
-}
+Session active
+  Session ID: 1234abcd
+  Remaining: 25 minutes
+  Extensions remaining: 4/5
 ```
 
 ---
@@ -437,7 +371,7 @@ envcp serve [options]
 - `--port <port>` - HTTP port (default: 3456, not used for MCP)
 - `--host <host>` - HTTP host (default: 127.0.0.1)
 - `--api-key, -k <key>` - API key for authentication
-- `--password, -p <password>` - Unlock password
+- `--global` - Force the global vault at `~/.envcp`
 
 **Server Modes**:
 - `mcp` - MCP protocol over stdio (for Claude Desktop, Cursor)
@@ -468,17 +402,20 @@ envcp serve --mode all --port 3456 --api-key secret123
 # Custom host (allow network access)
 envcp serve --mode rest --host 0.0.0.0 --port 3456
 
-# With auto-unlock
-envcp serve --mode rest --password mysecret --api-key secret123
+# Use the global vault
+envcp serve --mode rest --global --api-key secret123
 ```
 
 **Output**:
 
 ```bash
 $ envcp serve --mode rest --port 3456
-EnvCP server started
-Mode: REST API
-Address: http://127.0.0.1:3456
+Starting EnvCP server...
+  Mode: rest
+  Host: 127.0.0.1
+  Port: 3456
+
+EnvCP server running at http://127.0.0.1:3456
 Press Ctrl+C to stop
 ```
 
@@ -496,7 +433,6 @@ envcp export [options]
 - `--format, -f <format>` - Format: `env`, `json`, `yaml` (default: `env`)
 - `--output, -o <file>` - Output file (default: stdout)
 - `--encrypted` - Create an encrypted portable export file (requires `--output`)
-- `--password, -p <password>` - Unlock password
 
 **Examples**:
 
@@ -811,12 +747,12 @@ envcp vault --global delete <name>
 
 ---
 
-### vault-switch
+#### vault use
 
 Switch the active vault context for subsequent commands.
 
 ```bash
-envcp vault-switch <name>
+envcp vault use <name>
 ```
 
 **Arguments**:
@@ -826,38 +762,36 @@ envcp vault-switch <name>
 
 ```bash
 # Switch to global vault
-envcp vault-switch global
+envcp vault use global
 
 # Switch back to project vault
-envcp vault-switch project
+envcp vault use project
 
 # Switch to a named vault
-envcp vault-switch staging
+envcp vault use staging
 ```
 
 **Output**:
 
 ```bash
-$ envcp vault-switch global
+$ envcp vault use global
 Switched to vault: global
 ```
 
 After switching, commands like `envcp list`, `envcp get`, `envcp add` operate on the active vault.
 
----
-
-### vault-list
+#### vault contexts
 
 List all available vaults and their status.
 
 ```bash
-envcp vault-list
+envcp vault contexts
 ```
 
 **Output**:
 
 ```bash
-$ envcp vault-list
+$ envcp vault contexts
 Available vaults:
   global (active)
     /home/user/.envcp/store.enc
@@ -1050,6 +984,48 @@ Config reloaded successfully
 
 ---
 
+### rule
+
+Review or edit AI access rules.
+
+```bash
+envcp rule
+envcp rule list [--scope merged|project|home]
+envcp rule set-default <operation> <allow|deny|inherit> [--scope project|home] [--who <id>]
+envcp rule set-variable <name> <operation> <allow|deny|inherit> [--scope project|home] [--who <id>]
+envcp rule set-window <name> <start> <end> [--scope project|home] [--who <id>]
+envcp rule clear-window <name> [--scope project|home] [--who <id>]
+envcp rule remove-variable <name> [--scope project|home] [--who <id>]
+```
+
+**Common operations**:
+- `read`, `write`, `delete`, `export`, `run`
+- `list` on `set-default` controls whether AI may proactively list variable names
+- `confirm` controls confirmation prompts
+
+**Examples**:
+
+```bash
+# Open the interactive rule menu
+envcp rule
+
+# Let AI read variables by default in this project
+envcp rule set-default read allow
+
+# Deny execution for one variable
+envcp rule set-variable OPENAI_API_KEY run deny
+
+# Allow reads only during office hours
+envcp rule set-window OPENAI_API_KEY 09:00 18:00
+
+# Allow one client to list variable names
+envcp rule set-default list allow --who openai
+```
+
+`--who <id>` targets one client such as `mcp`, `openai`, `gemini`, `api`, or a custom client id.
+
+---
+
 ## Advanced Usage
 
 ### Scripting
@@ -1059,30 +1035,26 @@ Use EnvCP in shell scripts:
 ```bash
 #!/bin/bash
 
-# Get a variable
-API_KEY=$(envcp get API_KEY --password mysecret)
+# Unlock once at the start of the script
+envcp unlock
 
 # Export all variables
 envcp export --format env > .env
 
-# Run command with env vars
-envcp run --password mysecret npm test
+# Read a variable
+envcp get API_KEY
 
-# Check if unlocked
-if envcp status --format json | jq -r .locked | grep -q false; then
-  echo "Unlocked"
-else
-  echo "Locked"
-fi
+# Check status
+envcp status
 ```
 
 ### CI/CD Integration
 
 ```bash
-# In CI pipeline
-envcp init --password $ENVCP_PASSWORD --force
-envcp add API_KEY --value $API_KEY --password $ENVCP_PASSWORD
-envcp run npm test
+# In CI pipeline, use passwordless mode or pre-unlock in setup
+envcp init --no-encrypt --skip-env --skip-mcp
+envcp add API_KEY --from-env API_KEY
+envcp export --format env > .env
 ```
 
 ### Multiple Projects
@@ -1090,19 +1062,20 @@ envcp run npm test
 ```bash
 # Project A
 cd /path/to/project-a
-envcp --config envcp.yaml serve --mode mcp
+envcp serve --mode mcp
 
 # Project B
 cd /path/to/project-b
-envcp --config envcp.prod.yaml serve --mode mcp
+envcp serve --mode mcp
 ```
 
 ### Custom Configuration
 
 ```bash
-# Use different config files
-envcp --config envcp.dev.yaml list
-envcp --config envcp.prod.yaml serve --mode rest
+# Re-open the correct project folder, then use the normal commands
+cd /path/to/project
+envcp config
+envcp serve --mode rest
 ```
 
 ## Exit Codes
@@ -1133,21 +1106,11 @@ fi
 
 EnvCP respects these environment variables:
 
-- `ENVCP_PASSWORD` - Default password (use carefully)
-- `ENVCP_CONFIG` - Config file path
 - `NO_COLOR` - Disable colored output
 
 **Example**:
 
 ```bash
-# Set password via env var
-export ENVCP_PASSWORD=mysecret
-envcp list  # No password prompt
-
-# Custom config
-export ENVCP_CONFIG=/path/to/envcp.yaml
-envcp list
-
 # Disable colors
 export NO_COLOR=1
 envcp list

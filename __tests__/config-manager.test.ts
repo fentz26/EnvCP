@@ -2,7 +2,7 @@ import * as fs from 'fs/promises';
 import { ensureDir, pathExists } from '../src/utils/fs.js';
 import * as os from 'os';
 import * as path from 'path';
-import { loadConfig, saveConfig, initConfig, canAIActiveCheck, requiresUserReference, registerMcpConfig } from '../src/config/manager';
+import { loadConfig, loadScopedConfig, saveScopedConfig, saveConfig, initConfig, canAIActiveCheck, requiresUserReference, registerMcpConfig, canAccessVariable, requiresConfirmationForVariable, isVariableRuleActive } from '../src/config/manager';
 import { EnvCPConfigSchema } from '../src/types';
 
 describe('loadConfig', () => {
@@ -62,6 +62,45 @@ describe('loadConfig', () => {
         await fs.rm(globalPath, { recursive: true, force: true });
       }
     }
+  });
+});
+
+describe('scoped config load/save', () => {
+  let tmpDir: string;
+  let origHome: string | undefined;
+
+  beforeEach(async () => {
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-scope-cfg-'));
+    origHome = process.env.HOME;
+    process.env.HOME = tmpDir;
+  });
+
+  afterEach(async () => {
+    process.env.HOME = origHome;
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  });
+
+  it('loads project-only rules without home overlay', async () => {
+    const projectDir = path.join(tmpDir, 'project');
+    await ensureDir(projectDir);
+    await fs.writeFile(path.join(projectDir, 'envcp.yaml'), 'access:\n  variable_rules:\n    PROJECT_KEY:\n      allow_ai_read: true\n');
+    await ensureDir(path.join(tmpDir, '.envcp'));
+    await fs.writeFile(path.join(tmpDir, '.envcp', 'config.yaml'), 'access:\n  variable_rules:\n    HOME_KEY:\n      allow_ai_read: true\n');
+
+    const projectConfig = await loadScopedConfig(projectDir, 'project');
+    expect(projectConfig.access.variable_rules.PROJECT_KEY).toBeDefined();
+    expect(projectConfig.access.variable_rules.HOME_KEY).toBeUndefined();
+  });
+
+  it('saves home scope rules into ~/.envcp/config.yaml', async () => {
+    const projectDir = path.join(tmpDir, 'project');
+    await ensureDir(projectDir);
+    const config = await loadScopedConfig(projectDir, 'home');
+    config.access.variable_rules.HOME_KEY = { allow_ai_read: true };
+    await saveScopedConfig(config, projectDir, 'home');
+
+    const homeConfig = await fs.readFile(path.join(tmpDir, '.envcp', 'config.yaml'), 'utf8');
+    expect(homeConfig).toContain('HOME_KEY');
   });
 });
 
@@ -404,6 +443,125 @@ describe('canAIActiveCheck / requiresUserReference', () => {
   it('returns false when require_user_reference is false', () => {
     const config = EnvCPConfigSchema.parse({ access: { require_user_reference: false } });
     expect(requiresUserReference(config)).toBe(false);
+  });
+});
+
+describe('variable-specific access rules', () => {
+  it('allows a variable-specific read override even when default read is off', () => {
+    const config = EnvCPConfigSchema.parse({
+      access: {
+        allow_ai_read: false,
+        variable_rules: {
+          OPENAI_API_KEY: { allow_ai_read: true },
+        },
+      },
+    });
+    expect(canAccessVariable('OPENAI_API_KEY', config, 'read')).toBe(true);
+  });
+
+  it('denies a variable-specific execute override when explicitly set to false', () => {
+    const config = EnvCPConfigSchema.parse({
+      access: {
+        allow_ai_execute: true,
+        variable_rules: {
+          DANGEROUS_TOKEN: { allow_ai_execute: false },
+        },
+      },
+    });
+    expect(canAccessVariable('DANGEROUS_TOKEN', config, 'execute')).toBe(false);
+  });
+
+  it('uses variable-specific confirmation override when present', () => {
+    const config = EnvCPConfigSchema.parse({
+      access: {
+        require_confirmation: false,
+        variable_rules: {
+          PROD_KEY: { require_confirmation: true },
+        },
+      },
+    });
+    expect(requiresConfirmationForVariable('PROD_KEY', config)).toBe(true);
+    expect(requiresConfirmationForVariable('OTHER_KEY', config)).toBe(false);
+  });
+
+  it('treats a daytime window as active only inside the range', () => {
+    const config = EnvCPConfigSchema.parse({
+      access: {
+        variable_rules: {
+          PROD_KEY: { active_window: { start: '09:00', end: '17:00' } },
+        },
+      },
+    });
+    expect(isVariableRuleActive('PROD_KEY', config, new Date('2024-01-01T10:30:00'))).toBe(true);
+    expect(isVariableRuleActive('PROD_KEY', config, new Date('2024-01-01T18:00:00'))).toBe(false);
+  });
+
+  it('supports overnight windows', () => {
+    const config = EnvCPConfigSchema.parse({
+      access: {
+        variable_rules: {
+          NIGHT_KEY: { active_window: { start: '22:00', end: '06:00' } },
+        },
+      },
+    });
+    expect(isVariableRuleActive('NIGHT_KEY', config, new Date('2024-01-01T23:30:00'))).toBe(true);
+    expect(isVariableRuleActive('NIGHT_KEY', config, new Date('2024-01-01T05:30:00'))).toBe(true);
+    expect(isVariableRuleActive('NIGHT_KEY', config, new Date('2024-01-01T12:00:00'))).toBe(false);
+  });
+
+  it('uses who-specific default access overrides for a client', () => {
+    const config = EnvCPConfigSchema.parse({
+      access: {
+        allow_ai_read: false,
+        client_rules: {
+          openai: { allow_ai_read: true },
+        },
+      },
+    });
+    expect(canAccessVariable('OPENAI_API_KEY', config, 'read')).toBe(false);
+    expect(canAccessVariable('OPENAI_API_KEY', config, 'read', 'openai')).toBe(true);
+  });
+
+  it('uses who-specific variable overrides ahead of global ones', () => {
+    const config = EnvCPConfigSchema.parse({
+      access: {
+        allow_ai_read: false,
+        variable_rules: {
+          PROD_KEY: { allow_ai_read: true },
+        },
+        client_rules: {
+          openai: {
+            variable_rules: {
+              PROD_KEY: { allow_ai_read: false },
+            },
+          },
+        },
+      },
+    });
+    expect(canAccessVariable('PROD_KEY', config, 'read')).toBe(true);
+    expect(canAccessVariable('PROD_KEY', config, 'read', 'openai')).toBe(false);
+  });
+
+  it('uses who-specific confirmation and list-name overrides', () => {
+    const config = EnvCPConfigSchema.parse({
+      access: {
+        allow_ai_active_check: false,
+        require_confirmation: false,
+        client_rules: {
+          cursor: {
+            allow_ai_active_check: true,
+            require_confirmation: true,
+            variable_rules: {
+              FAST_KEY: { require_confirmation: false },
+            },
+          },
+        },
+      },
+    });
+    expect(canAIActiveCheck(config)).toBe(false);
+    expect(canAIActiveCheck(config, 'cursor')).toBe(true);
+    expect(requiresConfirmationForVariable('OTHER_KEY', config, 'cursor')).toBe(true);
+    expect(requiresConfirmationForVariable('FAST_KEY', config, 'cursor')).toBe(false);
   });
 });
 

@@ -3,9 +3,9 @@ import chalk from 'chalk';
 import * as path from 'path';
 import * as os from 'os';
 import * as fs from 'fs/promises';
-import { promptPassword, promptInput, promptConfirm, promptList } from '../utils/prompt.js';
-import { ensureDir, pathExists } from '../utils/fs.js';
-import { loadConfig, initConfig, saveConfig, parseEnvFile, registerMcpConfig, isBlacklisted, canAccess } from '../config/manager.js';
+import { promptPassword, promptInput, promptConfirm, promptMenu, promptTabbedMenu } from '../utils/prompt.js';
+import { ensureDir, pathExists, findProjectRoot } from '../utils/fs.js';
+import { loadConfig, loadScopedConfig, initConfig, saveConfig, saveScopedConfig, parseEnvFile, registerMcpConfig, isBlacklisted, canAccess } from '../config/manager.js';
 import { ConfigGuard } from '../config/config-guard.js';
 import { StorageManager, LogManager, resolveLogPath } from '../storage/index.js';
 import { VERSION } from '../version.js';
@@ -18,7 +18,7 @@ import { spawnSync } from 'node:child_process';
 import { LockoutManager } from '../utils/lockout.js';
 
 import { Variable, EnvCPConfig } from '../types.js';
-import { initMemoryProtection } from '../utils/secure-memory.js';
+import { initMemoryProtection, secureCompare } from '../utils/secure-memory.js';
 import {
   getGlobalVaultPath,
   getProjectVaultPath,
@@ -28,7 +28,8 @@ import {
   listVaults,
   initNamedVault,
 } from '../vault/index.js';
-import { findProjectRoot } from '../utils/fs.js';
+import { loadServiceConfig, saveServiceConfig, ServiceConfig } from '../service/config.js';
+import { installService, statusService, uninstallService } from '../service/index.js';
 
 initMemoryProtection();
 
@@ -124,6 +125,81 @@ function logTransferInfo(
   console.log(chalk.gray(`  Variables: ${meta.count || Object.keys(variables).length}`));
 }
 
+async function getAuthPassword(projectPath: string, config: EnvCPConfig): Promise<string | null> {
+  let password = '';
+  const authMethod = config.auth?.method ?? 'password';
+
+  if (authMethod === 'hsm' || authMethod === 'multi') {
+    const hsm = HsmManager.fromConfig(config, projectPath);
+    const hsmAvailable = await hsm.isAvailable();
+
+    if (hsmAvailable) {
+      try {
+        const hsmSecret = await hsm.retrieveVaultPassword();
+
+        if (authMethod === 'multi') {
+          const factors = config.auth?.multi_factors ?? ['password', 'hsm'];
+          let userPassword = '';
+          if (factors.includes('password')) {
+            userPassword = await promptPassword('Enter password (multi-factor):');
+          } else if (factors.includes('keychain')) {
+            const keychain = new KeychainManager(config.keychain?.service || 'envcp');
+            const stored = await keychain.retrievePassword(projectPath);
+            if (stored) {
+              userPassword = stored;
+              console.log(chalk.gray('Password retrieved from OS keychain (multi-factor)'));
+            }
+          }
+          password = HsmManager.combineSecrets(hsmSecret, userPassword);
+          console.log(chalk.gray(`Authenticated via ${hsm.backendName} + password`));
+        } else {
+          password = hsmSecret;
+          console.log(chalk.gray(`Authenticated via ${hsm.backendName}`));
+        }
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        const fallback = config.auth?.fallback ?? 'password';
+        if (fallback === 'none') {
+          console.log(chalk.red(`HSM authentication failed: ${msg}`));
+          return null;
+        }
+        console.log(chalk.yellow(`HSM unavailable: ${msg}`));
+        console.log(chalk.gray('Falling back to password...'));
+      }
+    } else {
+      const fallback = config.auth?.fallback ?? 'password';
+      if (fallback === 'none') {
+        console.log(chalk.red(`HSM device (${hsm.backendName}) not found. No fallback configured.`));
+        return null;
+      }
+      console.log(chalk.yellow(`HSM device (${hsm.backendName}) not available. Falling back to password...`));
+    }
+  }
+
+  if (!password && (authMethod === 'keychain' || config.keychain?.enabled)) {
+    const keychain = new KeychainManager(config.keychain?.service || 'envcp');
+    const stored = await keychain.retrievePassword(projectPath);
+    if (stored) {
+      password = stored;
+      console.log(chalk.gray('Password retrieved from OS keychain'));
+    }
+  }
+
+  if (!password) {
+    password = await promptPassword('Enter password:');
+    const { valid: passwordValid, warning: passwordWarning } = validatePassword(password, config.password || {});
+    if (!passwordValid) {
+      console.log(chalk.red('Invalid password'));
+      return null;
+    }
+    if (passwordWarning) {
+      console.log(chalk.yellow('⚠ Weak password detected'));
+    }
+  }
+
+  return password;
+}
+
 async function withSession(fn: (storage: StorageManager, password: string, config: EnvCPConfig, projectPath: string, logManager: LogManager) => Promise<void>, vaultOverride?: 'global' | 'project'): Promise<void> {
   const { projectPath, config } = await resolveCliContext(vaultOverride);
 
@@ -133,113 +209,1441 @@ async function withSession(fn: (storage: StorageManager, password: string, confi
       : getProjectVaultPath(projectPath, config)
     : await resolveVaultPath(projectPath, config);
 
+  const logManager = new LogManager(resolveLogPath(config.audit, projectPath), config.audit);
+  await logManager.init();
+
   if (config.encryption?.enabled === false) {
     const storage = new StorageManager(vaultPath, false);
-    const logManager = new LogManager(resolveLogPath(config.audit, projectPath), config.audit);
-    await logManager.init();
     await fn(storage, '', config, projectPath, logManager);
     return;
   }
 
-    const sessionManager = new SessionManager(
-      resolveSessionPath(projectPath, config),
-      config.session?.timeout_minutes || 30,
-      config.session?.max_extensions || 5
-    );
+  const sessionManager = new SessionManager(
+    resolveSessionPath(projectPath, config),
+    config.session?.timeout_minutes || 30,
+    config.session?.max_extensions || 5,
+  );
+  await sessionManager.init();
 
-    await sessionManager.init();
-
-    // Initialize audit logging
-    const logManager = new LogManager(resolveLogPath(config.audit, projectPath), config.audit);
-    await logManager.init();
-
-  let session = await sessionManager.load();
   let password = '';
 
-  if (!session) {
-    const authMethod = config.auth?.method ?? 'password';
-
-    // --- HSM-only or multi-factor auth ---
-    if (authMethod === 'hsm' || authMethod === 'multi') {
-      const hsm = HsmManager.fromConfig(config, projectPath);
-      const hsmAvailable = await hsm.isAvailable();
-
-      if (hsmAvailable) {
-        try {
-          const hsmSecret = await hsm.retrieveVaultPassword();
-
-          if (authMethod === 'multi') {
-            const factors = config.auth?.multi_factors ?? ['password', 'hsm'];
-let userPassword = '';
-      if (factors.includes('password')) {
-        userPassword = await promptPassword('Enter password (multi-factor):');
-      } else if (factors.includes('keychain')) {
-              const keychain = new KeychainManager(config.keychain?.service || 'envcp');
-              const stored = await keychain.retrievePassword(projectPath);
-              if (stored) {
-                userPassword = stored;
-                console.log(chalk.gray('Password retrieved from OS keychain (multi-factor)'));
-              }
-            }
-            password = HsmManager.combineSecrets(hsmSecret, userPassword);
-            console.log(chalk.gray(`Authenticated via ${hsm.backendName} + password`));
-          } else {
-            password = hsmSecret;
-            console.log(chalk.gray(`Authenticated via ${hsm.backendName}`));
-          }
-        } catch (err: unknown) {
-          const msg = err instanceof Error ? err.message : String(err);
-          const fallback = config.auth?.fallback ?? 'password';
-          if (fallback === 'none') {
-            console.log(chalk.red(`HSM authentication failed: ${msg}`));
-            return;
-          }
-          console.log(chalk.yellow(`HSM unavailable: ${msg}`));
-          console.log(chalk.gray('Falling back to password...'));
-        }
-      } else {
-        const fallback = config.auth?.fallback ?? 'password';
-        if (fallback === 'none') {
-          console.log(chalk.red(`HSM device (${hsm.backendName}) not found. No fallback configured.`));
-          return;
-        }
-        console.log(chalk.yellow(`HSM device (${hsm.backendName}) not available. Falling back to password...`));
-      }
-    }
-
-    // --- OS keychain ---
-    if (!password && (authMethod === 'keychain' || config.keychain?.enabled)) {
-      const keychain = new KeychainManager(config.keychain?.service || 'envcp');
-      const stored = await keychain.retrievePassword(projectPath);
-      if (stored) {
-        password = stored;
-        console.log(chalk.gray('Password retrieved from OS keychain'));
-      }
-    }
-
-    // --- Password prompt fallback ---
-    if (!password) {
-      password = await promptPassword('Enter password:');
-
-      const { valid: passwordValid, warning: passwordWarning } = validatePassword(password, config.password || {});
-      if (!passwordValid) {
-        console.log(chalk.red("Invalid password"));
+  if (config.session?.enabled !== false) {
+    let session = await sessionManager.load();
+    if (!session) {
+      const authPassword = await getAuthPassword(projectPath, config);
+      if (!authPassword) {
         return;
       }
-      if (passwordValid && passwordWarning) {
-        console.log(chalk.yellow('⚠ Weak password detected'));
-      }
+      password = authPassword;
+      session = await sessionManager.create(password);
     }
-
-    session = await sessionManager.create(password);
+    password = sessionManager.getPassword() || password;
+  } else {
+    const authPassword = await getAuthPassword(projectPath, config);
+    if (!authPassword) {
+      return;
+    }
+    password = authPassword;
+    await sessionManager.destroy();
   }
-
-  password = sessionManager.getPassword() || password;
 
   const storage = new StorageManager(vaultPath, config.storage.encrypted);
   if (password) storage.setPassword(password);
 
   await fn(storage, password, config, projectPath, logManager);
+}
+
+type InitMode = 'basic' | 'advanced' | 'manual';
+
+function isInteractiveCli(): boolean {
+  return process.stdin.isTTY === true && process.stdout.isTTY === true;
+}
+
+async function isProjectInitialized(projectPath: string = process.cwd()): Promise<boolean> {
+  return pathExists(path.join(projectPath, 'envcp.yaml'));
+}
+
+async function chooseInitMode(): Promise<InitMode> {
+  if (!isInteractiveCli()) {
+    return 'basic';
+  }
+  return promptMenu('Set up EnvCP', [
+    { label: 'Basic', value: 'basic', hint: '(quick, simple, low-tech)' },
+    { label: 'Advanced', value: 'advanced', hint: '(guided, more choices)' },
+    { label: 'Manual', value: 'manual', hint: '(full control)' },
+  ], 'basic') as Promise<InitMode>;
+}
+
+async function chooseSecurityMode(): Promise<'none' | 'recoverable' | 'hard-lock'> {
+  if (!isInteractiveCli()) {
+    return 'recoverable';
+  }
+  return promptMenu('How would you like to secure your variables?', [
+    { label: 'No encryption', value: 'none', hint: '(fastest local setup)' },
+    { label: 'Encrypted with recovery key', value: 'recoverable', hint: '(recommended)' },
+    { label: 'Encrypted hard-lock', value: 'hard-lock', hint: '(max security)' },
+  ], 'recoverable') as Promise<'none' | 'recoverable' | 'hard-lock'>;
+}
+
+async function chooseServerMode(): Promise<'auto' | 'rest' | 'openai' | 'gemini' | 'all'> {
+  if (!isInteractiveCli()) {
+    return 'auto';
+  }
+  return promptMenu('Background service mode', [
+    { label: 'Auto', value: 'auto', hint: '(recommended)' },
+    { label: 'REST', value: 'rest' },
+    { label: 'OpenAI', value: 'openai' },
+    { label: 'Gemini', value: 'gemini' },
+    { label: 'All', value: 'all' },
+  ], 'auto') as Promise<'auto' | 'rest' | 'openai' | 'gemini' | 'all'>;
+}
+
+async function buildServiceSetup(projectPath: string, initMode: InitMode): Promise<{ enabled: boolean; startNow: boolean; config: ServiceConfig | null }> {
+  if (!isInteractiveCli()) {
+    return { enabled: false, startNow: false, config: null };
+  }
+
+  const wantsStartup = await promptConfirm(
+    initMode === 'basic'
+      ? 'Start EnvCP automatically in the background?'
+      : 'Install background startup for EnvCP?',
+    true,
+  );
+  if (!wantsStartup) {
+    return { enabled: false, startNow: false, config: null };
+  }
+
+  const serviceConfig = await loadServiceConfig();
+  serviceConfig.working_directory = projectPath;
+  serviceConfig.autostart = true;
+
+  if (initMode === 'manual') {
+    serviceConfig.server.mode = await chooseServerMode();
+    const hostInput = (await promptInput(`Service host [${serviceConfig.server.host}]:`)).trim();
+    if (hostInput) {
+      serviceConfig.server.host = hostInput;
+    }
+
+    const portInput = (await promptInput(`Service port [${serviceConfig.server.port}]:`)).trim();
+    if (portInput) {
+      const parsedPort = Number.parseInt(portInput, 10);
+      if (!Number.isNaN(parsedPort) && parsedPort > 0) {
+        serviceConfig.server.port = parsedPort;
+      }
+    }
+
+    const apiKey = (await promptInput('HTTP API key (leave blank for local-only use):')).trim();
+    serviceConfig.server.api_key = apiKey || undefined;
+    serviceConfig.restart_on_failure = await promptConfirm('Restart service if it crashes?', true);
+  }
+
+  const startNow = initMode === 'basic'
+    ? true
+    : await promptConfirm('Start the background service now?', true);
+
+  return { enabled: true, startNow, config: serviceConfig };
+}
+
+async function installStartupServiceIfNeeded(
+  projectPath: string,
+  serviceSetup: { enabled: boolean; startNow: boolean; config: ServiceConfig | null },
+): Promise<void> {
+  if (!serviceSetup.enabled || !serviceSetup.config) {
+    return;
+  }
+
+  await saveServiceConfig(serviceSetup.config);
+  const result = await installService({ workingDirectory: projectPath, now: serviceSetup.startNow });
+  if (result.ok) {
+    console.log(chalk.green('Background service configured.'));
+    console.log(chalk.gray(`  ${result.message}`));
+  } else {
+    console.log(chalk.yellow('Background service setup could not be completed automatically.'));
+    console.log(chalk.gray(`  ${result.message}`));
+  }
+}
+
+async function summarizeServiceStatus(): Promise<string> {
+  const serviceConfig = await loadServiceConfig();
+  const status = await statusService();
+  const active = status.ok ? 'running' : 'not running';
+  return `${active}, autostart ${serviceConfig.autostart ? 'on' : 'off'}`;
+}
+
+async function maybeImportDotEnv(projectPath: string, config: EnvCPConfig, password: string, shouldImport: boolean): Promise<void> {
+  if (!shouldImport) {
+    return;
+  }
+
+  const envPath = path.join(projectPath, '.env');
+  if (!await pathExists(envPath)) {
+    return;
+  }
+
+  const envContent = await fs.readFile(envPath, 'utf8');
+  const vars = parseEnvFile(envContent);
+  const count = Object.keys(vars).length;
+  if (count === 0) {
+    return;
+  }
+
+  const storage = new StorageManager(
+    path.join(projectPath, config.storage.path),
+    config.storage.encrypted,
+  );
+  if (password) {
+    storage.setPassword(password);
+  }
+
+  const now = new Date().toISOString();
+  const existing = await storage.load();
+  for (const [name, value] of Object.entries(vars)) {
+    existing[name] = {
+      name,
+      value,
+      encrypted: config.storage.encrypted,
+      created: now,
+      updated: now,
+      sync_to_env: true,
+      protected: false,
+    };
+  }
+  await storage.save(existing);
+
+  if (password && config.session?.enabled !== false) {
+    const sessionManager = new SessionManager(
+      resolveSessionPath(projectPath, config),
+      config.session?.timeout_minutes || 30,
+      config.session?.max_extensions || 5,
+    );
+    await sessionManager.init();
+    await sessionManager.create(password);
+  }
+
+  console.log(chalk.green(`  Imported ${count} variables from .env`));
+  console.log(chalk.gray(`  Variables: ${Object.keys(vars).join(', ')}`));
+}
+
+async function runInitFlow(options: {
+  project?: string;
+  encrypt?: boolean;
+  skipEnv?: boolean;
+  skipMcp?: boolean;
+  authMethod?: string;
+  hsmType?: 'yubikey' | 'gpg' | 'pkcs11';
+  keyId?: string;
+  pkcs11Lib?: string;
+} = {}): Promise<void> {
+  const projectPath = process.cwd();
+  const projectName = options.project || path.basename(projectPath);
+  const configPath = path.join(projectPath, 'envcp.yaml');
+
+  if (await pathExists(configPath)) {
+    console.log(chalk.yellow('EnvCP is already set up here.'));
+    console.log(chalk.gray(`  Config: ${configPath}`));
+    console.log(chalk.gray('Run `envcp setup` to change project settings.'));
+    return;
+  }
+
+  console.log(chalk.blue('Initializing EnvCP...'));
+  console.log('');
+
+  const config = await initConfig(projectPath, projectName);
+  const initMode = await chooseInitMode();
+  const hasDotEnv = await pathExists(path.join(projectPath, '.env'));
+
+  let securityChoice: 'none' | 'recoverable' | 'hard-lock';
+  if (options.encrypt === false) {
+    securityChoice = 'none';
+  } else if (initMode === 'basic') {
+    securityChoice = isInteractiveCli() && !await promptConfirm('Protect variables with encryption?', true)
+      ? 'none'
+      : 'recoverable';
+  } else {
+    securityChoice = await chooseSecurityMode();
+  }
+
+  const securitySettings = buildSecuritySettings(securityChoice);
+  config.encryption = securitySettings.encryption;
+  config.storage.encrypted = securitySettings.storageEncrypted;
+  config.security = securitySettings.security;
+
+  if (initMode === 'basic') {
+    config.session.enabled = false;
+    config.access.require_confirmation = false;
+  } else if (initMode === 'advanced') {
+    config.session.enabled = securityChoice === 'none'
+      ? false
+      : (!isInteractiveCli() || await promptConfirm('Keep an unlocked session between commands?', true));
+    config.access.require_confirmation = !isInteractiveCli() || await promptConfirm('Ask before risky AI actions?', true);
+  } else {
+    config.session.enabled = securityChoice === 'none'
+      ? false
+      : (!isInteractiveCli() || await promptConfirm('Enable sessions?', true));
+    config.access.require_confirmation = !isInteractiveCli() || await promptConfirm('Require confirmation for risky AI actions?', true);
+  }
+
+  let password = '';
+  if (securityChoice !== 'none') {
+    password = await promptPassword('Set encryption password:');
+    const confirmPwd = await promptPassword('Confirm password:');
+    if (!secureCompare(Buffer.from(password, 'utf8'), Buffer.from(confirmPwd, 'utf8'))) {
+      console.log(chalk.red('Passwords do not match. Aborting.'));
+      return;
+    }
+  }
+
+  await saveConfig(config, projectPath);
+
+  const shouldImportEnv = options.skipEnv
+    ? false
+    : hasDotEnv && (isInteractiveCli() ? await promptConfirm('Import variables from .env?', true) : false);
+  await maybeImportDotEnv(projectPath, config, password, shouldImportEnv);
+
+  const serviceSetup = await buildServiceSetup(projectPath, initMode);
+  await installStartupServiceIfNeeded(projectPath, serviceSetup);
+
+  if (securityChoice === 'recoverable' && password) {
+    const recoveryKey = generateRecoveryKey();
+    const recoveryData = await createRecoveryData(password, recoveryKey);
+    const recoveryPath = path.join(projectPath, config.security.recovery_file);
+    await fs.writeFile(recoveryPath, recoveryData, 'utf8');
+
+    console.log('');
+    console.log(chalk.yellow.bold('  RECOVERY KEY (save this somewhere safe!):'));
+    console.log(chalk.yellow.bold(`  ${recoveryKey}`));
+    console.log(chalk.gray('  This key is shown ONCE. If you lose it, you cannot recover your password.'));
+  }
+
+  if (!options.skipMcp) {
+    const result = await registerMcpConfig(projectPath);
+    console.log('');
+    if (result.registered.length > 0) {
+      console.log(chalk.green('  MCP registered:'));
+      for (const name of result.registered) {
+        console.log(chalk.gray(`    + ${name}`));
+      }
+    }
+    if (result.registered.length === 0 && result.alreadyConfigured.length === 0) {
+      console.log(chalk.gray('  No AI tools detected for auto-registration'));
+    }
+  }
+
+  const authMethod = options.authMethod;
+  if (password && (authMethod === 'hsm' || authMethod === 'multi')) {
+    const hsmType = options.hsmType || 'yubikey';
+    config.hsm = {
+      ...config.hsm,
+      enabled: true,
+      type: hsmType,
+      key_id: options.keyId ?? config.hsm?.key_id,
+      pkcs11_lib: options.pkcs11Lib ?? config.hsm?.pkcs11_lib,
+      require_touch: config.hsm?.require_touch ?? true,
+      protected_key_path: config.hsm?.protected_key_path ?? '.envcp/.hsm-key',
+    };
+    config.auth = {
+      method: authMethod as 'hsm' | 'multi',
+      multi_factors: authMethod === 'multi' ? ['password', 'hsm'] : ['hsm'],
+      fallback: 'password',
+    };
+    await saveConfig(config, projectPath);
+  }
+
+  const modeLabel = securityChoice === 'none' ? 'no encryption' : securityChoice;
+  console.log(chalk.green('EnvCP initialized!'));
+  console.log(chalk.gray(`  Project: ${config.project}`));
+  console.log(chalk.gray(`  Mode: ${initMode}`));
+  console.log(chalk.gray(`  Security: ${modeLabel}`));
+  console.log(chalk.gray(`  Session: ${config.session.enabled ? 'on' : 'off'}`));
+  console.log('');
+  console.log(chalk.green('Done! Your AI tools can now use EnvCP.'));
+}
+
+async function runAddSecretFlow(): Promise<void> {
+  const name = await promptInput('Secret name:');
+  if (!name.trim()) {
+    console.log(chalk.yellow('No secret name entered.'));
+    return;
+  }
+
+  await withSession(async (storage, _password, config) => {
+    const value = await promptPassword('Enter value:');
+    const tagsInput = await promptInput('Tags (comma-separated):');
+    const description = await promptInput('Description:');
+    const tags = tagsInput.split(',').map((t) => t.trim()).filter(Boolean);
+    const now = new Date().toISOString();
+    const variable: Variable = {
+      name: name.trim(),
+      value,
+      encrypted: config.storage.encrypted,
+      tags: tags.length > 0 ? tags : undefined,
+      description: description || undefined,
+      created: now,
+      updated: now,
+      sync_to_env: true,
+      protected: false,
+    };
+
+    await storage.set(variable.name, variable);
+    console.log(chalk.green(`Variable '${variable.name}' added successfully`));
+  });
+}
+
+async function runConfigMenu(): Promise<void> {
+  const projectPath = process.cwd();
+  const config = await loadConfig(projectPath);
+  const serviceConfig = await loadServiceConfig();
+
+  if (!isInteractiveCli()) {
+    console.log(chalk.blue('EnvCP config'));
+    console.log(chalk.gray(`  Session: ${config.session.enabled ? 'on' : 'off'}`));
+    console.log(chalk.gray(`  Sync: ${config.sync.enabled ? 'on' : 'off'}`));
+    console.log(chalk.gray(`  Audit: ${config.audit.enabled ? 'on' : 'off'}`));
+    console.log(chalk.gray(`  Startup: ${await summarizeServiceStatus()}`));
+    return;
+  }
+
+  while (true) {
+    const choice = await promptTabbedMenu('EnvCP config', [
+      {
+        label: 'General',
+        items: [
+          { label: 'Toggle session', value: 'general.session', hint: config.session.enabled ? '(on)' : '(off)' },
+          { label: 'Toggle sync to .env', value: 'general.sync', hint: config.sync.enabled ? '(on)' : '(off)' },
+          { label: 'Toggle startup service', value: 'general.startup', hint: serviceConfig.autostart ? '(on)' : '(off)' },
+          { label: 'Toggle masked values', value: 'general.mask', hint: config.access.mask_values ? '(on)' : '(off)' },
+          { label: 'Back', value: 'general.back' },
+        ],
+      },
+      {
+        label: 'Advanced',
+        items: [
+          { label: 'Toggle audit logging', value: 'advanced.audit', hint: config.audit.enabled ? '(on)' : '(off)' },
+          { label: 'Toggle AI confirmation', value: 'advanced.confirm', hint: config.access.require_confirmation ? '(on)' : '(off)' },
+          { label: 'Show startup status', value: 'advanced.startup-status', hint: '(service)' },
+          { label: 'Show config path', value: 'advanced.path', hint: '(envcp.yaml)' },
+          { label: 'Reload config guard', value: 'advanced.reload', hint: '(password required)' },
+          { label: 'Back', value: 'advanced.back' },
+        ],
+      },
+    ]);
+
+    if (choice.endsWith('.back')) {
+      return;
+    }
+
+    if (choice === 'general.session') {
+      config.session.enabled = !config.session.enabled;
+      await saveConfig(config, projectPath);
+      continue;
+    }
+    if (choice === 'general.sync') {
+      config.sync.enabled = !config.sync.enabled;
+      await saveConfig(config, projectPath);
+      continue;
+    }
+    if (choice === 'general.startup') {
+      serviceConfig.autostart = !serviceConfig.autostart;
+      serviceConfig.working_directory = projectPath;
+      await saveServiceConfig(serviceConfig);
+      const result = serviceConfig.autostart
+        ? await installService({ workingDirectory: projectPath })
+        : await uninstallService();
+      console.log(result.ok ? chalk.green(result.message) : chalk.yellow(result.message));
+      continue;
+    }
+    if (choice === 'general.mask') {
+      config.access.mask_values = !config.access.mask_values;
+      await saveConfig(config, projectPath);
+      continue;
+    }
+    if (choice === 'advanced.audit') {
+      config.audit.enabled = !config.audit.enabled;
+      await saveConfig(config, projectPath);
+      continue;
+    }
+    if (choice === 'advanced.confirm') {
+      config.access.require_confirmation = !config.access.require_confirmation;
+      await saveConfig(config, projectPath);
+      continue;
+    }
+    if (choice === 'advanced.startup-status') {
+      console.log(chalk.gray(await summarizeServiceStatus()));
+      await promptInput('Press Enter to continue');
+      continue;
+    }
+    if (choice === 'advanced.path') {
+      console.log(chalk.gray(path.join(projectPath, 'envcp.yaml')));
+      await promptInput('Press Enter to continue');
+      continue;
+    }
+    if (choice === 'advanced.reload') {
+      const configGuard = new ConfigGuard(projectPath);
+      const password = await promptPassword('Enter password to reload config:');
+      const result = await configGuard.reload(password);
+      console.log(result.success ? chalk.green('Config reloaded successfully') : chalk.red(result.error || 'Failed to reload config'));
+    }
+  }
+}
+
+type VariableRuleField =
+  | 'allow_ai_read'
+  | 'allow_ai_write'
+  | 'allow_ai_delete'
+  | 'allow_ai_export'
+  | 'allow_ai_execute'
+  | 'require_confirmation';
+
+type DefaultRuleField = VariableRuleField | 'allow_ai_active_check';
+type VariableRule = EnvCPConfig['access']['variable_rules'][string];
+type AccessClientRule = EnvCPConfig['access']['client_rules'][string];
+
+function parseVariableRuleField(operation: string): VariableRuleField | null {
+  switch (operation) {
+    case 'read':
+      return 'allow_ai_read';
+    case 'write':
+      return 'allow_ai_write';
+    case 'delete':
+      return 'allow_ai_delete';
+    case 'export':
+      return 'allow_ai_export';
+    case 'run':
+    case 'execute':
+      return 'allow_ai_execute';
+    case 'confirm':
+    case 'confirmation':
+      return 'require_confirmation';
+    default:
+      return null;
+  }
+}
+
+function parseDefaultRuleField(operation: string): DefaultRuleField | null {
+  switch (operation) {
+    case 'list':
+    case 'show':
+    case 'names':
+    case 'active-check':
+    case 'active_check':
+      return 'allow_ai_active_check';
+    default:
+      return parseVariableRuleField(operation);
+  }
+}
+
+function formatRuleSetting(value: boolean, enabledLabel = 'allow', disabledLabel = 'deny'): string {
+  return value ? enabledLabel : disabledLabel;
+}
+
+function formatVariableRuleLines(rule: VariableRule): string[] {
+  const lines: string[] = [];
+  const fields: Array<[keyof VariableRule, string, string, string]> = [
+    ['allow_ai_read', 'read', 'allow', 'deny'],
+    ['allow_ai_write', 'write', 'allow', 'deny'],
+    ['allow_ai_delete', 'delete', 'allow', 'deny'],
+    ['allow_ai_export', 'export', 'allow', 'deny'],
+    ['allow_ai_execute', 'run', 'allow', 'deny'],
+    ['require_confirmation', 'confirmation', 'on', 'off'],
+  ];
+
+  for (const [field, label, enabledLabel, disabledLabel] of fields) {
+    if (typeof rule[field] === 'boolean') {
+      lines.push(`${label}: ${formatRuleSetting(rule[field], enabledLabel, disabledLabel)}`);
+    }
+  }
+
+  if (rule.active_window) {
+    lines.push(`active: ${rule.active_window.start}-${rule.active_window.end}`);
+  }
+
+  return lines.length > 0 ? lines : ['inherit all defaults'];
+}
+
+function formatClientRuleLines(rule: AccessClientRule): string[] {
+  const lines: string[] = [];
+  const fields: Array<[keyof AccessClientRule, string, string, string]> = [
+    ['allow_ai_read', 'read', 'allow', 'deny'],
+    ['allow_ai_write', 'write', 'allow', 'deny'],
+    ['allow_ai_delete', 'delete', 'allow', 'deny'],
+    ['allow_ai_export', 'export', 'allow', 'deny'],
+    ['allow_ai_execute', 'run', 'allow', 'deny'],
+    ['allow_ai_active_check', 'list names', 'allow', 'deny'],
+    ['require_confirmation', 'confirmation', 'on', 'off'],
+  ];
+
+  for (const [field, label, enabledLabel, disabledLabel] of fields) {
+    if (typeof rule[field] === 'boolean') {
+      lines.push(`${label}: ${formatRuleSetting(rule[field], enabledLabel, disabledLabel)}`);
+    }
+  }
+
+  return lines.length > 0 ? lines : ['inherit global defaults'];
+}
+
+function describeClientId(clientId: string): string {
+  switch (clientId) {
+    case 'openai':
+      return 'OpenAI-compatible';
+    case 'gemini':
+      return 'Gemini-compatible';
+    case 'mcp':
+      return 'MCP client';
+    case 'api':
+      return 'REST API client';
+    case 'cli':
+      return 'EnvCP CLI';
+    default:
+      return 'Custom client';
+  }
+}
+
+function formatClientLabel(clientId: string): string {
+  return `${describeClientId(clientId)} (${clientId})`;
+}
+
+function getClientRule(config: EnvCPConfig, clientId: string): AccessClientRule {
+  return {
+    ...(config.access.client_rules?.[clientId] || {}),
+    variable_rules: {
+      ...(config.access.client_rules?.[clientId]?.variable_rules || {}),
+    },
+  };
+}
+
+function saveClientRule(config: EnvCPConfig, clientId: string, rule: AccessClientRule): void {
+  const nextRules = { ...(config.access.client_rules || {}) };
+  const hasDefaults = [
+    rule.allow_ai_read,
+    rule.allow_ai_write,
+    rule.allow_ai_delete,
+    rule.allow_ai_export,
+    rule.allow_ai_execute,
+    rule.allow_ai_active_check,
+    rule.require_confirmation,
+  ].some((value) => typeof value === 'boolean');
+  const hasVariables = Object.keys(rule.variable_rules || {}).length > 0;
+
+  if (!hasDefaults && !hasVariables) {
+    delete nextRules[clientId];
+  } else {
+    nextRules[clientId] = {
+      ...rule,
+      variable_rules: rule.variable_rules || {},
+    };
+  }
+
+  config.access.client_rules = nextRules;
+}
+
+function updateVariableRule(
+  config: EnvCPConfig,
+  variableName: string,
+  field: VariableRuleField,
+  value: boolean | undefined,
+  clientId?: string,
+): void {
+  if (clientId) {
+    const clientRule = getClientRule(config, clientId);
+    const current = { ...(clientRule.variable_rules?.[variableName] || {}) };
+
+    if (value === undefined) {
+      delete current[field];
+    } else {
+      current[field] = value;
+    }
+
+    const nextVariableRules = { ...(clientRule.variable_rules || {}) };
+    if (Object.keys(current).length === 0) {
+      delete nextVariableRules[variableName];
+    } else {
+      nextVariableRules[variableName] = current;
+    }
+
+    clientRule.variable_rules = nextVariableRules;
+    saveClientRule(config, clientId, clientRule);
+    return;
+  }
+
+  const current = { ...(config.access.variable_rules?.[variableName] || {}) };
+
+  if (value === undefined) {
+    delete current[field];
+  } else {
+    current[field] = value;
+  }
+
+  const nextRules = { ...(config.access.variable_rules || {}) };
+  if (Object.keys(current).length === 0) {
+    delete nextRules[variableName];
+  } else {
+    nextRules[variableName] = current;
+  }
+
+  config.access.variable_rules = nextRules;
+}
+
+function setVariableRuleWindow(
+  config: EnvCPConfig,
+  variableName: string,
+  start: string | undefined,
+  end: string | undefined,
+  clientId?: string,
+): void {
+  if (clientId) {
+    const clientRule = getClientRule(config, clientId);
+    const current = { ...(clientRule.variable_rules?.[variableName] || {}) };
+    if (!start || !end) {
+      delete current.active_window;
+    } else {
+      current.active_window = { start, end };
+    }
+
+    const nextVariableRules = { ...(clientRule.variable_rules || {}) };
+    if (Object.keys(current).length === 0) {
+      delete nextVariableRules[variableName];
+    } else {
+      nextVariableRules[variableName] = current;
+    }
+    clientRule.variable_rules = nextVariableRules;
+    saveClientRule(config, clientId, clientRule);
+    return;
+  }
+
+  const current = { ...(config.access.variable_rules?.[variableName] || {}) };
+  if (!start || !end) {
+    delete current.active_window;
+  } else {
+    current.active_window = { start, end };
+  }
+
+  const nextRules = { ...(config.access.variable_rules || {}) };
+  if (Object.keys(current).length === 0) {
+    delete nextRules[variableName];
+  } else {
+    nextRules[variableName] = current;
+  }
+  config.access.variable_rules = nextRules;
+}
+
+async function promptClientRuleTarget(): Promise<string | undefined> {
+  const target = await promptMenu('Apply rule to', [
+    { label: 'Everyone', value: 'global' },
+    { label: 'One client / who', value: 'client' },
+  ], 'global');
+
+  if (target !== 'client') {
+    return undefined;
+  }
+
+  const clientId = (await promptInput('Client id (examples: mcp, openai, gemini, api, cursor):')).trim();
+  return clientId || undefined;
+}
+
+async function editVariableRule(config: EnvCPConfig, clientId?: string): Promise<void> {
+  const variableName = (await promptInput('Variable name:')).trim();
+  if (!variableName) {
+    return;
+  }
+
+  const field = await promptMenu(`Rule for ${variableName}`, [
+    { label: 'AI read', value: 'allow_ai_read' },
+    { label: 'AI write', value: 'allow_ai_write' },
+    { label: 'AI delete', value: 'allow_ai_delete' },
+    { label: 'AI export', value: 'allow_ai_export' },
+    { label: 'AI run', value: 'allow_ai_execute' },
+    { label: 'Require confirmation', value: 'require_confirmation' },
+  ]) as VariableRuleField;
+
+  const value = await promptMenu(`Set ${field} for ${variableName}`, [
+    { label: 'Allow', value: 'allow' },
+    { label: 'Deny', value: 'deny' },
+    { label: 'Inherit default', value: 'inherit' },
+  ], 'inherit');
+
+  updateVariableRule(
+    config,
+    variableName,
+    field,
+    value === 'inherit' ? undefined : value === 'allow',
+    clientId,
+  );
+}
+
+async function removeVariableRule(config: EnvCPConfig, clientId?: string): Promise<void> {
+  const variableName = (await promptInput('Variable rule to remove:')).trim();
+  if (!variableName) {
+    return;
+  }
+  if (clientId) {
+    const clientRule = getClientRule(config, clientId);
+    const nextVariableRules = { ...(clientRule.variable_rules || {}) };
+    delete nextVariableRules[variableName];
+    clientRule.variable_rules = nextVariableRules;
+    saveClientRule(config, clientId, clientRule);
+    return;
+  }
+  const nextRules = { ...(config.access.variable_rules || {}) };
+  delete nextRules[variableName];
+  config.access.variable_rules = nextRules;
+}
+
+async function editVariableRuleWindow(config: EnvCPConfig, clientId?: string): Promise<void> {
+  const variableName = (await promptInput('Variable name:')).trim();
+  if (!variableName) {
+    return;
+  }
+
+  const start = (await promptInput('Allowed from (HH:MM):')).trim();
+  const end = (await promptInput('Allowed until (HH:MM):')).trim();
+  setVariableRuleWindow(config, variableName, start, end, clientId);
+}
+
+function applyDefaultRule(config: EnvCPConfig, field: DefaultRuleField, value: boolean | undefined, clientId?: string): void {
+  if (clientId) {
+    const clientRule = getClientRule(config, clientId);
+    if (value === undefined) {
+      delete clientRule[field];
+    } else {
+      clientRule[field] = value;
+    }
+    saveClientRule(config, clientId, clientRule);
+    return;
+  }
+
+  switch (field) {
+    case 'allow_ai_read':
+      config.access.allow_ai_read = value === true;
+      break;
+    case 'allow_ai_write':
+      config.access.allow_ai_write = value === true;
+      break;
+    case 'allow_ai_delete':
+      config.access.allow_ai_delete = value === true;
+      break;
+    case 'allow_ai_export':
+      config.access.allow_ai_export = value === true;
+      break;
+    case 'allow_ai_execute':
+      config.access.allow_ai_execute = value === true;
+      break;
+    case 'allow_ai_active_check':
+      config.access.allow_ai_active_check = value === true;
+      break;
+    case 'require_confirmation':
+      config.access.require_confirmation = value === true;
+      break;
+  }
+}
+
+type RuleScope = 'project' | 'home' | 'merged';
+
+function parseRuleScope(value: string | undefined, fallback: RuleScope): RuleScope {
+  if (!value) {
+    return fallback;
+  }
+  if (value === 'project' || value === 'home' || value === 'merged') {
+    return value;
+  }
+  throw new Error(`Unknown scope '${value}'. Use project, home, or merged.`);
+}
+
+async function chooseEditableRuleScope(): Promise<Exclude<RuleScope, 'merged'>> {
+  return promptMenu('Rule scope', [
+    { label: 'This project', value: 'project' },
+    { label: 'Home / whole computer', value: 'home' },
+  ], 'project') as Promise<Exclude<RuleScope, 'merged'>>;
+}
+
+function describeMergedDefaultOrigin<T>(mergedValue: T, projectValue: T, homeValue: T): string {
+  const sameAsProject = JSON.stringify(mergedValue) === JSON.stringify(projectValue);
+  const sameAsHome = JSON.stringify(mergedValue) === JSON.stringify(homeValue);
+  if (sameAsProject && sameAsHome) {
+    return 'default';
+  }
+  if (sameAsProject && !sameAsHome) {
+    return 'project';
+  }
+  if (!sameAsProject && sameAsHome) {
+    return 'home';
+  }
+  return 'merged';
+}
+
+function describeMergedVariableRuleOrigin(
+  name: string,
+  mergedRule: unknown,
+  projectRules: Record<string, unknown>,
+  homeRules: Record<string, unknown>,
+): string {
+  const projectRule = projectRules[name];
+  const homeRule = homeRules[name];
+  if (projectRule && homeRule) {
+    return JSON.stringify(mergedRule) === JSON.stringify(projectRule)
+      ? 'project overrides home'
+      : 'home + project';
+  }
+  if (projectRule) {
+    return 'project';
+  }
+  if (homeRule) {
+    return 'home';
+  }
+  return 'merged';
+}
+
+function describeMergedClientRuleOrigin(
+  clientId: string,
+  mergedRule: unknown,
+  projectRules: Record<string, unknown>,
+  homeRules: Record<string, unknown>,
+): string {
+  const projectRule = projectRules[clientId];
+  const homeRule = homeRules[clientId];
+  if (projectRule && homeRule) {
+    return JSON.stringify(mergedRule) === JSON.stringify(projectRule)
+      ? 'project overrides home'
+      : 'home + project';
+  }
+  if (projectRule) {
+    return 'project';
+  }
+  if (homeRule) {
+    return 'home';
+  }
+  return 'merged';
+}
+
+async function runRuleMenu(): Promise<void> {
+  const projectPath = process.cwd();
+  let config = await loadScopedConfig(projectPath, 'merged');
+
+  if (!isInteractiveCli()) {
+    console.log(chalk.blue('EnvCP rules'));
+    console.log(chalk.gray(`  AI read: ${config.access.allow_ai_read ? 'allow' : 'deny'}`));
+    console.log(chalk.gray(`  AI write: ${config.access.allow_ai_write ? 'allow' : 'deny'}`));
+    console.log(chalk.gray(`  AI delete: ${config.access.allow_ai_delete ? 'allow' : 'deny'}`));
+    console.log(chalk.gray(`  AI run: ${config.access.allow_ai_execute ? 'allow' : 'deny'}`));
+    console.log(chalk.gray(`  Variable rules: ${Object.keys(config.access.variable_rules || {}).length}`));
+    console.log(chalk.gray(`  Who rules: ${Object.keys(config.access.client_rules || {}).length}`));
+    return;
+  }
+
+  while (true) {
+    const choice = await promptTabbedMenu('EnvCP rules', [
+      {
+        label: 'Defaults',
+        items: [
+          { label: 'Toggle AI read', value: 'default.read', hint: config.access.allow_ai_read ? '(allow)' : '(deny)' },
+          { label: 'Toggle AI write', value: 'default.write', hint: config.access.allow_ai_write ? '(allow)' : '(deny)' },
+          { label: 'Toggle AI delete', value: 'default.delete', hint: config.access.allow_ai_delete ? '(allow)' : '(deny)' },
+          { label: 'Toggle AI run', value: 'default.run', hint: config.access.allow_ai_execute ? '(allow)' : '(deny)' },
+          { label: 'Toggle AI list names', value: 'default.list', hint: config.access.allow_ai_active_check ? '(allow)' : '(deny)' },
+          { label: 'Edit one who default rule', value: 'default.client', hint: `(${Object.keys(config.access.client_rules || {}).length} saved)` },
+          { label: 'Back', value: 'default.back' },
+        ],
+      },
+      {
+        label: 'Variable',
+        items: [
+          { label: 'Edit one variable rule', value: 'variable.edit', hint: `(${Object.keys(config.access.variable_rules || {}).length} saved)` },
+          { label: 'Set active time window', value: 'variable.window', hint: '(HH:MM -> HH:MM)' },
+          { label: 'Clear active time window', value: 'variable.clear-window', hint: '(one variable)' },
+          { label: 'Remove one variable rule', value: 'variable.remove', hint: '(exact variable name)' },
+          { label: 'Show variable rule names', value: 'variable.list', hint: '(saved rules)' },
+          { label: 'Back', value: 'variable.back' },
+        ],
+      },
+      {
+        label: 'Who',
+        items: [
+          { label: 'Edit one who variable rule', value: 'who.edit', hint: `(${Object.keys(config.access.client_rules || {}).length} clients)` },
+          { label: 'Set who time window', value: 'who.window', hint: '(client + variable)' },
+          { label: 'Clear who time window', value: 'who.clear-window', hint: '(client + variable)' },
+          { label: 'Remove one who variable rule', value: 'who.remove', hint: '(client + variable)' },
+          { label: 'Show who names', value: 'who.list', hint: '(saved clients)' },
+          { label: 'Back', value: 'who.back' },
+        ],
+      },
+    ]);
+
+    if (choice.endsWith('.back')) {
+      return;
+    }
+
+    if (choice === 'variable.list') {
+      config = await loadScopedConfig(projectPath, 'merged');
+      const names = Object.keys(config.access.variable_rules || {});
+      console.log(names.length > 0 ? chalk.gray(names.join(', ')) : chalk.gray('No variable-specific rules yet.'));
+      await promptInput('Press Enter to continue');
+      continue;
+    }
+
+    if (choice === 'who.list') {
+      config = await loadScopedConfig(projectPath, 'merged');
+      const names = Object.keys(config.access.client_rules || {});
+      console.log(names.length > 0 ? chalk.gray(names.join(', ')) : chalk.gray('No who-specific rules yet.'));
+      await promptInput('Press Enter to continue');
+      continue;
+    }
+
+    const scope = await chooseEditableRuleScope();
+    config = await loadScopedConfig(projectPath, scope);
+
+    if (choice === 'default.read') {
+      config.access.allow_ai_read = !config.access.allow_ai_read;
+    } else if (choice === 'default.write') {
+      config.access.allow_ai_write = !config.access.allow_ai_write;
+    } else if (choice === 'default.delete') {
+      config.access.allow_ai_delete = !config.access.allow_ai_delete;
+    } else if (choice === 'default.run') {
+      config.access.allow_ai_execute = !config.access.allow_ai_execute;
+    } else if (choice === 'default.list') {
+      config.access.allow_ai_active_check = !config.access.allow_ai_active_check;
+    } else if (choice === 'default.client') {
+      const clientId = await promptClientRuleTarget();
+      if (clientId) {
+        const field = await promptMenu(`Default rule for ${clientId}`, [
+          { label: 'AI read', value: 'allow_ai_read' },
+          { label: 'AI write', value: 'allow_ai_write' },
+          { label: 'AI delete', value: 'allow_ai_delete' },
+          { label: 'AI export', value: 'allow_ai_export' },
+          { label: 'AI run', value: 'allow_ai_execute' },
+          { label: 'AI list names', value: 'allow_ai_active_check' },
+          { label: 'Require confirmation', value: 'require_confirmation' },
+        ]) as DefaultRuleField;
+        const value = await promptMenu(`Set ${field} for ${clientId}`, [
+          { label: 'Allow / on', value: 'allow' },
+          { label: 'Deny / off', value: 'deny' },
+          { label: 'Inherit global default', value: 'inherit' },
+        ], 'inherit');
+        applyDefaultRule(config, field, value === 'inherit' ? undefined : value === 'allow', clientId);
+      }
+    } else if (choice === 'variable.edit') {
+      await editVariableRule(config);
+    } else if (choice === 'variable.window') {
+      await editVariableRuleWindow(config);
+    } else if (choice === 'variable.clear-window') {
+      const variable = (await promptInput('Variable name:')).trim();
+      if (variable) {
+        setVariableRuleWindow(config, variable, undefined, undefined);
+      }
+    } else if (choice === 'variable.remove') {
+      await removeVariableRule(config);
+    } else if (choice === 'who.edit') {
+      const clientId = await promptClientRuleTarget();
+      if (clientId) {
+        await editVariableRule(config, clientId);
+      }
+    } else if (choice === 'who.window') {
+      const clientId = await promptClientRuleTarget();
+      if (clientId) {
+        await editVariableRuleWindow(config, clientId);
+      }
+    } else if (choice === 'who.clear-window') {
+      const clientId = await promptClientRuleTarget();
+      if (clientId) {
+        const variable = (await promptInput('Variable name:')).trim();
+        if (variable) {
+          setVariableRuleWindow(config, variable, undefined, undefined, clientId);
+        }
+      }
+    } else if (choice === 'who.remove') {
+      const clientId = await promptClientRuleTarget();
+      if (clientId) {
+        await removeVariableRule(config, clientId);
+      }
+    }
+
+    await saveScopedConfig(config, projectPath, scope);
+  }
+}
+
+type UnlockOptions = {
+  recoveryKey?: string;
+  saveToKeychain?: boolean;
+  setupHsm?: boolean;
+  hsmType?: string;
+  keyId?: string;
+  pkcs11Lib?: string;
+  global?: boolean;
+};
+
+async function runUnlockFlow(options: UnlockOptions = {}): Promise<void> {
+  const { projectPath, config } = await resolveCliContext(options.global ? 'global' : undefined);
+
+  const password = await promptPassword('Enter password:');
+  const { valid: passwordValid, warning: passwordWarning } = validatePassword(password, config.password || {});
+  if (!passwordValid) {
+    console.log(chalk.red('Invalid password'));
+    return;
+  }
+  if (passwordWarning) {
+    console.log(chalk.yellow('⚠ Weak password detected'));
+  }
+
+  const sessionDir = path.dirname(resolveSessionPath(projectPath, config));
+  const lockoutManager = new LockoutManager(path.join(sessionDir, '.lockout'));
+
+  if (options.recoveryKey) {
+    const recoveryPath = path.join(projectPath, config.security?.recovery_file || '.envcp/.recovery');
+    if (!await pathExists(recoveryPath)) {
+      console.log(chalk.red('No recovery file found.'));
+      return;
+    }
+
+    const recoveryData = await fs.readFile(recoveryPath, 'utf8');
+    try {
+      await recoverPassword(recoveryData, options.recoveryKey);
+      await lockoutManager.clearPermanentLockout();
+      console.log(chalk.green('Permanent lockout cleared.'));
+
+      const logManager = new LogManager(resolveLogPath(config.audit, projectPath), config.audit);
+      await logManager.init();
+      await logManager.log({
+        timestamp: new Date().toISOString(),
+        operation: 'unlock',
+        variable: '',
+        source: 'cli',
+        success: true,
+        message: 'Permanent lockout cleared with recovery key (via --recovery-key flag)',
+        session_id: '',
+        client_id: 'cli',
+        client_type: 'terminal',
+        ip: '127.0.0.1',
+      });
+
+      console.log(chalk.yellow('Note: You still need to enter the correct password.'));
+    } catch {
+      console.log(chalk.red('Invalid recovery key.'));
+      return;
+    }
+  }
+
+  const bfpConfig = config.security?.brute_force_protection;
+  const lockoutThreshold = bfpConfig?.max_attempts ?? config.session?.lockout_threshold ?? 5;
+  const lockoutBaseSeconds = bfpConfig?.lockout_duration ?? config.session?.lockout_base_seconds ?? 60;
+  const progressiveDelay = bfpConfig?.progressive_delay ?? true;
+  const maxDelay = bfpConfig?.max_delay ?? 60;
+  const permanentThreshold = bfpConfig?.permanent_lockout_threshold ?? 0;
+
+  const sessionManager = new SessionManager(
+    resolveSessionPath(projectPath, config),
+    config.session?.timeout_minutes || 30,
+    config.session?.max_extensions || 5,
+  );
+  await sessionManager.init();
+
+  const logManager = new LogManager(resolveLogPath(config.audit, projectPath), config.audit);
+  await logManager.init();
+
+  const vaultPathForUnlock = await resolveVaultPath(projectPath, config);
+  const storage = new StorageManager(vaultPathForUnlock, config.storage.encrypted);
+  storage.setPassword(password);
+
+  const storeExists = await storage.exists();
+
+  if (storeExists) {
+    const lockoutStatus = await lockoutManager.check();
+    if (lockoutStatus.locked) {
+      if (lockoutStatus.permanent_locked) {
+        console.log(chalk.red.bold('PERMANENT LOCKOUT: Too many failed attempts.'));
+        console.log(chalk.red('Recovery key or administrator intervention required.'));
+
+        const useRecovery = await promptConfirm('Use recovery key to clear lockout?', true);
+        if (useRecovery) {
+          const recoveryKey = await promptPassword('Enter recovery key:');
+          const recoveryPath = path.join(projectPath, config.security?.recovery_file || '.envcp/.recovery');
+          if (!await pathExists(recoveryPath)) {
+            console.log(chalk.red('No recovery file found.'));
+            return;
+          }
+
+          const recoveryData = await fs.readFile(recoveryPath, 'utf8');
+          try {
+            await recoverPassword(recoveryData, recoveryKey);
+            await lockoutManager.clearPermanentLockout();
+            console.log(chalk.green('Permanent lockout cleared. You can now attempt to unlock.'));
+            console.log(chalk.yellow('Note: You still need to enter the correct password.'));
+
+            await logManager.log({
+              timestamp: new Date().toISOString(),
+              operation: 'unlock',
+              variable: '',
+              source: 'cli',
+              success: true,
+              message: 'Permanent lockout cleared with recovery key',
+              session_id: '',
+              client_id: 'cli',
+              client_type: 'terminal',
+              ip: '127.0.0.1',
+            });
+          } catch {
+            console.log(chalk.red('Invalid recovery key.'));
+            return;
+          }
+        } else {
+          return;
+        }
+      } else {
+        console.log(chalk.red(`Too many failed attempts. Try again in ${lockoutStatus.remaining_seconds} second(s).`));
+        return;
+      }
+    }
+  }
+
+  if (!storeExists) {
+    const confirmPasswordValue = await promptPassword('Confirm password:');
+    if (!secureCompare(Buffer.from(confirmPasswordValue, 'utf8'), Buffer.from(password, 'utf8'))) {
+      console.log(chalk.red('Passwords do not match'));
+      return;
+    }
+
+    if (config.security?.mode === 'recoverable') {
+      const recoveryPath = path.join(projectPath, config.security.recovery_file || '.envcp/.recovery');
+      if (!await pathExists(recoveryPath)) {
+        const recoveryKey = generateRecoveryKey();
+        const recoveryData = await createRecoveryData(password, recoveryKey);
+        await ensureDir(path.dirname(recoveryPath));
+        await fs.writeFile(recoveryPath, recoveryData, 'utf8');
+
+        console.log('');
+        console.log(chalk.yellow.bold('RECOVERY KEY (save this somewhere safe!):'));
+        console.log(chalk.yellow.bold(`  ${recoveryKey}`));
+        console.log(chalk.gray('This key is shown ONCE. If you lose it, you cannot recover your password.'));
+        console.log('');
+      }
+    }
+  }
+
+  try {
+    await storage.load();
+  } catch {
+    if (storeExists) {
+      const status = await lockoutManager.recordFailure(
+        lockoutThreshold,
+        lockoutBaseSeconds,
+        progressiveDelay,
+        maxDelay,
+        permanentThreshold,
+      );
+
+      await logManager.log({
+        timestamp: new Date().toISOString(),
+        operation: 'auth_failure',
+        variable: '',
+        source: 'cli',
+        success: false,
+        message: `Failed unlock attempt (attempt ${status.attempts})`,
+        session_id: '',
+        client_id: 'cli',
+        client_type: 'terminal',
+        ip: '127.0.0.1',
+      });
+
+      if (status.permanent_locked) {
+        console.log(chalk.red.bold('PERMANENT LOCKOUT TRIGGERED: Too many failed attempts.'));
+        console.log(chalk.red('Recovery key or administrator intervention required.'));
+        await logManager.log({
+          timestamp: new Date().toISOString(),
+          operation: 'permanent_lockout',
+          variable: '',
+          source: 'cli',
+          success: false,
+          message: `Permanent lockout triggered after ${status.permanent_lockout_count} lockouts`,
+          session_id: '',
+          client_id: 'cli',
+          client_type: 'terminal',
+          ip: '127.0.0.1',
+        });
+      } else if (status.locked) {
+        console.log(chalk.red(`Invalid password. Too many failed attempts — locked out for ${status.remaining_seconds} second(s).`));
+        await logManager.log({
+          timestamp: new Date().toISOString(),
+          operation: 'lockout_triggered',
+          variable: '',
+          source: 'cli',
+          success: false,
+          message: `Lockout triggered for ${status.remaining_seconds}s (lockout #${status.lockout_count})`,
+          session_id: '',
+          client_id: 'cli',
+          client_type: 'terminal',
+          ip: '127.0.0.1',
+        });
+      } else {
+        const remaining = lockoutThreshold - status.attempts;
+        let message = `Invalid password. ${remaining} attempt(s) remaining before lockout.`;
+        if (status.delay_seconds && status.delay_seconds > 0) {
+          message += ` (Delayed ${status.delay_seconds}s)`;
+        }
+        console.log(chalk.red(message));
+      }
+    } else {
+      console.log(chalk.red('Invalid password'));
+    }
+    return;
+  }
+
+  await lockoutManager.reset();
+
+  if (config.session?.enabled === false) {
+    await sessionManager.destroy();
+    console.log(chalk.green('Password verified.'));
+    console.log(chalk.gray('Session mode is off, so EnvCP will ask again next time.'));
+  } else {
+    const session = await sessionManager.create(password);
+    await logManager.log({
+      timestamp: new Date().toISOString(),
+      operation: 'unlock',
+      variable: '',
+      source: 'cli',
+      success: true,
+      message: 'Session unlocked successfully',
+      session_id: session.id,
+      client_id: 'cli',
+      client_type: 'terminal',
+      ip: '127.0.0.1',
+    });
+
+    console.log(chalk.green('Session unlocked!'));
+    console.log(chalk.gray(`  Session ID: ${session.id}`));
+    console.log(chalk.gray(`  Expires in: ${config.session?.timeout_minutes || 30} minutes`));
+    const maxExt = config.session?.max_extensions || 5;
+    console.log(chalk.gray(`  Extensions remaining: ${maxExt - session.extensions}/${maxExt}`));
+  }
+
+  if (options.saveToKeychain) {
+    const keychain = new KeychainManager(config.keychain?.service || 'envcp');
+    if (await keychain.isAvailable()) {
+      const result = await keychain.storePassword(password, projectPath);
+      if (result.success) {
+        config.keychain = { ...config.keychain, enabled: true };
+        await saveConfig(config, projectPath);
+        console.log(chalk.green(`Password saved to ${keychain.backendName}`));
+        console.log(chalk.gray('  Future sessions will auto-unlock from keychain'));
+      } else {
+        console.log(chalk.red(`Failed to save to keychain: ${result.error}`));
+      }
+    } else {
+      console.log(chalk.red(`OS keychain not available (${keychain.backendName})`));
+    }
+  }
+
+  if (options.setupHsm) {
+    const hsmType = (options.hsmType as 'yubikey' | 'gpg' | 'pkcs11') || 'yubikey';
+
+    config.hsm = {
+      ...config.hsm,
+      enabled: true,
+      type: hsmType,
+      key_id: options.keyId ?? config.hsm?.key_id,
+      pkcs11_lib: options.pkcs11Lib ?? config.hsm?.pkcs11_lib,
+      require_touch: config.hsm?.require_touch ?? true,
+      protected_key_path: config.hsm?.protected_key_path ?? '.envcp/.hsm-key',
+    };
+    config.auth = { ...config.auth, method: 'hsm', fallback: config.auth?.fallback ?? 'password' };
+
+    const hsm = HsmManager.fromConfig(config, projectPath);
+    if (!await hsm.isAvailable()) {
+      console.log(chalk.red(`HSM device (${hsm.backendName}) not available. Aborting HSM setup.`));
+      return;
+    }
+
+    try {
+      await hsm.protectVaultPassword(password);
+      await saveConfig(config, projectPath);
+      console.log(chalk.green(`Vault password protected by ${hsm.backendName}`));
+      console.log(chalk.gray(`  Key file: ${config.hsm.protected_key_path}`));
+      console.log(chalk.gray('  Future sessions will authenticate via hardware'));
+    } catch (err: unknown) {
+      console.log(chalk.red(`HSM setup failed: ${err instanceof Error ? err.message : String(err)}`));
+    }
+  }
+}
+
+async function runLockFlow(global = false): Promise<void> {
+  const { projectPath, config } = await resolveCliContext(global ? 'global' : undefined);
+
+  if (config.session?.enabled === false) {
+    console.log(chalk.gray('Session mode is already off.'));
+    return;
+  }
+
+  const sessionManager = new SessionManager(
+    resolveSessionPath(projectPath, config),
+    config.session?.timeout_minutes || 30,
+    config.session?.max_extensions || 5,
+  );
+  await sessionManager.init();
+  await sessionManager.destroy();
+  console.log(chalk.green('Session locked'));
+}
+
+async function describeHomeState(): Promise<{ title: string; locked: boolean; sessionEnabled: boolean }> {
+  const config = await loadConfig(process.cwd());
+  if (config.encryption?.enabled === false) {
+    return { title: 'EnvCP (ready)', locked: false, sessionEnabled: false };
+  }
+  if (config.session?.enabled === false) {
+    return { title: 'EnvCP (password each time)', locked: false, sessionEnabled: false };
+  }
+  const locked = !await pathExists(resolveSessionPath(process.cwd(), config));
+  return {
+    title: locked ? 'EnvCP (locked)' : 'EnvCP (session active)',
+    locked,
+    sessionEnabled: true,
+  };
+}
+
+async function runInteractiveHome(): Promise<void> {
+  if (!await isProjectInitialized()) {
+    console.log(chalk.yellow('EnvCP is not set up yet in this folder.'));
+    await runInitFlow();
+    return;
+  }
+
+  while (true) {
+    const homeState = await describeHomeState();
+    const choices = [
+      ...(homeState.sessionEnabled
+        ? [{ label: homeState.locked ? 'Unlock' : 'Lock', value: homeState.locked ? 'unlock' : 'lock' }]
+        : []),
+      { label: 'Add secret', value: 'add' },
+      { label: 'Setup project', value: 'setup' },
+      { label: 'Config', value: 'config' },
+      { label: 'Rules', value: 'rules' },
+      { label: 'Exit', value: 'exit' },
+    ];
+    const choice = await promptMenu(homeState.title, choices, choices[0].value);
+
+    if (choice === 'unlock') {
+      await runUnlockFlow();
+      continue;
+    }
+    if (choice === 'lock') {
+      await runLockFlow();
+      continue;
+    }
+    if (choice === 'add') {
+      await runAddSecretFlow();
+      continue;
+    }
+    if (choice === 'setup') {
+      await runConfigMenu();
+      continue;
+    }
+    if (choice === 'config') {
+      await runConfigMenu();
+      continue;
+    }
+    if (choice === 'rules') {
+      await runRuleMenu();
+      continue;
+    }
+    if (choice === 'exit') {
+      return;
+    }
+  }
 }
 
 const program = new Command();
@@ -251,7 +1655,7 @@ program
 
 program
   .command('init')
-  .description('Initialize EnvCP in the current project')
+  .description('Set up EnvCP for first-time use')
   .option('-p, --project <name>', 'Project name')
   .option('--no-encrypt', 'Skip encryption (passwordless mode)')
   .option('--skip-env', 'Skip .env auto-import')
@@ -260,207 +1664,25 @@ program
   .option('--hsm-type <type>', 'HSM type for --auth-method hsm|multi: yubikey | gpg | pkcs11')
   .option('--key-id <id>', 'GPG key ID or PKCS#11 key label for HSM auth')
   .option('--pkcs11-lib <path>', 'Path to PKCS#11 shared library for --hsm-type pkcs11')
-  .option('--global', 'Initialize a global vault at ~/.envcp/ (config + store live in $HOME)')
-  .option('--force', 'Overwrite existing envcp.yaml (DESTRUCTIVE: existing vault may become inaccessible)')
   .action(async (options) => {
-    const useGlobal = !!options.global;
-    const home = process.env.HOME || process.env.USERPROFILE || os.homedir();
-    const projectPath = useGlobal ? home : process.cwd();
-    const projectName = options.project || (useGlobal ? 'global' : path.basename(projectPath));
+    await runInitFlow(options);
+  });
 
-    const configPath = path.join(projectPath, 'envcp.yaml');
-    if (await pathExists(configPath) && !options.force) {
-      const vaultRelPath = path.join('.envcp', 'store.enc');
-      console.log(chalk.yellow('EnvCP is already initialized here.'));
-      console.log(chalk.gray(`  Config: ${configPath}`));
-      if (await pathExists(path.join(projectPath, vaultRelPath))) {
-        console.log(chalk.gray(`  Vault:  ${path.join(projectPath, vaultRelPath)}`));
-      }
-      console.log('');
-      console.log(chalk.gray('Running init again would overwrite your config and may make'));
-      console.log(chalk.gray('existing encrypted variables permanently inaccessible.'));
-      console.log('');
-      console.log(chalk.gray('To reconfigure: edit envcp.yaml directly'));
-      console.log(chalk.gray('To force re-init (DESTRUCTIVE): envcp init --force'));
-      process.exit(1);
-    }
-
-    console.log(chalk.blue(useGlobal ? 'Initializing EnvCP (global vault)...' : 'Initializing EnvCP...'));
-    console.log('');
-
-    const config = await initConfig(projectPath, projectName, { global: useGlobal });
-
-    // Single security question (or skip if --no-encrypt)
-    let securityChoice: 'none' | 'recoverable' | 'hard-lock';
-
-    if (options.encrypt === false) {
-      securityChoice = 'none';
-    } else {
-      securityChoice = await promptList(
-        'How would you like to secure your variables?',
-        [
-          { name: 'No encryption (fastest setup, for local dev)', value: 'none' },
-          { name: 'Encrypted with recovery key (recommended)', value: 'recoverable' },
-          { name: 'Encrypted hard-lock (max security, no recovery)', value: 'hard-lock' },
-        ],
-'recoverable'
-      ) as 'none' | 'recoverable' | 'hard-lock';
-    }
-
-    const securitySettings = buildSecuritySettings(securityChoice);
-    config.encryption = securitySettings.encryption;
-    config.storage.encrypted = securitySettings.storageEncrypted;
-    config.security = securitySettings.security;
-
-// For encrypted modes: get password now
-  let pwd = '';
-  if (securityChoice !== 'none') {
-    const password = await promptPassword('Set encryption password:');
-    const confirmPwd = await promptPassword('Confirm password:');
-
-    // eslint-disable-next-line security/detect-possible-timing-attacks -- comparing two user-typed confirm fields, not a secret-vs-known value
-    if (password !== confirmPwd) {
-      console.log(chalk.red('Passwords do not match. Aborting.'));
+program
+  .command('setup')
+  .description('Set up or reconfigure the current project')
+  .action(async () => {
+    if (!await isProjectInitialized()) {
+      const home = process.env.HOME || process.env.USERPROFILE || os.homedir();
+      if (path.resolve(process.cwd()) === path.resolve(home)) {
+        console.log(chalk.yellow('envcp setup configures a project folder.'));
+        console.log(chalk.gray('Open your project first, then run `envcp setup`.'));
         return;
       }
-      pwd = password;
+      await runInitFlow();
+      return;
     }
-
-    await saveConfig(config, projectPath, { global: useGlobal });
-
-    const modeLabel = securityChoice === 'none' ? 'no encryption' : securityChoice;
-    console.log(chalk.green('EnvCP initialized!'));
-    console.log(chalk.gray(`  Project: ${config.project}`));
-    console.log(chalk.gray(`  Security: ${modeLabel}`));
-    if (securityChoice !== 'none') {
-      console.log(chalk.gray(`  Session timeout: ${config.session?.timeout_minutes || 30} minutes`));
-    }
-
-    // Auto-import .env
-    if (!options.skipEnv) {
-      const envPath = path.join(projectPath, '.env');
-      if (await pathExists(envPath)) {
-        const envContent = await fs.readFile(envPath, 'utf8');
-        const vars = parseEnvFile(envContent);
-        const count = Object.keys(vars).length;
-
-        if (count > 0) {
-          const storage = new StorageManager(
-            path.join(projectPath, config.storage.path),
-            config.storage.encrypted
-          );
-          if (pwd) storage.setPassword(pwd);
-
-          const now = new Date().toISOString();
-          const existing = await storage.load();
-          for (const [name, value] of Object.entries(vars)) {
-            existing[name] = {
-              name, value,
-              encrypted: config.storage.encrypted,
-              created: now, updated: now,
-              sync_to_env: true,
-              protected: false,
-            };
-          }
-          await storage.save(existing);
-
-          // Create session for encrypted mode
-          if (pwd) {
-            const sessionManager = new SessionManager(
-              resolveSessionPath(projectPath, config),
-              config.session?.timeout_minutes || 30,
-              config.session?.max_extensions || 5
-            );
-            await sessionManager.init();
-            await sessionManager.create(pwd);
-          }
-
-          console.log(chalk.green(`  Imported ${count} variables from .env`));
-          console.log(chalk.gray(`  Variables: ${Object.keys(vars).join(', ')}`));
-        }
-      }
-    }
-
-    // Generate recovery key for encrypted recoverable mode
-    if (securityChoice === 'recoverable' && pwd) {
-      const recoveryKey = generateRecoveryKey();
-      const recoveryData = await createRecoveryData(pwd, recoveryKey);
-      const recoveryPath = path.join(projectPath, config.security.recovery_file);
-      await fs.writeFile(recoveryPath, recoveryData, 'utf8');
-
-      console.log('');
-      console.log(chalk.yellow.bold('  RECOVERY KEY (save this somewhere safe!):'));
-      console.log(chalk.yellow.bold(`  ${recoveryKey}`));
-      console.log(chalk.gray('  This key is shown ONCE. If you lose it, you cannot recover your password.'));
-    }
-
-    // Auto-register MCP in all detected tools
-    if (!options.skipMcp) {
-      const result = await registerMcpConfig(projectPath);
-      console.log('');
-      if (result.registered.length > 0) {
-        console.log(chalk.green('  MCP registered:'));
-        for (const name of result.registered) {
-          console.log(chalk.gray(`    + ${name}`));
-        }
-      }
-      if (result.alreadyConfigured.length > 0) {
-        for (const name of result.alreadyConfigured) {
-          console.log(chalk.gray(`    = ${name} (already configured)`));
-        }
-      }
-      if (result.manual.length > 0) {
-        console.log(chalk.gray('  Manual setup needed:'));
-        for (const name of result.manual) {
-          console.log(chalk.gray(`    ? ${name}`));
-        }
-      }
-      if (result.registered.length === 0 && result.alreadyConfigured.length === 0) {
-        console.log(chalk.gray('  No AI tools detected for auto-registration'));
-      }
-    }
-
-    // Setup HSM authentication if --auth-method hsm|multi provided
-    const authMethod = options.authMethod as string | undefined;
-    if (pwd && (authMethod === 'hsm' || authMethod === 'multi')) {
-      const hsmType = (options.hsmType as 'yubikey' | 'gpg' | 'pkcs11') || 'yubikey';
-      config.hsm = {
-        ...config.hsm,
-        enabled: true,
-        type: hsmType,
-        key_id: options.keyId ?? config.hsm?.key_id,
-        pkcs11_lib: options.pkcs11Lib ?? config.hsm?.pkcs11_lib,
-        require_touch: config.hsm?.require_touch ?? true,
-        protected_key_path: config.hsm?.protected_key_path ?? '.envcp/.hsm-key',
-      };
-      config.auth = {
-        method: authMethod as 'hsm' | 'multi',
-        multi_factors: authMethod === 'multi' ? ['password', 'hsm'] : ['hsm'],
-        fallback: 'password',
-      };
-
-      const hsm = HsmManager.fromConfig(config, projectPath);
-      if (await hsm.isAvailable()) {
-        try {
-          await hsm.protectVaultPassword(pwd);
-          await saveConfig(config, projectPath, { global: useGlobal });
-          console.log('');
-          console.log(chalk.green(`  Vault password protected by ${hsm.backendName}`));
-          console.log(chalk.gray(`  Future sessions will authenticate via hardware`));
-        } catch (err: unknown) {
-          console.log(chalk.yellow(`  HSM setup warning: ${err instanceof Error ? err.message : String(err)}`));
-          console.log(chalk.gray('  Falling back to password authentication'));
-        }
-      } else {
-        console.log(chalk.yellow(`  HSM device (${hsm.backendName}) not available at init time.`));
-        console.log(chalk.gray('  Run "envcp unlock --setup-hsm" later to enable hardware authentication.'));
-        config.auth = { method: authMethod as 'hsm' | 'multi', multi_factors: ['password', 'hsm'], fallback: 'password' };
-        await saveConfig(config, projectPath, { global: useGlobal });
-      }
-    }
-
-    console.log('');
-    console.log(chalk.green('Done! Your AI tools can now use EnvCP.'));
+    await runConfigMenu();
   });
 
 program
@@ -474,325 +1696,7 @@ program
   .option('--pkcs11-lib <path>', 'Path to PKCS#11 shared library (.so / .dll)')
   .option('--global', 'Unlock the global vault at ~/.envcp')
   .action(async (options) => {
-    const { projectPath, config } = await resolveCliContext(options.global ? 'global' : undefined);
-
-const password = await promptPassword('Enter password:');
-
-const { valid: passwordValid, warning: passwordWarning } = validatePassword(password, config.password || {});
-    if (!passwordValid) {
-      // nosem: no tainted data flows to log
-      console.log(chalk.red("Invalid password"));
-      return;
-    }
-    if (passwordValid && passwordWarning) {
-      console.log(chalk.yellow('⚠ Weak password detected'));
-    }
-
-    const sessionDir = path.dirname(resolveSessionPath(projectPath, config));
-
-    let lockoutManager: LockoutManager = new LockoutManager(path.join(sessionDir, '.lockout'));
-    
-    // Handle recovery key if provided
-    if (options.recoveryKey) {
-      const recoveryPath = path.join(projectPath, config.security?.recovery_file || '.envcp/.recovery');
-      if (!await pathExists(recoveryPath)) {
-        console.log(chalk.red('No recovery file found.'));
-        return;
-      }
-      
-      const recoveryData = await fs.readFile(recoveryPath, 'utf8');
-      try {
-        await recoverPassword(recoveryData, options.recoveryKey);
-        // Recovery key is valid - clear permanent lockout
-        await lockoutManager.clearPermanentLockout();
-        console.log(chalk.green('Permanent lockout cleared.'));
-        
-        // Log recovery event
-        const logManager = new LogManager(resolveLogPath(config.audit, projectPath), config.audit);
-        await logManager.init();
-        await logManager.log({
-          timestamp: new Date().toISOString(),
-          operation: 'unlock',
-          variable: '',
-          source: 'cli',
-          success: true,
-          message: 'Permanent lockout cleared with recovery key (via --recovery-key flag)',
-          session_id: '',
-          client_id: 'cli',
-          client_type: 'terminal',
-          ip: '127.0.0.1'
-        });
-        
-        console.log(chalk.yellow('Note: You still need to enter the correct password.'));
-        // Continue with password prompt
-      } catch {
-        console.log(chalk.red('Invalid recovery key.'));
-        return;
-      }
-    }
-    
-    // Use new brute_force_protection config if available, fall back to session config
-    const bfpConfig = config.security?.brute_force_protection;
-    const lockoutThreshold = bfpConfig?.max_attempts ?? config.session?.lockout_threshold ?? 5;
-    const lockoutBaseSeconds = bfpConfig?.lockout_duration ?? config.session?.lockout_base_seconds ?? 60;
-    const progressiveDelay = bfpConfig?.progressive_delay ?? true;
-    const maxDelay = bfpConfig?.max_delay ?? 60;
-    const permanentThreshold = bfpConfig?.permanent_lockout_threshold ?? 0;
-
-    const sessionManager = new SessionManager(
-      resolveSessionPath(projectPath, config),
-      config.session?.timeout_minutes || 30,
-      config.session?.max_extensions || 5
-    );
-
-    await sessionManager.init();
-
-    // Initialize audit logging
-    const logManager = new LogManager(resolveLogPath(config.audit, projectPath), config.audit);
-    await logManager.init();
-
-    const vaultPathForUnlock = await resolveVaultPath(projectPath, config);
-    const storage = new StorageManager(
-      vaultPathForUnlock,
-      config.storage.encrypted
-    );
-    storage.setPassword(password);
-
-    const storeExists = await storage.exists();
-
-    // Check lockout before attempting password verification on existing stores
-    if (storeExists) {
-      const lockoutStatus = await lockoutManager.check();
-      if (lockoutStatus.locked) {
-        if (lockoutStatus.permanent_locked) {
-          console.log(chalk.red.bold('PERMANENT LOCKOUT: Too many failed attempts.'));
-          console.log(chalk.red('Recovery key or administrator intervention required.'));
-
-          const useRecovery = await promptConfirm('Use recovery key to clear lockout?', true);
-
-          if (useRecovery) {
-            const recoveryKey = await promptPassword('Enter recovery key:');
-            
-            const recoveryPath = path.join(projectPath, config.security?.recovery_file || '.envcp/.recovery');
-            if (!await pathExists(recoveryPath)) {
-              console.log(chalk.red('No recovery file found.'));
-              return;
-            }
-            
-            const recoveryData = await fs.readFile(recoveryPath, 'utf8');
-            try {
-              await recoverPassword(recoveryData, recoveryKey);
-              // Recovery key is valid - clear permanent lockout
-              await lockoutManager.clearPermanentLockout();
-              console.log(chalk.green('Permanent lockout cleared. You can now attempt to unlock.'));
-              console.log(chalk.yellow('Note: You still need to enter the correct password.'));
-              
-              // Log recovery event
-              await logManager.log({
-                timestamp: new Date().toISOString(),
-                operation: 'unlock',
-                variable: '',
-                source: 'cli',
-                success: true,
-                message: 'Permanent lockout cleared with recovery key',
-                session_id: '',
-                client_id: 'cli',
-                client_type: 'terminal',
-                ip: '127.0.0.1'
-              });
-              
-              // Continue with password prompt
-            } catch {
-              console.log(chalk.red('Invalid recovery key.'));
-              return;
-            }
-          } else {
-            return;
-          }
-        } else {
-          console.log(chalk.red(`Too many failed attempts. Try again in ${lockoutStatus.remaining_seconds} second(s).`));
-          return;
-        }
-      }
-    }
-
-    if (!storeExists) {
-const confirmPasswordValue = await promptPassword('Confirm password:');
-    // eslint-disable-next-line security/detect-possible-timing-attacks -- comparing two user-typed confirm fields, not a secret-vs-known value
-    if (confirmPasswordValue !== password) {
-        console.log(chalk.red('Passwords do not match'));
-        return;
-      }
-
-      // Generate recovery key for new stores in recoverable mode
-      if (config.security?.mode === 'recoverable') {
-        const recoveryPath = path.join(projectPath, config.security.recovery_file || '.envcp/.recovery');
-        if (!await pathExists(recoveryPath)) {
-          const recoveryKey = generateRecoveryKey();
-          const recoveryData = await createRecoveryData(password, recoveryKey);
-          await ensureDir(path.dirname(recoveryPath));
-          await fs.writeFile(recoveryPath, recoveryData, 'utf8');
-
-          console.log('');
-          console.log(chalk.yellow.bold('RECOVERY KEY (save this somewhere safe!):'));
-          console.log(chalk.yellow.bold(`  ${recoveryKey}`));
-          console.log(chalk.gray('This key is shown ONCE. If you lose it, you cannot recover your password.'));
-          console.log('');
-        }
-      }
-    }
-
-    try {
-      await storage.load();
-    } catch (error) {
-      if (storeExists) {
-        const status = await lockoutManager.recordFailure(
-          lockoutThreshold, 
-          lockoutBaseSeconds,
-          progressiveDelay,
-          maxDelay,
-          permanentThreshold
-        );
-        
-        // Log the failed attempt
-        await logManager.log({
-          timestamp: new Date().toISOString(),
-          operation: 'auth_failure',
-          variable: '',
-          source: 'cli',
-          success: false,
-          message: `Failed unlock attempt (attempt ${status.attempts})`,
-          session_id: '',
-          client_id: 'cli',
-          client_type: 'terminal',
-          ip: '127.0.0.1'
-        });
-        
-        if (status.permanent_locked) {
-          console.log(chalk.red.bold('PERMANENT LOCKOUT TRIGGERED: Too many failed attempts.'));
-          console.log(chalk.red('Recovery key or administrator intervention required.'));
-          
-          // Log permanent lockout event
-          await logManager.log({
-            timestamp: new Date().toISOString(),
-            operation: 'permanent_lockout',
-            variable: '',
-            source: 'cli',
-            success: false,
-            message: `Permanent lockout triggered after ${status.permanent_lockout_count} lockouts`,
-            session_id: '',
-            client_id: 'cli',
-            client_type: 'terminal',
-            ip: '127.0.0.1'
-          });
-        } else if (status.locked) {
-          console.log(chalk.red(`Invalid password. Too many failed attempts — locked out for ${status.remaining_seconds} second(s).`));
-          
-          // Log lockout event
-          await logManager.log({
-            timestamp: new Date().toISOString(),
-            operation: 'lockout_triggered',
-            variable: '',
-            source: 'cli',
-            success: false,
-            message: `Lockout triggered for ${status.remaining_seconds}s (lockout #${status.lockout_count})`,
-            session_id: '',
-            client_id: 'cli',
-            client_type: 'terminal',
-            ip: '127.0.0.1'
-          });
-        } else {
-          const remaining = lockoutThreshold - status.attempts;
-          let message = `Invalid password. ${remaining} attempt(s) remaining before lockout.`;
-          
-          // Show progressive delay if applied
-          if (status.delay_seconds && status.delay_seconds > 0) {
-            message += ` (Delayed ${status.delay_seconds}s)`;
-          }
-          
-          console.log(chalk.red(message));
-        }
-      } else {
-        console.log(chalk.red('Invalid password'));
-      }
-      return;
-    }
-
-    // Successful unlock — clear any lockout state
-    await lockoutManager.reset();
-
-    const session = await sessionManager.create(password);
-
-    // Log successful unlock
-    await logManager.log({
-      timestamp: new Date().toISOString(),
-      operation: 'unlock',
-      variable: '',
-      source: 'cli',
-      success: true,
-      message: 'Session unlocked successfully',
-      session_id: session.id,
-      client_id: 'cli',
-      client_type: 'terminal',
-      ip: '127.0.0.1'
-    });
-
-    console.log(chalk.green('Session unlocked!'));
-    console.log(chalk.gray(`  Session ID: ${session.id}`));
-    console.log(chalk.gray(`  Expires in: ${config.session?.timeout_minutes || 30} minutes`));
-    const maxExt = config.session?.max_extensions || 5;
-    console.log(chalk.gray(`  Extensions remaining: ${maxExt - session.extensions}/${maxExt}`));
-
-    // Save to keychain if requested
-    if (options.saveToKeychain) {
-      const keychain = new KeychainManager(config.keychain?.service || 'envcp');
-      if (await keychain.isAvailable()) {
-        const result = await keychain.storePassword(password, projectPath);
-        if (result.success) {
-          // Enable keychain in config
-          config.keychain = { ...config.keychain, enabled: true };
-          await saveConfig(config, projectPath);
-          console.log(chalk.green(`Password saved to ${keychain.backendName}`));
-          console.log(chalk.gray('  Future sessions will auto-unlock from keychain'));
-        } else {
-          console.log(chalk.red(`Failed to save to keychain: ${result.error}`));
-        }
-      } else {
-        console.log(chalk.red(`OS keychain not available (${keychain.backendName})`));
-      }
-    }
-
-    // Setup HSM if requested
-    if (options.setupHsm) {
-      const hsmType = (options.hsmType as 'yubikey' | 'gpg' | 'pkcs11') || 'yubikey';
-
-      config.hsm = {
-        ...config.hsm,
-        enabled: true,
-        type: hsmType,
-        key_id: options.keyId ?? config.hsm?.key_id,
-        pkcs11_lib: options.pkcs11Lib ?? config.hsm?.pkcs11_lib,
-        require_touch: config.hsm?.require_touch ?? true,
-        protected_key_path: config.hsm?.protected_key_path ?? '.envcp/.hsm-key',
-      };
-      config.auth = { ...config.auth, method: 'hsm', fallback: config.auth?.fallback ?? 'password' };
-
-      const hsm = HsmManager.fromConfig(config, projectPath);
-      if (!await hsm.isAvailable()) {
-        console.log(chalk.red(`HSM device (${hsm.backendName}) not available. Aborting HSM setup.`));
-        return;
-      }
-
-      try {
-        await hsm.protectVaultPassword(password);
-        await saveConfig(config, projectPath);
-        console.log(chalk.green(`Vault password protected by ${hsm.backendName}`));
-        console.log(chalk.gray(`  Key file: ${config.hsm.protected_key_path}`));
-        console.log(chalk.gray('  Future sessions will authenticate via hardware'));
-      } catch (err: unknown) {
-        console.log(chalk.red(`HSM setup failed: ${err instanceof Error ? err.message : String(err)}`));
-      }
-    }
+    await runUnlockFlow(options);
   });
 
 program
@@ -800,18 +1704,7 @@ program
   .description('Lock EnvCP session')
   .option('--global', 'Lock the global vault session at ~/.envcp/.session')
   .action(async (options) => {
-    const { projectPath, config } = await resolveCliContext(options.global ? 'global' : undefined);
-
-    const sessionManager = new SessionManager(
-      resolveSessionPath(projectPath, config),
-      config.session?.timeout_minutes || 30,
-      config.session?.max_extensions || 5
-    );
-
-    await sessionManager.init();
-    await sessionManager.destroy();
-
-    console.log(chalk.green('Session locked'));
+    await runLockFlow(!!options.global);
   });
 
 program
@@ -820,6 +1713,18 @@ program
   .option('--global', 'Check status of the global vault session at ~/.envcp/.session')
   .action(async (options) => {
     const { projectPath, config } = await resolveCliContext(options.global ? 'global' : undefined);
+
+    if (config.encryption?.enabled === false) {
+      console.log(chalk.green('Ready'));
+      console.log(chalk.gray('  Encryption is off, so no unlock is needed.'));
+      return;
+    }
+
+    if (config.session?.enabled === false) {
+      console.log(chalk.yellow('Session mode is off'));
+      console.log(chalk.gray('  EnvCP will ask for the password each time.'));
+      return;
+    }
 
     const sessionManager = new SessionManager(
       resolveSessionPath(projectPath, config),
@@ -847,26 +1752,229 @@ console.log(chalk.gray(` Remaining: ${remaining} minutes`));
   console.log(chalk.gray(` Extensions remaining: ${maxExt - session.extensions}/${maxExt}`));
 });
 
-program
-.command('config')
-.description('Config management commands')
-.command('reload')
-.description('Reload config from envcp.yaml (requires password)')
-.action(async () => {
-  const projectPath = process.cwd();
-  const configGuard = new ConfigGuard(projectPath);
+const configCommand = program
+  .command('config')
+  .description('Configure EnvCP settings')
+  .action(async () => {
+    await runConfigMenu();
+  });
 
-const password = await promptPassword('Enter password to reload config:');
-
+configCommand
+  .command('reload')
+  .description('Reload config from envcp.yaml (requires password)')
+  .action(async () => {
+    const projectPath = process.cwd();
+    const configGuard = new ConfigGuard(projectPath);
+    const password = await promptPassword('Enter password to reload config:');
     const result = await configGuard.reload(password);
 
-  if (result.success) {
-    console.log(chalk.green('Config reloaded successfully'));
-    console.log(chalk.gray(' New config hash: ' + configGuard.getHash()?.substring(0, 16) + '...'));
-  } else {
-    console.log(chalk.red(result.error || 'Failed to reload config'));
-  }
-});
+    if (result.success) {
+      console.log(chalk.green('Config reloaded successfully'));
+      console.log(chalk.gray(`  New config hash: ${configGuard.getHash()?.substring(0, 16)}...`));
+    } else {
+      console.log(chalk.red(result.error || 'Failed to reload config'));
+    }
+  });
+
+const ruleCommand = program
+  .command('rule')
+  .description('Manage EnvCP AI access rules')
+  .action(async () => {
+    await runRuleMenu();
+  });
+
+ruleCommand
+  .command('list')
+  .description('List default, variable-specific, and who-specific AI rules')
+  .option('--scope <scope>', 'Rule scope: merged | project | home', 'merged')
+  .action(async (options) => {
+    const scope = parseRuleScope(options.scope, 'merged');
+    const config = await loadScopedConfig(process.cwd(), scope);
+    const projectConfig = scope === 'merged' ? await loadScopedConfig(process.cwd(), 'project') : null;
+    const homeConfig = scope === 'merged' ? await loadScopedConfig(process.cwd(), 'home') : null;
+    console.log(chalk.blue('EnvCP rules'));
+    console.log(chalk.gray(`  Scope: ${scope}`));
+    const formatOrigin = (origin: string) => scope === 'merged' ? ` (${origin})` : '';
+    console.log(chalk.gray(`  Default read: ${config.access.allow_ai_read ? 'allow' : 'deny'}${formatOrigin(scope === 'merged' ? describeMergedDefaultOrigin(config.access.allow_ai_read, projectConfig!.access.allow_ai_read, homeConfig!.access.allow_ai_read) : scope)}`));
+    console.log(chalk.gray(`  Default write: ${config.access.allow_ai_write ? 'allow' : 'deny'}${formatOrigin(scope === 'merged' ? describeMergedDefaultOrigin(config.access.allow_ai_write, projectConfig!.access.allow_ai_write, homeConfig!.access.allow_ai_write) : scope)}`));
+    console.log(chalk.gray(`  Default delete: ${config.access.allow_ai_delete ? 'allow' : 'deny'}${formatOrigin(scope === 'merged' ? describeMergedDefaultOrigin(config.access.allow_ai_delete, projectConfig!.access.allow_ai_delete, homeConfig!.access.allow_ai_delete) : scope)}`));
+    console.log(chalk.gray(`  Default export: ${config.access.allow_ai_export ? 'allow' : 'deny'}${formatOrigin(scope === 'merged' ? describeMergedDefaultOrigin(config.access.allow_ai_export, projectConfig!.access.allow_ai_export, homeConfig!.access.allow_ai_export) : scope)}`));
+    console.log(chalk.gray(`  Default run: ${config.access.allow_ai_execute ? 'allow' : 'deny'}${formatOrigin(scope === 'merged' ? describeMergedDefaultOrigin(config.access.allow_ai_execute, projectConfig!.access.allow_ai_execute, homeConfig!.access.allow_ai_execute) : scope)}`));
+    console.log(chalk.gray(`  Default list names: ${config.access.allow_ai_active_check ? 'allow' : 'deny'}${formatOrigin(scope === 'merged' ? describeMergedDefaultOrigin(config.access.allow_ai_active_check, projectConfig!.access.allow_ai_active_check, homeConfig!.access.allow_ai_active_check) : scope)}`));
+    console.log(chalk.gray(`  Default confirmation: ${config.access.require_confirmation ? 'on' : 'off'}${formatOrigin(scope === 'merged' ? describeMergedDefaultOrigin(config.access.require_confirmation, projectConfig!.access.require_confirmation, homeConfig!.access.require_confirmation) : scope)}`));
+
+    const variableRules = Object.entries(config.access.variable_rules || {});
+    if (variableRules.length === 0) {
+      console.log(chalk.gray('  Variable rules: none'));
+    } else {
+      console.log(chalk.gray('  Variable rules:'));
+      for (const [name, rule] of variableRules) {
+        const origin = scope === 'merged'
+          ? describeMergedVariableRuleOrigin(
+            name,
+            rule,
+            projectConfig!.access.variable_rules || {},
+            homeConfig!.access.variable_rules || {},
+          )
+          : scope;
+        console.log(chalk.gray(`    ${name} [${origin}]`));
+        for (const line of formatVariableRuleLines(rule)) {
+          console.log(chalk.gray(`      ${line}`));
+        }
+      }
+    }
+
+    const clientRules = Object.entries(config.access.client_rules || {});
+    if (clientRules.length === 0) {
+      console.log(chalk.gray('  Who rules: none'));
+      return;
+    }
+
+    console.log(chalk.gray('  Who rules:'));
+    for (const [clientId, rule] of clientRules) {
+      const origin = scope === 'merged'
+        ? describeMergedClientRuleOrigin(
+          clientId,
+          rule,
+          projectConfig!.access.client_rules || {},
+          homeConfig!.access.client_rules || {},
+        )
+        : scope;
+      console.log(chalk.gray(`    ${formatClientLabel(clientId)} [${origin}]`));
+      for (const line of formatClientRuleLines(rule)) {
+        console.log(chalk.gray(`      ${line}`));
+      }
+
+      const variableRules = Object.entries(rule.variable_rules || {});
+      if (variableRules.length > 0) {
+        console.log(chalk.gray('      variable rules:'));
+        for (const [name, variableRule] of variableRules) {
+          console.log(chalk.gray(`        ${name}`));
+          for (const line of formatVariableRuleLines(variableRule)) {
+            console.log(chalk.gray(`          ${line}`));
+          }
+        }
+      }
+    }
+
+    if (scope === 'merged') {
+      console.log(chalk.gray('  Tip: use `envcp rule set-default ... --who <id>` or `envcp rule set-variable ... --who <id>` to edit one client.'));
+    }
+  });
+
+ruleCommand
+  .command('set-default <operation> <mode>')
+  .description('Set a default AI rule, e.g. read allow | list deny | confirm allow')
+  .option('--scope <scope>', 'Rule scope: project | home', 'project')
+  .option('--who <who>', 'Target one client id, e.g. mcp | openai | gemini | api | cursor')
+  .action(async (operation, mode, options) => {
+    const field = parseDefaultRuleField(operation);
+    if (!field) {
+      throw new Error(`Unknown rule operation '${operation}'`);
+    }
+    if (!['allow', 'deny', 'inherit'].includes(mode)) {
+      throw new Error(`Rule mode must be 'allow', 'deny', or 'inherit', got '${mode}'`);
+    }
+
+    const scope = parseRuleScope(options.scope, 'project');
+    if (scope === 'merged') {
+      throw new Error('set-default cannot write to merged scope. Use project or home.');
+    }
+    if (mode === 'inherit' && !options.who) {
+      throw new Error('inherit is only supported with --who. Global defaults must be allow or deny.');
+    }
+    const config = await loadScopedConfig(process.cwd(), scope);
+    applyDefaultRule(config, field, mode === 'inherit' ? undefined : mode === 'allow', options.who);
+    await saveScopedConfig(config, process.cwd(), scope);
+    const target = options.who ? ` for ${options.who}` : '';
+    console.log(chalk.green(`Default ${operation} rule set to ${mode}${target} in ${scope} scope`));
+  });
+
+ruleCommand
+  .command('set-variable <name> <operation> <mode>')
+  .description('Set a variable-specific AI rule, e.g. OPENAI_API_KEY run deny')
+  .option('--scope <scope>', 'Rule scope: project | home', 'project')
+  .option('--who <who>', 'Target one client id, e.g. mcp | openai | gemini | api | cursor')
+  .action(async (name, operation, mode, options) => {
+    const field = parseVariableRuleField(operation);
+    if (!field) {
+      throw new Error(`Unknown rule operation '${operation}'`);
+    }
+    if (!['allow', 'deny', 'inherit'].includes(mode)) {
+      throw new Error(`Rule mode must be 'allow', 'deny', or 'inherit', got '${mode}'`);
+    }
+
+    const scope = parseRuleScope(options.scope, 'project');
+    if (scope === 'merged') {
+      throw new Error('set-variable cannot write to merged scope. Use project or home.');
+    }
+    const config = await loadScopedConfig(process.cwd(), scope);
+    updateVariableRule(config, name, field, mode === 'inherit' ? undefined : mode === 'allow', options.who);
+    await saveScopedConfig(config, process.cwd(), scope);
+    const target = options.who ? ` for ${options.who}` : '';
+    console.log(chalk.green(`Variable rule for ${name} ${operation} set to ${mode}${target} in ${scope} scope`));
+  });
+
+ruleCommand
+  .command('set-window <name> <start> <end>')
+  .description('Set an active time window for a variable rule, e.g. OPENAI_API_KEY 09:00 18:00')
+  .option('--scope <scope>', 'Rule scope: project | home', 'project')
+  .option('--who <who>', 'Target one client id, e.g. mcp | openai | gemini | api | cursor')
+  .action(async (name, start, end, options) => {
+    const scope = parseRuleScope(options.scope, 'project');
+    if (scope === 'merged') {
+      throw new Error('set-window cannot write to merged scope. Use project or home.');
+    }
+    const config = await loadScopedConfig(process.cwd(), scope);
+    setVariableRuleWindow(config, name, start, end, options.who);
+    await saveScopedConfig(config, process.cwd(), scope);
+    const target = options.who ? ` for ${options.who}` : '';
+    console.log(chalk.green(`Variable rule window for ${name} set to ${start}-${end}${target} in ${scope} scope`));
+  });
+
+ruleCommand
+  .command('clear-window <name>')
+  .description('Clear the active time window for a variable rule')
+  .option('--scope <scope>', 'Rule scope: project | home', 'project')
+  .option('--who <who>', 'Target one client id, e.g. mcp | openai | gemini | api | cursor')
+  .action(async (name, options) => {
+    const scope = parseRuleScope(options.scope, 'project');
+    if (scope === 'merged') {
+      throw new Error('clear-window cannot write to merged scope. Use project or home.');
+    }
+    const config = await loadScopedConfig(process.cwd(), scope);
+    setVariableRuleWindow(config, name, undefined, undefined, options.who);
+    await saveScopedConfig(config, process.cwd(), scope);
+    const target = options.who ? ` for ${options.who}` : '';
+    console.log(chalk.green(`Cleared variable rule window for ${name}${target} in ${scope} scope`));
+  });
+
+ruleCommand
+  .command('remove-variable <name>')
+  .description('Remove all variable-specific rules for one variable')
+  .option('--scope <scope>', 'Rule scope: project | home', 'project')
+  .option('--who <who>', 'Target one client id, e.g. mcp | openai | gemini | api | cursor')
+  .action(async (name, options) => {
+    const scope = parseRuleScope(options.scope, 'project');
+    if (scope === 'merged') {
+      throw new Error('remove-variable cannot write to merged scope. Use project or home.');
+    }
+    const config = await loadScopedConfig(process.cwd(), scope);
+    if (options.who) {
+      const clientRule = getClientRule(config, options.who);
+      const nextVariableRules = { ...(clientRule.variable_rules || {}) };
+      delete nextVariableRules[name];
+      clientRule.variable_rules = nextVariableRules;
+      saveClientRule(config, options.who, clientRule);
+    } else {
+      const nextRules = { ...(config.access.variable_rules || {}) };
+      delete nextRules[name];
+      config.access.variable_rules = nextRules;
+    }
+    await saveScopedConfig(config, process.cwd(), scope);
+    const target = options.who ? ` for ${options.who}` : '';
+    console.log(chalk.green(`Removed variable-specific rules for ${name}${target} in ${scope} scope`));
+  });
 
 program
   .command('extend')
@@ -1889,7 +2997,37 @@ program
     }
   });
 
-program
+async function switchVaultContext(name: string): Promise<void> {
+  const projectPath = process.cwd();
+
+  if (name !== 'global' && name !== 'project') {
+    const vaultDir = path.join(projectPath, '.envcp/vaults', name);
+    if (!await pathExists(vaultDir)) {
+      console.log(chalk.red(`Named vault "${name}" does not exist. Create it with: envcp vault --name ${name} init`));
+      return;
+    }
+  }
+
+  await setActiveVault(projectPath, name);
+  console.log(chalk.green(`Switched to vault: ${name}`));
+}
+
+async function listVaultContexts(): Promise<void> {
+  const projectPath = process.cwd();
+  const config = await loadConfig(projectPath);
+  const vaults = await listVaults(projectPath, config);
+
+  console.log('Available vaults:');
+  for (const vault of vaults) {
+    const active = vault.active ? chalk.green(' (active)') : '';
+    const exists = await pathExists(vault.path);
+    const status = exists ? '' : chalk.gray(' [not initialized]');
+    console.log(`  ${vault.name}${active}${status}`);
+    console.log(chalk.gray(`    ${vault.path}`));
+  }
+}
+
+const vaultCommand = program
   .command('vault')
   .description('Manage vaults (global, project, or named)')
   .option('--global', 'Operate on the global vault')
@@ -2014,42 +3152,22 @@ program
       })
   );
 
-program
-  .command('vault-switch')
-  .description('Switch active vault context')
-  .argument('<name>', 'Vault name (global, project, or named vault)')
-  .action(async (name: string) => {
-    const projectPath = process.cwd();
-
-    if (name !== 'global' && name !== 'project') {
-      const vaultDir = path.join(projectPath, '.envcp/vaults', name);
-      if (!await pathExists(vaultDir)) {
-        console.log(chalk.red(`Named vault "${name}" does not exist. Create it with: envcp vault --name ${name} init`));
-        return;
-      }
-    }
-
-    await setActiveVault(projectPath, name);
-    console.log(chalk.green(`Switched to vault: ${name}`));
-  });
-
-program
-  .command('vault-list')
-  .description('List all available vaults')
-  .action(async () => {
-    const projectPath = process.cwd();
-    const config = await loadConfig(projectPath);
-    const vaults = await listVaults(projectPath, config);
-    
-    console.log('Available vaults:');
-    for (const v of vaults) {
-      const active = v.active ? chalk.green(' (active)') : '';
-      const exists = await pathExists(v.path);
-      const status = exists ? '' : chalk.gray(' [not initialized]');
-      console.log(`  ${v.name}${active}${status}`);
-      console.log(chalk.gray(`    ${v.path}`));
-    }
-});
+vaultCommand
+  .addCommand(
+    new Command('use')
+      .description('Switch active vault context')
+      .argument('<name>', 'Vault name (global, project, or named vault)')
+      .action(async (name: string) => {
+        await switchVaultContext(name);
+      })
+  )
+  .addCommand(
+    new Command('contexts')
+      .description('List all available vaults')
+      .action(async () => {
+        await listVaultContexts();
+      })
+  );
 
 program
   .command('keychain')
@@ -2311,4 +3429,8 @@ program
     }
   });
 
-program.parse();
+if (process.argv.length <= 2 && isInteractiveCli()) {
+  await runInteractiveHome();
+} else {
+  await program.parseAsync(process.argv);
+}

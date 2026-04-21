@@ -85,8 +85,8 @@ envcp remove <tên>            # Xóa biến
 envcp vault --global init|add|list|get|delete
 envcp vault --project init|add|list|get|delete
 envcp vault --name <tên> init|add|list|get|delete
-envcp vault-switch <tên>
-envcp vault-list
+envcp vault use <tên>
+envcp vault contexts
 ```
 
 ### Quản lý phiên
@@ -112,7 +112,7 @@ envcp serve [tùy chọn]
   --port          Cổng HTTP (mặc định: 3456)
   --host          Host HTTP (mặc định: 127.0.0.1)
   --api-key, -k   Khóa API để xác thực
-  --password, -p  Mật khẩu mã hóa
+  --global        Dùng vault toàn cục trong thư mục home
 ```
 
 ---

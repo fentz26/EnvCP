@@ -45,7 +45,7 @@ Your vault password is the single most important control. Argon2id (64 MB, 3 pas
 - Use a passphrase of 4+ random words (`correct-horse-battery-staple`)
 - Never reuse your vault password as another account password
 - Store the vault password in a hardware-backed password manager, not a plaintext file
-- Use `envcp init --password` only in a private terminal — avoid command-line arguments when possible (they appear in shell history and `ps` output)
+- Avoid passing secrets on the command line when possible; prefer interactive prompts, `--from-env`, `--from-file`, or `--stdin`
 
 **Recovery key:**
 
@@ -379,7 +379,7 @@ envcp add PROD_DB_PASSWORD --value "..." --protect
 
 7. **Check shell history** and clear it:
    ```bash
-   history | grep envcp    # Look for --password flags
+   history | grep envcp    # Look for inline secret flags like --value
    history -c              # Clear history
    ```
 

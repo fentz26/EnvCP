@@ -1,7 +1,7 @@
 import { StorageManager, LogManager, resolveLogPath } from '../storage/index.js';
 import { EnvCPConfig, Variable, ToolDefinition, LogsRole, RateLimitConfig } from '../types.js';
 import { maskValue, hashVariablePassword, verifyVariablePassword, encryptVariableValue, decryptVariableValue, scrubOutput } from '../utils/crypto.js';
-import { canAccess, isBlacklisted, canAIActiveCheck, validateVariableName, matchesPattern } from '../config/manager.js';
+import { canAccessVariable, isBlacklisted, canAIActiveCheck, validateVariableName, requiresConfirmationForVariable, matchesPattern, getDefaultAccessFlag, resolveAccessRuleFlag } from '../config/manager.js';
 import { SessionManager } from '../utils/session.js';
 import { resolveSessionPath } from '../vault/index.js';
 import { setCorsHeaders, sendJson, validateApiKey, RateLimiter, rateLimitMiddleware } from '../utils/http.js';
@@ -279,16 +279,16 @@ export abstract class BaseAdapter {
 
   // Shared tool implementations
   protected async listVariables(args: { tags?: string[] }): Promise<{ variables: Array<string | { name: string; protected: boolean }>; count: number }> {
-    if (!this.config.access.allow_ai_read) {
-      throw new Error('AI read access is disabled');
-    }
-
-    if (!canAIActiveCheck(this.config)) {
+    if (!canAIActiveCheck(this.config, this.currentClientId)) {
       throw new Error('AI active check is disabled. User must explicitly mention variable names.');
     }
 
     const names = await this.storage.list();
-    let filtered = names.filter(n => canAccess(n, this.config) && !isBlacklisted(n, this.config));
+    let filtered = names.filter(n => canAccessVariable(n, this.config, 'read', this.currentClientId));
+
+    if (filtered.length === 0 && !getDefaultAccessFlag(this.config, 'read', this.currentClientId)) {
+      throw new Error('AI read access is disabled');
+    }
 
     const allVars = await this.storage.load();
 
@@ -330,12 +330,13 @@ export abstract class BaseAdapter {
     encrypted: boolean;
     protected: boolean;
   }> {
-    if (!this.config.access.allow_ai_read) {
-      throw new Error('AI read access is disabled');
-    }
-
     if (!validateVariableName(args.name)) {
       throw new Error(`Invalid variable name '${args.name}'. Must match [A-Za-z_][A-Za-z0-9_]*`);
+    }
+
+    if (!getDefaultAccessFlag(this.config, 'read', this.currentClientId)
+      && !resolveAccessRuleFlag(args.name, this.config, 'read', this.currentClientId)) {
+      throw new Error('AI read access is disabled');
     }
 
     const variable = await this.storage.get(args.name);
@@ -348,7 +349,7 @@ export abstract class BaseAdapter {
       throw new Error(`Variable '${args.name}' is blacklisted and cannot be accessed`);
     }
 
-    if (!canAccess(args.name, this.config)) {
+    if (!canAccessVariable(args.name, this.config, 'read', this.currentClientId)) {
       throw new Error(`Access denied to variable '${args.name}'`);
     }
 
@@ -384,7 +385,7 @@ export abstract class BaseAdapter {
       variable.accessed = new Date().toISOString();
       await this.storage.set(args.name, variable);
 
-      const canReveal = args.show_value && !this.config.access.mask_values && !this.config.access.require_confirmation;
+      const canReveal = args.show_value && !this.config.access.mask_values && !requiresConfirmationForVariable(args.name, this.config, this.currentClientId);
       const value = canReveal ? decryptedValue : maskValue(decryptedValue);
 
       await this.logEvent({
@@ -409,7 +410,7 @@ export abstract class BaseAdapter {
     variable.accessed = new Date().toISOString();
     await this.storage.set(args.name, variable);
 
-    const canReveal = args.show_value && !this.config.access.mask_values && !this.config.access.require_confirmation;
+    const canReveal = args.show_value && !this.config.access.mask_values && !requiresConfirmationForVariable(args.name, this.config, this.currentClientId);
     const value = canReveal ? variable.value : maskValue(variable.value);
 
     await this.logEvent({
@@ -440,16 +441,21 @@ export abstract class BaseAdapter {
     unprotect?: boolean;
     variable_password?: string;
   }): Promise<{ success: boolean; message: string }> {
-    if (!this.config.access.allow_ai_write) {
-      throw new Error('AI write access is disabled');
-    }
-
     if (!validateVariableName(args.name)) {
       throw new Error(`Invalid variable name '${args.name}'. Must match [A-Za-z_][A-Za-z0-9_]*`);
     }
 
+    if (!getDefaultAccessFlag(this.config, 'write', this.currentClientId)
+      && !resolveAccessRuleFlag(args.name, this.config, 'write', this.currentClientId)) {
+      throw new Error('AI write access is disabled');
+    }
+
     if (isBlacklisted(args.name, this.config)) {
       throw new Error(`Variable '${args.name}' is blacklisted`);
+    }
+
+    if (!canAccessVariable(args.name, this.config, 'write', this.currentClientId)) {
+      throw new Error(`AI write access is denied for variable '${args.name}'`);
     }
 
     // Enforce require_variable_password config
@@ -583,12 +589,17 @@ export abstract class BaseAdapter {
   }
 
   protected async deleteVariable(args: { name: string }): Promise<{ success: boolean; message: string }> {
-    if (!this.config.access.allow_ai_delete) {
+    if (!validateVariableName(args.name)) {
+      throw new Error(`Invalid variable name '${args.name}'. Must match [A-Za-z_][A-Za-z0-9_]*`);
+    }
+
+    if (!getDefaultAccessFlag(this.config, 'delete', this.currentClientId)
+      && !resolveAccessRuleFlag(args.name, this.config, 'delete', this.currentClientId)) {
       throw new Error('AI delete access is disabled');
     }
 
-    if (!validateVariableName(args.name)) {
-      throw new Error(`Invalid variable name '${args.name}'. Must match [A-Za-z_][A-Za-z0-9_]*`);
+    if (!canAccessVariable(args.name, this.config, 'delete', this.currentClientId)) {
+      throw new Error(`AI delete access is denied for variable '${args.name}'`);
     }
 
     const deleted = await this.storage.delete(args.name);
@@ -632,7 +643,11 @@ export abstract class BaseAdapter {
   }
 
   protected async syncToEnv(): Promise<{ success: boolean; message: string }> {
-    if (!this.config.access.allow_ai_export) {
+    const defaultExportEnabled = getDefaultAccessFlag(this.config, 'export', this.currentClientId);
+    const hasAccessibleExport = Object.keys(await this.storage.load()).some((name) =>
+      canAccessVariable(name, this.config, 'export', this.currentClientId)
+    );
+    if (!defaultExportEnabled && !hasAccessibleExport) {
       throw new Error('AI export access is disabled');
     }
 
@@ -648,7 +663,7 @@ export abstract class BaseAdapter {
     }
 
     for (const [name, variable] of Object.entries(variables)) {
-      if (isBlacklisted(name, this.config)) {
+      if (!canAccessVariable(name, this.config, 'export', this.currentClientId)) {
         continue;
       }
 
@@ -690,8 +705,17 @@ export abstract class BaseAdapter {
       throw new Error(`Variable '${args.name}' not found`);
     }
 
+    if (!getDefaultAccessFlag(this.config, 'export', this.currentClientId)
+      && !resolveAccessRuleFlag(args.name, this.config, 'export', this.currentClientId)) {
+      throw new Error('AI export access is disabled');
+    }
+
     if (isBlacklisted(args.name, this.config)) {
       throw new Error(`Variable '${args.name}' is blacklisted`);
+    }
+
+    if (!canAccessVariable(args.name, this.config, 'export', this.currentClientId)) {
+      throw new Error(`AI export access is denied for variable '${args.name}'`);
     }
 
     const envPath = path.resolve(this.projectPath, args.env_file || '.env');
@@ -750,7 +774,7 @@ export abstract class BaseAdapter {
     const variable = await this.storage.get(args.name);
     const exists = !!variable;
     const blacklisted = isBlacklisted(args.name, this.config);
-    const accessible = exists && !blacklisted && canAccess(args.name, this.config);
+    const accessible = exists && !blacklisted && canAccessVariable(args.name, this.config, 'read', this.currentClientId);
 
     await this.logEvent({
       timestamp: new Date().toISOString(),
@@ -867,7 +891,8 @@ export abstract class BaseAdapter {
     stdout: string;
     stderr: string;
   }> {
-    if (!this.config.access.allow_ai_execute) {
+    if (!getDefaultAccessFlag(this.config, 'execute', this.currentClientId)
+      && !args.variables.some((name) => canAccessVariable(name, this.config, 'execute', this.currentClientId))) {
       throw new Error('AI command execution is disabled');
     }
 
@@ -904,7 +929,7 @@ export abstract class BaseAdapter {
 
     for (const name of args.variables) {
       const blacklisted = isBlacklisted(name, this.config);
-      const accessible = canAccess(name, this.config);
+      const accessible = canAccessVariable(name, this.config, 'execute', this.currentClientId);
 
       if (blacklisted || !accessible) {
         excludedVariables.push(name);

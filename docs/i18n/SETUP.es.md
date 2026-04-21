@@ -85,8 +85,8 @@ envcp remove <nombre>          # Eliminar variable
 envcp vault --global init|add|list|get|delete
 envcp vault --project init|add|list|get|delete
 envcp vault --name <nombre> init|add|list|get|delete
-envcp vault-switch <nombre>
-envcp vault-list
+envcp vault use <nombre>
+envcp vault contexts
 ```
 
 ### Gestión de sesión
@@ -112,7 +112,7 @@ envcp serve [opciones]
   --port          Puerto HTTP (defecto: 3456)
   --host          Host HTTP (defecto: 127.0.0.1)
   --api-key, -k   Clave API para autenticación
-  --password, -p  Contraseña de cifrado
+  --global        Usa el vault global del directorio home
 ```
 
 ---

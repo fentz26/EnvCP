@@ -114,12 +114,11 @@ This creates/updates your `.env` file with all variables (respecting exclusions 
 
 ### Run Commands with Environment Variables
 
-Run a command with all environment variables injected:
+Export variables into a local `.env` file for tools that already know how to read dotenv files:
 
 ```bash
-envcp run npm test
-envcp run node server.js
-envcp run docker-compose up
+envcp sync
+envcp export --format env > .env
 ```
 
 ### Session Management

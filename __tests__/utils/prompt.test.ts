@@ -120,11 +120,12 @@ describe('prompt utilities', () => {
       expect(result).toContain('ERROR:No choices provided');
     });
 
-it('shows error on invalid input', async () => {
-      const script = `import { promptList } from '${promptPath}'; const c = [{name:'A',value:'a'},{name:'B',value:'b'}]; setTimeout(() => { process.stdout.write('TIMEOUT'); process.exit(0); }, 1000); const s = await promptList('Choose:',c); process.stdout.write('RESULT:' + s);`;
-      const result = await runPromptWithInput(script, '99\n');
+    it('shows error on invalid input before accepting a valid choice', async () => {
+      const script = `import { promptList } from '${promptPath}'; const c = [{name:'A',value:'a'},{name:'B',value:'b'}]; const s = await promptList('Choose:',c); process.stdout.write('RESULT:' + s);`;
+      const result = await runPromptWithInput(script, '99\n1\n');
       // Should show error message before timeout
       expect(result).toContain('Please enter a number');
+      expect(result).toContain('RESULT:a');
     });
 
     it('throws on EOF without default', async () => {

@@ -81,8 +81,7 @@ Restart Claude Desktop, Cursor, or your IDE to load the new MCP server.
       "args": [
         "@fentz26/envcp",
         "serve",
-        "--mode", "mcp",
-        "--password", "your-password"
+        "--mode", "mcp"
       ]
     }
   }
@@ -423,8 +422,7 @@ Auto-unlock when MCP server starts:
       "args": [
         "@fentz26/envcp",
         "serve",
-        "--mode", "mcp",
-        "--password", "your-password"
+        "--mode", "mcp"
       ]
     }
   }

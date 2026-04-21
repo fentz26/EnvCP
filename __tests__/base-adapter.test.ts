@@ -1,3 +1,4 @@
+import { jest } from '@jest/globals';
 import * as fs from 'fs/promises';
 import { ensureDir, pathExists } from '../src/utils/fs.js';
 import * as os from 'os';
@@ -77,6 +78,20 @@ describe('BaseAdapter tool operations', () => {
       await expect(a.runListVariables({})).rejects.toThrow('AI active check is disabled');
     });
 
+    it('allows list for a client with a who-specific active-check override', async () => {
+      const a = new TestAdapter(makeConfig({
+        allow_ai_active_check: false,
+        client_rules: {
+          openai: { allow_ai_active_check: true, allow_ai_read: true },
+        },
+      }), tmpDir);
+      await a.init();
+      await a.seedVariable({ name: 'A', value: '1', encrypted: false, created: now, updated: now, sync_to_env: true });
+      const result = await a.callTool('envcp_list', {}, 'openai') as { count: number; variables: string[] };
+      expect(result.count).toBe(1);
+      expect(result.variables).toContain('A');
+    });
+
     it('lists variables', async () => {
       await adapter.seedVariable({ name: 'A', value: '1', encrypted: false, created: now, updated: now, sync_to_env: true });
       await adapter.seedVariable({ name: 'B', value: '2', encrypted: false, created: now, updated: now, sync_to_env: true });
@@ -110,6 +125,25 @@ describe('BaseAdapter tool operations', () => {
       await expect(a.runGetVariable({ name: 'X' })).rejects.toThrow('AI read access is disabled');
     });
 
+    it('uses who-specific variable rules for get access', async () => {
+      const a = new TestAdapter(makeConfig({
+        allow_ai_read: false,
+        client_rules: {
+          openai: {
+            variable_rules: {
+              OPENAI_API_KEY: { allow_ai_read: true },
+            },
+          },
+        },
+      }), tmpDir);
+      await a.init();
+      await a.seedVariable({ name: 'OPENAI_API_KEY', value: 'secret', encrypted: false, created: now, updated: now, sync_to_env: true });
+
+      await expect(a.callTool('envcp_get', { name: 'OPENAI_API_KEY' }, 'gemini')).rejects.toThrow('AI read access is disabled');
+      const result = await a.callTool('envcp_get', { name: 'OPENAI_API_KEY' }, 'openai') as { name: string };
+      expect(result.name).toBe('OPENAI_API_KEY');
+    });
+
     it('rejects invalid variable names', async () => {
       await expect(adapter.runGetVariable({ name: '123bad' })).rejects.toThrow('Invalid variable name');
       await expect(adapter.runGetVariable({ name: '../etc/passwd' })).rejects.toThrow('Invalid variable name');
@@ -131,6 +165,37 @@ describe('BaseAdapter tool operations', () => {
       await a.init();
       await a.seedVariable({ name: 'DENY_THIS', value: 'x', encrypted: false, created: now, updated: now, sync_to_env: true });
       await expect(a.runGetVariable({ name: 'DENY_THIS' })).rejects.toThrow('Access denied');
+    });
+
+    it('allows read when a variable-specific rule overrides the default deny', async () => {
+      const a = new TestAdapter(makeConfig({
+        allow_ai_read: false,
+        variable_rules: { ALLOWED_KEY: { allow_ai_read: true } },
+      }), tmpDir);
+      await a.init();
+      await a.seedVariable({ name: 'ALLOWED_KEY', value: 'x', encrypted: false, created: now, updated: now, sync_to_env: true });
+      const result = await a.runGetVariable({ name: 'ALLOWED_KEY', show_value: true });
+      expect(result.value).toBe('x');
+    });
+
+    it('denies read outside a variable-specific active window', async () => {
+      jest.useFakeTimers().setSystemTime(new Date('2024-01-01T12:00:00'));
+      try {
+        const a = new TestAdapter(makeConfig({
+          allow_ai_read: false,
+          variable_rules: {
+            ALLOWED_KEY: {
+              allow_ai_read: true,
+              active_window: { start: '13:00', end: '14:00' },
+            },
+          },
+        }), tmpDir);
+        await a.init();
+        await a.seedVariable({ name: 'ALLOWED_KEY', value: 'x', encrypted: false, created: now, updated: now, sync_to_env: true });
+        await expect(a.runGetVariable({ name: 'ALLOWED_KEY', show_value: true })).rejects.toThrow('Access denied');
+      } finally {
+        jest.useRealTimers();
+      }
     });
 
     it('returns masked value when show_value is not set', async () => {
@@ -223,6 +288,15 @@ describe('BaseAdapter tool operations', () => {
     it('returns false for non-existent variable', async () => {
       const result = await adapter.runDeleteVariable({ name: 'NOPE' });
       expect(result.success).toBe(false);
+    });
+
+    it('denies delete when a variable-specific rule disables it', async () => {
+      const a = new TestAdapter(makeConfig({
+        variable_rules: { KEEP_ME: { allow_ai_delete: false } },
+      }), tmpDir);
+      await a.init();
+      await a.seedVariable({ name: 'KEEP_ME', value: 'x', encrypted: false, created: now, updated: now, sync_to_env: true });
+      await expect(a.runDeleteVariable({ name: 'KEEP_ME' })).rejects.toThrow('AI delete access is denied');
     });
   });
 
@@ -514,6 +588,41 @@ describe('BaseAdapter tool operations', () => {
       const a = new TestAdapter(makeConfig({ allow_ai_execute: false }), tmpDir);
       await a.init();
       await expect(a.runRunCommand({ command: 'echo hi', variables: [] })).rejects.toThrow('AI command execution is disabled');
+    });
+
+    it('allows command execution for a specifically permitted variable even when default execute is off', async () => {
+      const a = new TestAdapter(makeConfig({
+        allow_ai_execute: false,
+        allowed_commands: ['env'],
+        run_safety: { scrub_output: false },
+        variable_rules: { SAFE_VAR: { allow_ai_execute: true } },
+      }), tmpDir);
+      await a.init();
+      await a.seedVariable({ name: 'SAFE_VAR', value: 'hello', encrypted: false, created: now, updated: now, sync_to_env: true });
+      const result = await a.runRunCommand({ command: 'env', variables: ['SAFE_VAR'] });
+      expect(result.stdout).toContain('SAFE_VAR=hello');
+    });
+
+    it('denies command execution outside a variable-specific active window', async () => {
+      jest.useFakeTimers().setSystemTime(new Date('2024-01-01T15:00:00'));
+      try {
+        const a = new TestAdapter(makeConfig({
+          allow_ai_execute: false,
+          allowed_commands: ['env'],
+          run_safety: { scrub_output: false },
+          variable_rules: {
+            SAFE_VAR: {
+              allow_ai_execute: true,
+              active_window: { start: '09:00', end: '10:00' },
+            },
+          },
+        }), tmpDir);
+        await a.init();
+        await a.seedVariable({ name: 'SAFE_VAR', value: 'hello', encrypted: false, created: now, updated: now, sync_to_env: true });
+        await expect(a.runRunCommand({ command: 'env', variables: ['SAFE_VAR'] })).rejects.toThrow('AI command execution is disabled');
+      } finally {
+        jest.useRealTimers();
+      }
     });
 
     it('rejects shell metacharacters', async () => {

@@ -16,6 +16,8 @@ const DEFAULT_CONFIG: Partial<EnvCPConfig> = {
     encrypted: true,
   },
   access: {
+    variable_rules: {},
+    client_rules: {},
     allow_ai_read: false,
     allow_ai_write: false,
     allow_ai_delete: false,
@@ -117,24 +119,32 @@ async function loadYamlObjectIfExists(filePath: string): Promise<Record<string, 
   return parsed && typeof parsed === 'object' ? parsed as Record<string, unknown> : null;
 }
 
-export async function loadConfig(projectPath: string): Promise<EnvCPConfig> {
-  /* c8 ignore next -- at least HOME or USERPROFILE is always set in supported environments */
-  const home = process.env.HOME || process.env.USERPROFILE || '';
-  const globalConfigPath = path.join(home, '.envcp', 'config.yaml');
-  const projectConfigPath = path.join(projectPath, 'envcp.yaml');
+function getHomeDir(): string {
+  return process.env.HOME || process.env.USERPROFILE || '';
+}
 
+async function verifyProjectConfigSignature(projectPath: string): Promise<void> {
+  const projectConfigPath = path.join(projectPath, 'envcp.yaml');
   const sigPath = path.join(projectPath, '.envcp', '.config_signature');
   const hmacKey = deriveHmacKey(getSystemIdentifier());
 
-  if (await pathExists(sigPath)) {
-    if (await pathExists(projectConfigPath)) {
-      const storedHmac = await fs.readFile(sigPath, 'utf8');
-      const projectContent = await fs.readFile(projectConfigPath, 'utf8');
-      if (!verifyConfigHmac(projectContent, storedHmac, hmacKey)) {
-        throw new Error('Config integrity check failed: envcp.yaml has been tampered with or corrupted. Verify the file or remove .envcp/.config_signature to regenerate.');
-      }
+  if (await pathExists(sigPath) && await pathExists(projectConfigPath)) {
+    const storedHmac = await fs.readFile(sigPath, 'utf8');
+    const projectContent = await fs.readFile(projectConfigPath, 'utf8');
+    if (!verifyConfigHmac(projectContent, storedHmac, hmacKey)) {
+      throw new Error('Config integrity check failed: envcp.yaml has been tampered with or corrupted. Verify the file or remove .envcp/.config_signature to regenerate.');
     }
   }
+}
+
+export type ConfigScope = 'project' | 'home' | 'merged';
+
+export async function loadConfig(projectPath: string): Promise<EnvCPConfig> {
+  const home = getHomeDir();
+  const globalConfigPath = path.join(home, '.envcp', 'config.yaml');
+  const projectConfigPath = path.join(projectPath, 'envcp.yaml');
+
+  await verifyProjectConfigSignature(projectPath);
 
   let merged: Record<string, unknown> = DEFAULT_CONFIG as Record<string, unknown>;
 
@@ -150,6 +160,32 @@ export async function loadConfig(projectPath: string): Promise<EnvCPConfig> {
     merged = deepMerge(merged, projectConfig);
   }
 
+  return EnvCPConfigSchema.parse(merged);
+}
+
+export async function loadScopedConfig(projectPath: string, scope: ConfigScope): Promise<EnvCPConfig> {
+  if (scope === 'merged') {
+    return loadConfig(projectPath);
+  }
+
+  const home = getHomeDir();
+  let merged: Record<string, unknown> = DEFAULT_CONFIG as Record<string, unknown>;
+
+  if (scope === 'home') {
+    const globalConfigPath = path.join(home, '.envcp', 'config.yaml');
+    const globalConfig = await loadYamlObjectIfExists(globalConfigPath);
+    if (globalConfig) {
+      merged = deepMerge(merged, globalConfig);
+    }
+    return EnvCPConfigSchema.parse(merged);
+  }
+
+  await verifyProjectConfigSignature(projectPath);
+  const projectConfigPath = path.join(projectPath, 'envcp.yaml');
+  const projectConfig = await loadYamlObjectIfExists(projectConfigPath);
+  if (projectConfig) {
+    merged = deepMerge(merged, projectConfig);
+  }
   return EnvCPConfigSchema.parse(merged);
 }
 
@@ -180,6 +216,16 @@ export async function saveConfig(config: EnvCPConfig, projectPath: string, optio
   // signature lives in ~/.envcp/.config_signature, which is also the base.
   const key = deriveHmacKey(getSystemIdentifier());
   await saveConfigSignature(projectPath, content, key);
+}
+
+export async function saveScopedConfig(config: EnvCPConfig, projectPath: string, scope: Exclude<ConfigScope, 'merged'>): Promise<void> {
+  if (scope === 'home') {
+    const home = getHomeDir();
+    await saveConfig(config, home, { global: true });
+    return;
+  }
+
+  await saveConfig(config, projectPath);
 }
 
 export async function initConfig(projectPath: string, projectName?: string, options?: ConfigPathOptions): Promise<EnvCPConfig> {
@@ -437,6 +483,140 @@ export function canAccess(name: string, config: EnvCPConfig): boolean {
   return true;
 }
 
+export type VariableAccessOperation = 'read' | 'write' | 'delete' | 'export' | 'execute';
+
+type VariableRule = EnvCPConfig['access']['variable_rules'][string];
+type ClientAccessRule = EnvCPConfig['access']['client_rules'][string];
+
+function toMinutes(value: string): number {
+  const [hours, minutes] = value.split(':').map((part) => Number.parseInt(part, 10));
+  return hours * 60 + minutes;
+}
+
+function isWindowActive(window: VariableRule['active_window'], now: Date): boolean {
+  if (!window) {
+    return true;
+  }
+
+  const currentMinutes = now.getHours() * 60 + now.getMinutes();
+  const startMinutes = toMinutes(window.start);
+  const endMinutes = toMinutes(window.end);
+
+  if (startMinutes === endMinutes) {
+    return true;
+  }
+
+  if (startMinutes < endMinutes) {
+    return currentMinutes >= startMinutes && currentMinutes < endMinutes;
+  }
+
+  return currentMinutes >= startMinutes || currentMinutes < endMinutes;
+}
+
+function getClientRule(config: EnvCPConfig, clientId = ''): ClientAccessRule | undefined {
+  if (!clientId) {
+    return undefined;
+  }
+  return config.access.client_rules?.[clientId];
+}
+
+function getClientVariableRule(name: string, config: EnvCPConfig, clientId = ''): VariableRule | undefined {
+  return getClientRule(config, clientId)?.variable_rules?.[name];
+}
+
+export function isVariableRuleActive(
+  name: string,
+  config: EnvCPConfig,
+  now: Date = new Date(),
+  clientId = '',
+): boolean {
+  const globalWindow = config.access.variable_rules?.[name]?.active_window;
+  const clientWindow = getClientVariableRule(name, config, clientId)?.active_window;
+  return isWindowActive(globalWindow, now) && isWindowActive(clientWindow, now);
+}
+
+function getVariableRuleFlag(
+  name: string,
+  config: EnvCPConfig,
+  operation: VariableAccessOperation,
+  clientId = '',
+): boolean | undefined {
+  const clientRule = getClientVariableRule(name, config, clientId);
+  const rule = config.access.variable_rules?.[name];
+
+  switch (operation) {
+    case 'read':
+      return clientRule?.allow_ai_read ?? rule?.allow_ai_read;
+    case 'write':
+      return clientRule?.allow_ai_write ?? rule?.allow_ai_write;
+    case 'delete':
+      return clientRule?.allow_ai_delete ?? rule?.allow_ai_delete;
+    case 'export':
+      return clientRule?.allow_ai_export ?? rule?.allow_ai_export;
+    case 'execute':
+      return clientRule?.allow_ai_execute ?? rule?.allow_ai_execute;
+  }
+}
+
+export function getDefaultAccessFlag(config: EnvCPConfig, operation: VariableAccessOperation, clientId = ''): boolean {
+  const clientRule = getClientRule(config, clientId);
+  switch (operation) {
+    case 'read':
+      return clientRule?.allow_ai_read ?? config.access.allow_ai_read;
+    case 'write':
+      return clientRule?.allow_ai_write ?? config.access.allow_ai_write;
+    case 'delete':
+      return clientRule?.allow_ai_delete ?? config.access.allow_ai_delete;
+    case 'export':
+      return clientRule?.allow_ai_export ?? config.access.allow_ai_export;
+    case 'execute':
+      return clientRule?.allow_ai_execute ?? config.access.allow_ai_execute;
+  }
+}
+
+export function resolveAccessRuleFlag(
+  name: string,
+  config: EnvCPConfig,
+  operation: VariableAccessOperation,
+  clientId = '',
+): boolean {
+  return getVariableRuleFlag(name, config, operation, clientId) ?? getDefaultAccessFlag(config, operation, clientId);
+}
+
+export function canAccessVariable(
+  name: string,
+  config: EnvCPConfig,
+  operation: VariableAccessOperation,
+  clientId = '',
+): boolean {
+  if (isBlacklisted(name, config)) {
+    return false;
+  }
+
+  if (!isVariableRuleActive(name, config, new Date(), clientId)) {
+    return false;
+  }
+
+  const ruleFlag = getVariableRuleFlag(name, config, operation, clientId);
+  if (ruleFlag === false) {
+    return false;
+  }
+  if (ruleFlag === true) {
+    return true;
+  }
+
+  return getDefaultAccessFlag(config, operation, clientId) && canAccess(name, config);
+}
+
+export function requiresConfirmationForVariable(name: string, config: EnvCPConfig, clientId = ''): boolean {
+  const clientRule = getClientVariableRule(name, config, clientId);
+  const clientDefaults = getClientRule(config, clientId);
+  return clientRule?.require_confirmation
+    ?? config.access.variable_rules?.[name]?.require_confirmation
+    ?? clientDefaults?.require_confirmation
+    ?? config.access.require_confirmation === true;
+}
+
 /**
  * Returns true if the variable `name` matches any `blacklist_patterns` entry.
  * Blacklisted variables are always denied regardless of other access rules.
@@ -448,8 +628,8 @@ export function isBlacklisted(name: string, config: EnvCPConfig): boolean {
   return false;
 }
 
-export function canAIActiveCheck(config: EnvCPConfig): boolean {
-  return config.access.allow_ai_active_check === true;
+export function canAIActiveCheck(config: EnvCPConfig, clientId = ''): boolean {
+  return getClientRule(config, clientId)?.allow_ai_active_check ?? config.access.allow_ai_active_check === true;
 }
 
 export function requiresUserReference(config: EnvCPConfig): boolean {

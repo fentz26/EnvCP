@@ -79,6 +79,8 @@ envcp add <name> [options]   # Add a variable
 envcp list [--show-values]   # List variables
 envcp get <name>             # Get a variable
 envcp remove <name>          # Remove a variable
+envcp config                 # Open the config menu / summary
+envcp rule                   # Open the rule menu / summary
 ```
 
 ### Vault Management
@@ -87,8 +89,8 @@ envcp remove <name>          # Remove a variable
 envcp vault --global init|add|list|get|delete   # Operate on global vault
 envcp vault --project init|add|list|get|delete  # Operate on project vault
 envcp vault --name <name> init|add|list|get|delete # Named vaults
-envcp vault-switch <name>                        # Switch active vault
-envcp vault-list                                 # List all available vaults
+envcp vault use <name>                           # Switch active vault
+envcp vault contexts                             # List all available vaults
 ```
 
 ### Session Management
@@ -124,7 +126,6 @@ envcp serve [options]
   --port          HTTP port (default: 3456)
   --host          HTTP host (default: 127.0.0.1)
   --api-key, -k   API key for authentication
-  --password, -p  Encryption password
   --global        Force the global vault at ~/.envcp (skip project lookup)
 ```
 
@@ -361,8 +362,8 @@ Share secrets across multiple projects (`~/.envcp/store.enc`):
 ```bash
 envcp vault --global init
 envcp vault --global add SHARED_API_KEY --value "secret123"
-envcp vault-switch global
-envcp vault-list
+envcp vault use global
+envcp vault contexts
 ```
 
 ### Named Vaults
@@ -373,8 +374,8 @@ Create separate vaults for different contexts:
 envcp vault --name work init
 envcp vault --name work add WORK_API_KEY --value "work-secret"
 
-envcp vault-switch work
-envcp vault-switch project  # Back to project vault
+envcp vault use work
+envcp vault use project  # Back to project vault
 ```
 
 ---

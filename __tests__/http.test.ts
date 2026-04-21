@@ -116,18 +116,15 @@ describe('RateLimiter — unref branch (line 107)', () => {
     // Override setInterval temporarily to return an object without unref
     const origSetInterval = global.setInterval;
     (global as any).setInterval = (fn: () => void, ms: number) => {
-      // Return a plain object without unref — exercises the false branch
+      // Return the real timer but mask unref so destroy() can still clear it.
       const id = origSetInterval(fn, ms);
-      const noUnref: any = { ...id };
-      delete noUnref.unref;
-      // Return an object that has ref/unref stripped
-      return { _dummy: true } as any;
+      (id as any).unref = undefined;
+      return id;
     };
     try {
       const limiter = new RateLimiter(5, 100);
       expect(limiter.isAllowed('x')).toBe(true);
-      // destroy() may not work on our dummy timer, just try
-      try { limiter.destroy(); } catch { /* ignore */ }
+      limiter.destroy();
     } finally {
       global.setInterval = origSetInterval;
     }

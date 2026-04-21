@@ -107,10 +107,11 @@ nvm alias default 18
 envcp init
 ```
 
-Or specify config path:
+Or open the project folder that contains `envcp.yaml`:
 
 ```bash
-envcp --config /path/to/envcp.yaml list
+cd /path/to/project
+envcp list
 ```
 
 ### "Invalid configuration"
@@ -147,7 +148,7 @@ description: "It's working"
 3. **Reset to defaults**:
 
 ```bash
-envcp init --force
+envcp setup
 ```
 
 ### "Storage path not found"
@@ -159,7 +160,7 @@ envcp init --force
 1. **Re-initialize** (will lose existing data):
 
 ```bash
-envcp init --force
+envcp init
 ```
 
 2. **Check file permissions**:
@@ -180,10 +181,10 @@ chmod 600 .envcp/store.enc
 
 1. **Try again carefully** (passwords are case-sensitive)
 
-2. **Check for password in environment**:
+2. **Check whether a session is already unlocked**:
 
 ```bash
-echo $ENVCP_PASSWORD
+envcp status
 ```
 
 3. **If password is lost**, you must re-initialize (loses all data):
@@ -193,7 +194,7 @@ echo $ENVCP_PASSWORD
 envcp export --format json > backup.json
 
 # Re-initialize
-envcp init --force
+envcp init
 
 # Re-import if you had exported
 # (You'll need to manually add variables back)
@@ -213,10 +214,11 @@ envcp init --force
 envcp unlock
 ```
 
-2. **Provide password inline**:
+2. **Unlock first, then retry the command**:
 
 ```bash
-envcp list --password YOUR_PASSWORD
+envcp unlock
+envcp list
 ```
 
 3. **Check session status**:
@@ -732,7 +734,7 @@ cp .envcp/backups/store.enc.backup .envcp/store.enc
 3. **Re-initialize** (loses data):
 
 ```bash
-envcp init --force
+envcp init
 ```
 
 ### "Unexpected token in JSON"
@@ -819,10 +821,11 @@ For security vulnerabilities, email: **contact@fentz.dev**
 
 ## Common Workarounds
 
-### Can't unlock? Use password inline
+### Can't unlock? Recreate the session
 
 ```bash
-envcp list --password YOUR_PASSWORD
+envcp unlock
+envcp list
 ```
 
 ### Can't modify config? Use CLI options
@@ -838,7 +841,7 @@ envcp serve --mode rest --port 3457 --host 0.0.0.0
 envcp export --format json > backup.json
 
 # Re-initialize
-envcp init --force
+envcp init
 
 # Re-import (manually, one by one)
 envcp add VAR1 --value "..."

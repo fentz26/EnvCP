@@ -151,7 +151,9 @@ Choose your risk tolerance for updates:
 
 **Usage**:
 ```bash
-envcp config set release_channel stable  # or beta, canary
+envcp update --latest        # stable
+envcp update --experimental  # experimental
+envcp update --canary        # canary
 ```
 
 ### Python Native Binding

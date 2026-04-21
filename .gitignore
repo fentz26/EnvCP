@@ -12,6 +12,7 @@ store.enc
 
 # Environment files
 .env
+envcp.yaml
 .env.local
 .env.*.local
 
@@ -27,6 +28,7 @@ Thumbs.db
 # IDE
 .idea/
 .vscode/
+.cursor/
 *.swp
 *.swo
 

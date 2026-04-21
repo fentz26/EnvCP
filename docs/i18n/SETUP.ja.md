@@ -85,8 +85,8 @@ envcp remove <名前>           # 変数を削除
 envcp vault --global init|add|list|get|delete
 envcp vault --project init|add|list|get|delete
 envcp vault --name <名前> init|add|list|get|delete
-envcp vault-switch <名前>
-envcp vault-list
+envcp vault use <名前>
+envcp vault contexts
 ```
 
 ### セッション管理
@@ -112,7 +112,7 @@ envcp serve [オプション]
   --port          HTTPポート（デフォルト: 3456）
   --host          HTTPホスト（デフォルト: 127.0.0.1）
   --api-key, -k   認証用APIキー
-  --password, -p  暗号化パスワード
+  --global        ホームのグローバルVaultを使う
 ```
 
 ---

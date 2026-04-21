@@ -178,14 +178,14 @@ All High and Medium severity findings from the comprehensive security audit have
 
 ### Password in MCP Configuration
 
-If you add password to MCP config for auto-unlock:
+If you keep secrets or recovery material in MCP config:
 
 ```json
 {
   "mcpServers": {
     "envcp": {
       "command": "npx",
-      "args": ["@fentz26/envcp", "serve", "--mode", "mcp", "--password", "mysecret"]
+      "args": ["@fentz26/envcp", "serve", "--mode", "mcp"]
     }
   }
 }
@@ -206,16 +206,14 @@ If you add password to MCP config for auto-unlock:
 chmod 600 ~/Library/Application\ Support/Claude/claude_desktop_config.json
 ```
 
-### Environment Variables for Passwords
+### Environment Variables for Secret Values
 
-For scripts and CI/CD:
+For scripts and CI/CD, prefer value injection over password injection:
 
 ```bash
-# .bashrc or .zshrc
-export ENVCP_PASSWORD="your-secret-password"
-
-# Use in commands
-envcp list  # Automatically uses $ENVCP_PASSWORD
+# Use an existing CI secret to populate EnvCP
+export APP_API_KEY="$CI_APP_API_KEY"
+envcp add APP_API_KEY --from-env APP_API_KEY
 ```
 
 **Important**: Don't commit this to version control.
@@ -341,10 +339,10 @@ Use the appropriate config:
 
 ```bash
 # Development
-envcp --config envcp.dev.yaml serve
+cd /path/to/dev-project && envcp serve
 
 # Production
-envcp --config envcp.prod.yaml serve
+cd /path/to/prod-project && envcp serve
 ```
 
 ## Sync Security
@@ -552,10 +550,11 @@ logging:
   level: error  # Minimal logging
 ```
 
-Use environment variables:
+Use environment variables for the secret values themselves:
 
 ```bash
-export ENVCP_PASSWORD="$CI_ENVCP_PASSWORD"
+export APP_API_KEY="$CI_APP_API_KEY"
+envcp add APP_API_KEY --from-env APP_API_KEY
 envcp export --format env > .env
 ```
 
@@ -575,8 +574,8 @@ envcp lock
 # Export current values
 envcp export --format json > backup.json
 
-# Re-initialize with new password
-envcp init --force
+# Re-run setup and choose a new password
+envcp setup
 
 # Re-import values
 cat backup.json | jq -r 'to_entries[] | "envcp add \(.key) --value \"\(.value)\""' | bash

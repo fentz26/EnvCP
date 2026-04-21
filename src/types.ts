@@ -47,6 +47,30 @@ export const AuditConfigSchema = z.object({
 
 export type AuditConfig = z.infer<typeof AuditConfigSchema>;
 
+const VariableRuleSchema = z.object({
+  allow_ai_read: z.boolean().optional(),
+  allow_ai_write: z.boolean().optional(),
+  allow_ai_delete: z.boolean().optional(),
+  allow_ai_export: z.boolean().optional(),
+  allow_ai_execute: z.boolean().optional(),
+  require_confirmation: z.boolean().optional(),
+  active_window: z.object({
+    start: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
+    end: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
+  }).optional(),
+});
+
+const ClientAccessRuleSchema = z.object({
+  allow_ai_read: z.boolean().optional(),
+  allow_ai_write: z.boolean().optional(),
+  allow_ai_delete: z.boolean().optional(),
+  allow_ai_export: z.boolean().optional(),
+  allow_ai_execute: z.boolean().optional(),
+  allow_ai_active_check: z.boolean().optional(),
+  require_confirmation: z.boolean().optional(),
+  variable_rules: z.record(VariableRuleSchema).default({}),
+});
+
 export const EnvCPConfigSchema = z.object({
   version: z.string().default('1.0'),
   project: z.string().optional(),
@@ -63,6 +87,8 @@ export const EnvCPConfigSchema = z.object({
   }).default({}),
 
   access: z.object({
+    variable_rules: z.record(VariableRuleSchema).default({}),
+    client_rules: z.record(ClientAccessRuleSchema).default({}),
     allow_ai_read: z.boolean().default(false),
     allow_ai_write: z.boolean().default(false),
     allow_ai_delete: z.boolean().default(false),
