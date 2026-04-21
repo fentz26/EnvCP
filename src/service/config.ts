@@ -81,7 +81,7 @@ export function mergeServiceConfig(partial: Partial<ServiceConfig>): ServiceConf
   const merged: ServiceConfig = {
     server: {
       ...DEFAULT_SERVICE_CONFIG.server,
-      ...(partial.server || {}),
+      ...partial.server,
     },
     autostart: partial.autostart ?? DEFAULT_SERVICE_CONFIG.autostart,
     restart_on_failure:

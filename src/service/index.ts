@@ -56,6 +56,48 @@ async function buildContext(
   };
 }
 
+function renderServiceUnit(platform: Platform, ctx: GeneratorContext): string {
+  if (platform === 'linux') {
+    return generateSystemdUnit(ctx);
+  }
+  if (platform === 'macos') {
+    return generateLaunchdPlist(ctx);
+  }
+  return generateWindowsWrapperScript(ctx);
+}
+
+function installLinuxService(unitPath: string, autostart: boolean, startNow?: boolean): ServiceResult {
+  const reload = runCommand('systemctl', ['--user', 'daemon-reload']);
+  if (!reload.ok) return reload;
+  if (autostart) {
+    const enable = runCommand('systemctl', ['--user', 'enable', 'envcp.service']);
+    if (!enable.ok) return enable;
+  }
+  if (startNow) {
+    return runCommand('systemctl', ['--user', 'start', 'envcp.service']);
+  }
+  return { ok: true, message: `Installed systemd unit at ${unitPath}` };
+}
+
+function installMacosService(unitPath: string, startNow?: boolean): ServiceResult {
+  if (startNow) {
+    return runCommand('launchctl', ['load', '-w', unitPath]);
+  }
+  return { ok: true, message: `Installed launchd plist at ${unitPath}` };
+}
+
+function installWindowsService(unitPath: string, autostart: boolean, startNow?: boolean): ServiceResult {
+  if (startNow || autostart) {
+    const taskCmd = ['/Create', '/TN', 'EnvCP', '/TR', `"${unitPath}"`, '/SC', 'ONLOGON', '/F'];
+    const result = runCommand('schtasks', taskCmd);
+    if (!result.ok) return result;
+    if (startNow) {
+      return runCommand('schtasks', ['/Run', '/TN', 'EnvCP']);
+    }
+  }
+  return { ok: true, message: `Installed service wrapper at ${unitPath}` };
+}
+
 function resolveExecPath(): string {
   const scriptUrl = new URL(import.meta.url);
   const here = path.dirname(scriptUrl.pathname);
@@ -73,10 +115,7 @@ export async function installService(
   const unitPath = getUnitInstallPath(platform);
   await ensureDir(path.dirname(unitPath));
 
-  let body: string;
-  if (platform === 'linux') body = generateSystemdUnit(ctx);
-  else if (platform === 'macos') body = generateLaunchdPlist(ctx);
-  else body = generateWindowsWrapperScript(ctx);
+  const body = renderServiceUnit(platform, ctx);
 
   await fs.writeFile(unitPath, body, { mode: 0o600 });
 
@@ -87,44 +126,12 @@ export async function installService(
   }
 
   if (platform === 'linux') {
-    const reload = runCommand('systemctl', ['--user', 'daemon-reload']);
-    if (!reload.ok) return reload;
-    if (config.autostart) {
-      const enable = runCommand('systemctl', ['--user', 'enable', 'envcp.service']);
-      if (!enable.ok) return enable;
-    }
-    if (opts.now) {
-      return runCommand('systemctl', ['--user', 'start', 'envcp.service']);
-    }
-    return { ok: true, message: `Installed systemd unit at ${unitPath}` };
+    return installLinuxService(unitPath, config.autostart, opts.now);
   }
-
   if (platform === 'macos') {
-    if (opts.now) {
-      return runCommand('launchctl', ['load', '-w', unitPath]);
-    }
-    return { ok: true, message: `Installed launchd plist at ${unitPath}` };
+    return installMacosService(unitPath, opts.now);
   }
-
-  // Windows: register a Scheduled Task to run at logon (no admin required)
-  if (opts.now || config.autostart) {
-    const taskCmd = [
-      '/Create',
-      '/TN',
-      'EnvCP',
-      '/TR',
-      `"${unitPath}"`,
-      '/SC',
-      'ONLOGON',
-      '/F',
-    ];
-    const result = runCommand('schtasks', taskCmd);
-    if (!result.ok) return result;
-    if (opts.now) {
-      return runCommand('schtasks', ['/Run', '/TN', 'EnvCP']);
-    }
-  }
-  return { ok: true, message: `Installed service wrapper at ${unitPath}` };
+  return installWindowsService(unitPath, config.autostart, opts.now);
 }
 
 export async function uninstallService(): Promise<ServiceResult> {

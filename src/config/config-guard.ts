@@ -37,9 +37,9 @@ export class ConfigGuard {
   private periodicTimer: ReturnType<typeof setInterval> | null = null;
   private tamperingDetected = false;
   private lastInternalWriteMs = 0;
-  private projectPath: string;
-  private logPath: string;
-  private options: ConfigGuardOptions;
+  private readonly projectPath: string;
+  private readonly logPath: string;
+  private readonly options: ConfigGuardOptions;
 
   constructor(projectPath: string, options?: ConfigGuardOptions) {
     this.projectPath = projectPath;

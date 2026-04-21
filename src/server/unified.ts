@@ -8,14 +8,14 @@ import { resolveVaultPath, resolveSessionPath } from '../vault/index.js';
 import { setCorsHeaders, sendJson, parseBody, validateApiKey, RateLimiter, rateLimitMiddleware } from '../utils/http.js';
 import { LogManager, resolveLogPath } from '../storage/index.js';
 import { LockoutManager } from '../utils/lockout.js';
-import * as http from 'http';
+import * as http from 'node:http';
 import * as path from 'node:path';
 
 export class UnifiedServer {
-  private config: EnvCPConfig;
-  private serverConfig: ServerConfig;
-  private projectPath: string;
-  private password?: string;
+  private readonly config: EnvCPConfig;
+  private readonly serverConfig: ServerConfig;
+  private readonly projectPath: string;
+  private readonly password?: string;
 
   private restAdapter: RESTAdapter | null = null;
   private openaiAdapter: OpenAIAdapter | null = null;
@@ -39,7 +39,7 @@ export class UnifiedServer {
     const userAgent = req.headers['user-agent']?.toLowerCase() || '';
     if (pathname === undefined) {
       /* c8 ignore next -- detectClientType is always called with pathname from request routing; the undefined branch is unreachable in practice */
-      pathname ??= new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`).pathname;
+      pathname = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`).pathname;
     }
 
     // Check for OpenAI-style requests
@@ -74,6 +74,274 @@ export class UnifiedServer {
     }
 
     return 'unknown';
+  }
+
+  private shouldInitRestAdapter(mode: ServerConfig['mode']): boolean {
+    return mode === 'rest' || mode === 'all' || mode === 'auto';
+  }
+
+  private shouldInitOpenAIAdapter(mode: ServerConfig['mode']): boolean {
+    return mode === 'openai' || mode === 'all' || mode === 'auto';
+  }
+
+  private shouldInitGeminiAdapter(mode: ServerConfig['mode']): boolean {
+    return mode === 'gemini' || mode === 'all' || mode === 'auto';
+  }
+
+  private async initAdapters(
+    mode: ServerConfig['mode'],
+    vaultPath: string,
+    sessionPath: string,
+  ): Promise<void> {
+    if (this.shouldInitRestAdapter(mode)) {
+      this.restAdapter = new RESTAdapter(this.config, this.projectPath, this.password, vaultPath, sessionPath);
+      await this.restAdapter.init();
+    }
+
+    if (this.shouldInitOpenAIAdapter(mode)) {
+      this.openaiAdapter = new OpenAIAdapter(this.config, this.projectPath, this.password, vaultPath, sessionPath);
+      await this.openaiAdapter.init();
+    }
+
+    if (this.shouldInitGeminiAdapter(mode)) {
+      this.geminiAdapter = new GeminiAdapter(this.config, this.projectPath, this.password, vaultPath, sessionPath);
+      await this.geminiAdapter.init();
+    }
+  }
+
+  private async startSingleModeServer(
+    mode: ServerConfig['mode'],
+    port: number,
+    host: string,
+    apiKey: string | undefined,
+    rateLimitConfig: ServerConfig['rate_limit'],
+  ): Promise<boolean> {
+    if (mode === 'rest') {
+      await this.restAdapter!.startServer(port, host, apiKey, rateLimitConfig);
+      return true;
+    }
+    if (mode === 'openai') {
+      await this.openaiAdapter!.startServer(port, host, apiKey, rateLimitConfig);
+      return true;
+    }
+    if (mode === 'gemini') {
+      await this.geminiAdapter!.startServer(port, host, apiKey, rateLimitConfig);
+      return true;
+    }
+    return false;
+  }
+
+  private configureUnifiedRateLimiting(rateLimitConfig: ServerConfig['rate_limit'], sessionPath: string, apiKey?: string): string[] {
+    const rateLimitEnabled = rateLimitConfig?.enabled !== false;
+    if (rateLimitEnabled) {
+      this.rateLimiter?.destroy();
+      this.rateLimiter = new RateLimiter(rateLimitConfig?.requests_per_minute ?? 60, 60000);
+    }
+
+    const sessionDir = path.dirname(sessionPath);
+    this.apiKeyLockoutManager = apiKey ? new LockoutManager(path.join(sessionDir, '.lockout-api')) : undefined;
+    return rateLimitConfig?.whitelist ?? [];
+  }
+
+  private async handleUnifiedLockout(
+    req: http.IncomingMessage,
+    res: http.ServerResponse,
+  ): Promise<boolean> {
+    if (!this.apiKeyLockoutManager) {
+      return false;
+    }
+
+    const lockoutStatus = await this.apiKeyLockoutManager.check();
+    if (!lockoutStatus.locked) {
+      const ip = req.socket.remoteAddress || 'unknown';
+      const userAgent = req.headers['user-agent'] || 'unknown';
+      this.apiKeyLockoutManager.setNotificationSource('api', ip, userAgent);
+      return false;
+    }
+
+    const lockoutLabel = lockoutStatus.permanent_locked
+      ? 'permanent lockout'
+      : `lockout for ${lockoutStatus.remaining_seconds}s`;
+    const errorMessage = lockoutStatus.permanent_locked
+      ? 'Authentication permanently locked - recovery required'
+      : `Too many failed attempts - try again in ${lockoutStatus.remaining_seconds} seconds`;
+
+    await this.logs?.log({
+      timestamp: new Date().toISOString(),
+      operation: 'auth_failure',
+      variable: '',
+      source: 'api',
+      success: false,
+      message: `Unified API authentication blocked - ${lockoutLabel} from ${req.socket.remoteAddress ?? 'unknown'}`,
+    });
+
+    if (!lockoutStatus.permanent_locked) {
+      res.setHeader('Retry-After', lockoutStatus.remaining_seconds.toString());
+    }
+    sendJson(res, lockoutStatus.permanent_locked ? 403 : 429, { error: errorMessage });
+    return true;
+  }
+
+  private async handleUnifiedInvalidApiKey(
+    req: http.IncomingMessage,
+    res: http.ServerResponse,
+  ): Promise<void> {
+    if (this.apiKeyLockoutManager) {
+      const bfpConfig = this.config.security?.brute_force_protection;
+      /* c8 ignore next 5 -- Zod always provides BFP fields; fallback ?? branches unreachable */
+      const lockoutThreshold = bfpConfig?.max_attempts ?? this.config.session?.lockout_threshold ?? 5;
+      const lockoutBaseSeconds = bfpConfig?.lockout_duration ?? this.config.session?.lockout_base_seconds ?? 60;
+      const progressiveDelay = bfpConfig?.progressive_delay ?? true;
+      const maxDelay = bfpConfig?.max_delay ?? 60;
+      const permanentThreshold = bfpConfig?.permanent_lockout_threshold ?? 0;
+
+      const status = await this.apiKeyLockoutManager.recordFailure(
+        lockoutThreshold,
+        lockoutBaseSeconds,
+        progressiveDelay,
+        maxDelay,
+        permanentThreshold,
+      );
+
+      if (status.locked) {
+        const lockoutLabel = status.permanent_locked
+          ? 'permanent lockout'
+          : `lockout for ${status.remaining_seconds}s`;
+        const errorMessage = status.permanent_locked
+          ? 'Authentication permanently locked - recovery required'
+          : `Too many failed attempts - try again in ${status.remaining_seconds} seconds`;
+
+        await this.logs?.log({
+          timestamp: new Date().toISOString(),
+          operation: 'auth_failure',
+          variable: '',
+          source: 'api',
+          success: false,
+          message: `Invalid API key - ${lockoutLabel} from ${req.socket.remoteAddress ?? 'unknown'}`,
+        });
+
+        if (!status.permanent_locked) {
+          res.setHeader('Retry-After', status.remaining_seconds.toString());
+        }
+        sendJson(res, status.permanent_locked ? 403 : 429, { error: errorMessage });
+        return;
+      }
+    }
+
+    await this.logs?.log({
+      timestamp: new Date().toISOString(),
+      operation: 'auth_failure',
+      variable: '',
+      source: 'api',
+      success: false,
+      message: `Invalid API key from ${req.socket.remoteAddress ?? 'unknown'}`,
+    });
+    sendJson(res, 401, { error: 'Invalid API key' });
+  }
+
+  private async enforceUnifiedApiKey(
+    req: http.IncomingMessage,
+    res: http.ServerResponse,
+    apiKey?: string,
+  ): Promise<boolean> {
+    if (!apiKey) {
+      return true;
+    }
+    if (await this.handleUnifiedLockout(req, res)) {
+      return false;
+    }
+
+    const providedKey = (req.headers['x-api-key'] ||
+      req.headers['x-goog-api-key'] ||
+      req.headers['authorization']?.replace(/^Bearer\s+/i, '')) as string | undefined;
+    if (validateApiKey(providedKey, apiKey)) {
+      return true;
+    }
+
+    await this.handleUnifiedInvalidApiKey(req, res);
+    return false;
+  }
+
+  private sendUnifiedRootInfo(req: http.IncomingMessage, res: http.ServerResponse, mode: ServerConfig['mode'], pathname: string): void {
+    const detectedType = this.serverConfig.auto_detect ? this.detectClientType(req, pathname) : 'unknown';
+    sendJson(res, 200, {
+      name: 'EnvCP Unified Server',
+      version: VERSION,
+      mode,
+      detected_client: detectedType,
+      auto_detect: this.serverConfig.auto_detect,
+      available_modes: ['rest', 'openai', 'gemini', 'mcp'],
+      endpoints: {
+        rest: '/api/*',
+        openai: '/v1/chat/completions, /v1/functions/*, /v1/tool_calls',
+        gemini: '/v1/models/envcp:generateContent, /v1/function_calls',
+      },
+    });
+  }
+
+  private resolveUnifiedClientType(req: http.IncomingMessage, pathname: string, parsedUrl: URL): ClientType {
+    const detectedType = this.serverConfig.auto_detect ? this.detectClientType(req, pathname) : 'unknown';
+    const forceMode = parsedUrl.searchParams.get('mode');
+    if (forceMode === 'rest' || forceMode === 'openai' || forceMode === 'gemini') {
+      return forceMode;
+    }
+    return detectedType;
+  }
+
+  private isOpenAIRoute(pathname: string): boolean {
+    return pathname.startsWith('/v1/chat')
+      || pathname.startsWith('/v1/functions')
+      || pathname === '/v1/tool_calls'
+      || pathname === '/v1/models';
+  }
+
+  private isGeminiRoute(pathname: string): boolean {
+    return pathname.includes(':generateContent')
+      || pathname === '/v1/function_calls'
+      || pathname === '/v1/tools';
+  }
+
+  private async routeUnifiedRequest(
+    req: http.IncomingMessage,
+    res: http.ServerResponse,
+    parsedUrl: URL,
+    clientType: ClientType,
+  ): Promise<boolean> {
+    const pathname = parsedUrl.pathname;
+
+    if ((clientType === 'rest' || clientType === 'unknown') && pathname.startsWith('/api')) {
+      await this.handleRESTRequest(req, res, parsedUrl);
+      return true;
+    }
+    if (clientType === 'openai' || this.isOpenAIRoute(pathname)) {
+      await this.handleOpenAIRequest(req, res, parsedUrl);
+      return true;
+    }
+    if (clientType === 'gemini' || this.isGeminiRoute(pathname)) {
+      await this.handleGeminiRequest(req, res, parsedUrl);
+      return true;
+    }
+    if (pathname.startsWith('/api')) {
+      await this.handleRESTRequest(req, res, parsedUrl);
+      return true;
+    }
+    return false;
+  }
+
+  private registerShutdownHandlers(): void {
+    if (this.shutdownHandlers) {
+      process.off('SIGTERM', this.shutdownHandlers.sigterm);
+      process.off('SIGINT', this.shutdownHandlers.sigint);
+      this.shutdownHandlers = null;
+    }
+
+    const shutdown = () => {
+      this.stop();
+      process.exit(0);
+    };
+    process.on('SIGTERM', shutdown);
+    process.on('SIGINT', shutdown);
+    this.shutdownHandlers = { sigterm: shutdown, sigint: shutdown };
   }
 
 
@@ -129,49 +397,15 @@ export class UnifiedServer {
     // Warn if AI access is enabled without an API key
     this.checkApiKeySecurity();
 
-    // Initialize adapters based on mode
-    if (mode === 'rest' || mode === 'all' || mode === 'auto') {
-      this.restAdapter = new RESTAdapter(this.config, this.projectPath, this.password, vaultPath, sessionPath);
-      await this.restAdapter.init();
+    await this.initAdapters(mode, vaultPath, sessionPath);
+
+    const rateLimitConfig = this.serverConfig.rate_limit;
+    if (await this.startSingleModeServer(mode, port, host, api_key, rateLimitConfig)) {
+      return;
     }
 
-    if (mode === 'openai' || mode === 'all' || mode === 'auto') {
-      this.openaiAdapter = new OpenAIAdapter(this.config, this.projectPath, this.password, vaultPath, sessionPath);
-      await this.openaiAdapter.init();
-    }
-
-    if (mode === 'gemini' || mode === 'all' || mode === 'auto') {
-      this.geminiAdapter = new GeminiAdapter(this.config, this.projectPath, this.password, vaultPath, sessionPath);
-      await this.geminiAdapter.init();
-    }
-
-// Single mode - start specific adapter server
-const rl = this.serverConfig.rate_limit;
-
-if (mode === 'rest') {
-  await this.restAdapter!.startServer(port, host, api_key, rl);
-  return;
-}
-
-if (mode === 'openai') {
-  await this.openaiAdapter!.startServer(port, host, api_key, rl);
-  return;
-}
-
-if (mode === 'gemini') {
-  await this.geminiAdapter!.startServer(port, host, api_key, rl);
-  return;
-}
-
-// Auto or All mode - unified server that routes based on detection
-const rateLimitEnabled = rl?.enabled !== false;
-if (rateLimitEnabled) {
-  this.rateLimiter?.destroy();
-  this.rateLimiter = new RateLimiter(rl?.requests_per_minute ?? 60, 60000);
-}
-const whitelist = rl?.whitelist ?? [];
-const sessionDir = path.dirname(sessionPath);
-this.apiKeyLockoutManager = api_key ? new LockoutManager(path.join(sessionDir, '.lockout-api')) : undefined;
+    const rateLimitEnabled = rateLimitConfig?.enabled !== false;
+    const whitelist = this.configureUnifiedRateLimiting(rateLimitConfig, sessionPath, api_key);
     this.httpServer = http.createServer(async (req, res) => {
       setCorsHeaders(res, undefined, req.headers.origin);
 
@@ -185,73 +419,8 @@ this.apiKeyLockoutManager = api_key ? new LockoutManager(path.join(sessionDir, '
         return;
       }
 
-      // API key validation
-      if (api_key) {
-        if (this.apiKeyLockoutManager) {
-          const lockoutStatus = await this.apiKeyLockoutManager.check();
-          if (lockoutStatus.locked) {
-            if (lockoutStatus.permanent_locked) {
-              /* c8 ignore next -- remoteAddress is always defined in TCP connections */
-              await this.logs?.log({ timestamp: new Date().toISOString(), operation: 'auth_failure', variable: '', source: 'api', success: false, message: `Unified API authentication blocked - permanent lockout from ${req.socket.remoteAddress ?? 'unknown'}` });
-              sendJson(res, 403, { error: 'Authentication permanently locked - recovery required' });
-              return;
-            }
-
-            /* c8 ignore next -- remoteAddress is always defined in TCP connections */
-            await this.logs?.log({ timestamp: new Date().toISOString(), operation: 'auth_failure', variable: '', source: 'api', success: false, message: `Unified API authentication blocked - lockout for ${lockoutStatus.remaining_seconds}s from ${req.socket.remoteAddress ?? 'unknown'}` });
-            res.setHeader('Retry-After', lockoutStatus.remaining_seconds.toString());
-            sendJson(res, 429, { error: `Too many failed attempts - try again in ${lockoutStatus.remaining_seconds} seconds` });
-            return;
-          }
-
-          const ip = req.socket.remoteAddress || 'unknown';
-          const userAgent = req.headers['user-agent'] || 'unknown';
-          this.apiKeyLockoutManager.setNotificationSource('api', ip, userAgent);
-        }
-
-        const providedKey = (req.headers['x-api-key'] ||
-                           req.headers['x-goog-api-key'] ||
-                           req.headers['authorization']?.replace(/^Bearer\s+/i, '')) as string | undefined;
-        if (!validateApiKey(providedKey, api_key)) {
-          if (this.apiKeyLockoutManager) {
-            const bfpConfig = this.config.security?.brute_force_protection;
-            /* c8 ignore next 5 -- Zod always provides BFP fields; fallback ?? branches unreachable */
-            const lockoutThreshold = bfpConfig?.max_attempts ?? this.config.session?.lockout_threshold ?? 5;
-            const lockoutBaseSeconds = bfpConfig?.lockout_duration ?? this.config.session?.lockout_base_seconds ?? 60;
-            const progressiveDelay = bfpConfig?.progressive_delay ?? true;
-            const maxDelay = bfpConfig?.max_delay ?? 60;
-            const permanentThreshold = bfpConfig?.permanent_lockout_threshold ?? 0;
-
-            const status = await this.apiKeyLockoutManager.recordFailure(
-              lockoutThreshold,
-              lockoutBaseSeconds,
-              progressiveDelay,
-              maxDelay,
-              permanentThreshold,
-            );
-
-            if (status.locked) {
-              const message = status.permanent_locked
-                ? 'Authentication permanently locked - recovery required'
-                : `Too many failed attempts - try again in ${status.remaining_seconds} seconds`;
-
-              const statusCode = status.permanent_locked ? 403 : 429;
-              if (!status.permanent_locked) {
-                res.setHeader('Retry-After', status.remaining_seconds.toString());
-              }
-
-              /* c8 ignore next -- remoteAddress is always defined in TCP connections */
-              await this.logs?.log({ timestamp: new Date().toISOString(), operation: 'auth_failure', variable: '', source: 'api', success: false, message: `Invalid API key - ${status.permanent_locked ? 'permanent lockout' : `lockout for ${status.remaining_seconds}s`} from ${req.socket.remoteAddress ?? 'unknown'}` });
-              sendJson(res, statusCode, { error: message });
-              return;
-            }
-          }
-
-          /* c8 ignore next -- logs is always initialized in start(); the undefined branch is unreachable in practice */
-          await this.logs?.log({ timestamp: new Date().toISOString(), operation: 'auth_failure', variable: '', source: 'api', success: false, message: `Invalid API key from ${req.socket.remoteAddress ?? 'unknown'}` });
-          sendJson(res, 401, { error: 'Invalid API key' });
-          return;
-        }
+      if (!await this.enforceUnifiedApiKey(req, res, api_key)) {
+        return;
       }
 
       const parsedUrl = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
@@ -259,62 +428,17 @@ this.apiKeyLockoutManager = api_key ? new LockoutManager(path.join(sessionDir, '
 
       // Root endpoint - show server info and detected mode
       if (pathname === '/' && req.method === 'GET') {
-        const detectedType = this.serverConfig.auto_detect ? this.detectClientType(req, pathname) : 'unknown';
-        sendJson(res, 200, {
-          name: 'EnvCP Unified Server',
-          version: VERSION,
-          mode: mode,
-          detected_client: detectedType,
-          auto_detect: this.serverConfig.auto_detect,
-          available_modes: ['rest', 'openai', 'gemini', 'mcp'],
-          endpoints: {
-            rest: '/api/*',
-            openai: '/v1/chat/completions, /v1/functions/*, /v1/tool_calls',
-            gemini: '/v1/models/envcp:generateContent, /v1/function_calls',
-          },
-        });
+        this.sendUnifiedRootInfo(req, res, mode, pathname);
         return;
       }
 
-      // Detect client type
-      let clientType: ClientType = 'unknown';
-      if (this.serverConfig.auto_detect) {
-        clientType = this.detectClientType(req, pathname);
-      }
-
-      // Force mode query param
-      const forceMode = parsedUrl.searchParams.get('mode') || undefined;
-      if (forceMode && ['rest', 'openai', 'gemini'].includes(forceMode)) {
-        clientType = forceMode as ClientType;
-      }
+      const clientType = this.resolveUnifiedClientType(req, pathname, parsedUrl);
 
       try {
-        // Route to appropriate adapter
-        // REST API routes
-        if ((clientType === 'rest' || clientType === 'unknown') && pathname.startsWith('/api')) {
-          await this.handleRESTRequest(req, res, parsedUrl);
+        if (await this.routeUnifiedRequest(req, res, parsedUrl, clientType)) {
           return;
         }
 
-        // OpenAI routes
-        if (clientType === 'openai' || pathname.startsWith('/v1/chat') || pathname.startsWith('/v1/functions') || pathname === '/v1/tool_calls' || pathname === '/v1/models') {
-          await this.handleOpenAIRequest(req, res, parsedUrl);
-          return;
-        }
-
-        // Gemini routes
-        if (clientType === 'gemini' || pathname.includes(':generateContent') || pathname === '/v1/function_calls' || pathname === '/v1/tools') {
-          await this.handleGeminiRequest(req, res, parsedUrl);
-          return;
-        }
-
-        // Default to REST for unknown paths
-        if (pathname.startsWith('/api')) {
-          await this.handleRESTRequest(req, res, parsedUrl);
-          return;
-        }
-
-        // 404 with helpful info
         sendJson(res, 404, {
           error: 'Not found',
           hint: 'Use /api/* for REST, /v1/* for OpenAI, or include :generateContent for Gemini',
@@ -331,20 +455,7 @@ this.apiKeyLockoutManager = api_key ? new LockoutManager(path.join(sessionDir, '
       }
     });
 
-    // Remove any existing shutdown handlers first
-    if (this.shutdownHandlers) {
-      process.off('SIGTERM', this.shutdownHandlers.sigterm);
-      process.off('SIGINT', this.shutdownHandlers.sigint);
-      this.shutdownHandlers = null;
-    }
-
-    const shutdown = () => {
-      this.stop();
-      process.exit(0);
-    };
-    process.on('SIGTERM', shutdown);
-    process.on('SIGINT', shutdown);
-    this.shutdownHandlers = { sigterm: shutdown, sigint: shutdown };
+    this.registerShutdownHandlers();
 
     return new Promise((resolve) => {
       this.httpServer!.listen(port, host, () => {

@@ -332,47 +332,40 @@ function createMcpEntry(projectPath: string, isProjectLocal: boolean): Record<st
   return entry;
 }
 
+function insertEnvcpEntry(
+  config: Record<string, unknown>,
+  containerKey: string,
+  value: Record<string, unknown>,
+): { written: boolean; alreadyExists: boolean } {
+  if (!config[containerKey]) config[containerKey] = {};
+  const container = config[containerKey] as Record<string, unknown>;
+  if (container.envcp !== undefined) return { written: false, alreadyExists: true };
+  container.envcp = value;
+  return { written: true, alreadyExists: false };
+}
+
+function insertEnvcpArray(
+  config: Record<string, unknown>,
+  entry: Record<string, unknown>,
+): { written: boolean; alreadyExists: boolean } {
+  if (!config.mcp_servers) config.mcp_servers = [];
+  const servers = config.mcp_servers as Array<Record<string, unknown>>;
+  if (servers.some(s => s.name === 'envcp')) return { written: false, alreadyExists: true };
+  servers.push({ name: 'envcp', type: 'stdio', ...entry });
+  return { written: true, alreadyExists: false };
+}
+
 export function writeToConfig(
   config: Record<string, unknown>,
   format: McpTarget['format'],
   entry: Record<string, unknown>,
 ): { written: boolean; alreadyExists: boolean } {
   switch (format) {
-    case 'mcpServers': {
-      if (!config.mcpServers) config.mcpServers = {};
-      const servers = config.mcpServers as Record<string, unknown>;
-      if (servers.envcp) return { written: false, alreadyExists: true };
-      servers.envcp = entry;
-      return { written: true, alreadyExists: false };
-    }
-    case 'servers': {
-      if (!config.servers) config.servers = {};
-      const servers = config.servers as Record<string, unknown>;
-      if (servers.envcp) return { written: false, alreadyExists: true };
-      servers.envcp = entry;
-      return { written: true, alreadyExists: false };
-    }
-    case 'context_servers': {
-      if (!config.context_servers) config.context_servers = {};
-      const servers = config.context_servers as Record<string, unknown>;
-      if (servers.envcp) return { written: false, alreadyExists: true };
-      servers.envcp = { command: { path: entry.command, args: entry.args, env: {} } };
-      return { written: true, alreadyExists: false };
-    }
-    case 'mcp_key': {
-      if (!config.mcp) config.mcp = {};
-      const mcp = config.mcp as Record<string, unknown>;
-      if (mcp.envcp) return { written: false, alreadyExists: true };
-      mcp.envcp = { type: 'local', command: ['npx', 'envcp', 'serve', '--mode', 'mcp'], enabled: true };
-      return { written: true, alreadyExists: false };
-    }
-    case 'mcp_servers_array': {
-      if (!config.mcp_servers) config.mcp_servers = [];
-      const servers = config.mcp_servers as Array<Record<string, unknown>>;
-      if (servers.some(s => s.name === 'envcp')) return { written: false, alreadyExists: true };
-      servers.push({ name: 'envcp', type: 'stdio', ...entry });
-      return { written: true, alreadyExists: false };
-    }
+    case 'mcpServers': return insertEnvcpEntry(config, 'mcpServers', entry);
+    case 'servers': return insertEnvcpEntry(config, 'servers', entry);
+    case 'context_servers': return insertEnvcpEntry(config, 'context_servers', { command: { path: entry.command, args: entry.args, env: {} } });
+    case 'mcp_key': return insertEnvcpEntry(config, 'mcp', { type: 'local', command: ['npx', 'envcp', 'serve', '--mode', 'mcp'], enabled: true });
+    case 'mcp_servers_array': return insertEnvcpArray(config, entry);
   }
 }
 
@@ -440,7 +433,7 @@ export function parseEnvFile(content: string): Record<string, string> {
 }
 
 export function validateVariableName(name: string): boolean {
-  return /^[A-Za-z_][A-Za-z0-9_]*$/.test(name);
+  return /^[A-Za-z_]\w*$/.test(name);
 }
 
 const _patternCache = new Map<string, RegExp>();
@@ -448,9 +441,9 @@ const _patternCache = new Map<string, RegExp>();
 export function matchesPattern(name: string, pattern: string): boolean {
   let regex = _patternCache.get(pattern);
   if (!regex) {
-    const escaped = pattern.replaceAll(/[.+?^${}()|[\]\\]/g, '\\$&');
+    const escaped = pattern.replaceAll(/[.+?^${}()|[\]\\]/g, String.raw`\$&`);
     // eslint-disable-next-line security/detect-non-literal-regexp -- glob pattern from config; metacharacters escaped above
-    regex = new RegExp('^' + escaped.replaceAll('*', '.*') + '$');
+    regex = new RegExp(`^${escaped.replaceAll('*', '.*')}$`);
     _patternCache.set(pattern, regex);
   }
   return regex.test(name);

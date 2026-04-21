@@ -13,11 +13,11 @@ import { secureZero } from '../utils/secure-memory.js';
 const execFile = promisify(execFileCallback);
 
 export class StorageManager {
-  private storePath: string;
+  private readonly storePath: string;
   public readonly encrypted: boolean;
   private password?: string;
   private cache: Record<string, Variable> | null = null;
-  private maxBackups: number;
+  private readonly maxBackups: number;
 
   constructor(storePath: string, encrypted: boolean = true, maxBackups: number = 3) {
     this.storePath = storePath;
@@ -292,7 +292,7 @@ export function resolveLogPath(audit: AuditConfig | undefined, projectPath: stri
 }
 
 export class LogManager {
-  private logDir: string;
+  private readonly logDir: string;
   private readonly auditConfig: AuditConfig;
   private hmacKey: Buffer | null = null;
   private lastHmac: string | null = null;

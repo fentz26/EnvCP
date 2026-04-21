@@ -17,8 +17,8 @@ class McpAdapter extends BaseAdapter {
 }
 
 export class EnvCPServer {
-  private server: Server;
-  private adapter: McpAdapter;
+  private readonly server: Server;
+  private readonly adapter: McpAdapter;
 
   constructor(config: EnvCPConfig, projectPath: string, password?: string, vaultPath?: string, sessionPath?: string) {
     this.adapter = new McpAdapter(config, projectPath, password, vaultPath, sessionPath);
