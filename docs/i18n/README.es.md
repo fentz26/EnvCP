@@ -19,24 +19,45 @@
 
 ---
 
-## ¿Por qué EnvCP?
+## Qué hace
 
-- **Almacenamiento local únicamente** — Tus secretos nunca salen de tu máquina
-- **Cifrado en reposo** — AES-256-GCM con derivación de clave Argon2id
-- **Acceso por referencia** — La IA referencia variables por nombre, sin ver los valores reales
-- **Inyección automática .env** — Los valores se pueden inyectar en tus archivos .env
-- **Control de acceso IA** — Bloquea que la IA liste o verifique tus secretos
-- **Compatibilidad universal** — MCP, OpenAI, Gemini o REST
+- Almacena secretos en tu máquina
+- Permite que las herramientas de IA referencien secretos por nombre en lugar de valor
+- Puede sincronizar valores en archivos `.env` cuando lo necesites
+- Funciona con MCP, REST, compatible con OpenAI y compatible con Gemini
+
+---
+
+## Novedades en v1.2.0
+
+- Configuración inicial más sencilla
+- Menús interactivos para `config` y `rule`
+- Reglas de IA por variable y por cliente
+- Mejor configuración del servicio/inicio
+- Limpieza general, refuerzo de seguridad y cobertura de tests
 
 ---
 
 ## Inicio rápido
 
+Instalar e inicializar:
+
 ```bash
 npm install -g @fentz26/envcp
-envcp init
-envcp add API_KEY --value "tu-clave-secreta"
-envcp serve --mode auto --port 3456
+envcp init   # elegir configuración Basic / Advanced / Manual
+```
+
+Agregar secretos:
+
+```bash
+envcp add API_KEY --from-env API_KEY
+# o: printf '%s' "$API_KEY" | envcp add API_KEY --stdin
+```
+
+Iniciar el servidor MCP:
+
+```bash
+envcp serve
 ```
 
 ---
@@ -45,18 +66,11 @@ envcp serve --mode auto --port 3456
 
 | Guía | Descripción |
 |------|-------------|
-| [Guía de configuración](SETUP.es.md) | Instalación, CLI, integraciones, configuración |
+| [Sitio de documentación](https://envcp.org/docs) | Documentación principal |
+| [Guía de configuración](SETUP.es.md) | Instalación, configuración, integraciones |
+| [Guía de seguridad](../../docs/SECURITY_GUIDE.md) | Configuración segura y respuesta a incidentes |
 | [Verificación](VERIFICATION.es.md) | Verificación de procedencia SLSA 3 |
-| [Política de seguridad](../../SECURITY.md) | Reporte de vulnerabilidades, cifrado |
-
----
-
-## Seguridad y cadena de suministro
-
-- **SLSA Level 3** — Procedencia de build para integridad de la cadena de suministro ([verificar →](VERIFICATION.es.md))
-- **Cifrado en reposo** — AES-256-GCM con Argon2id
-- **Local únicamente** — Tus secretos nunca salen de tu máquina
-- **CI SHA-fijado** — Todas las GitHub Actions fijadas a commits inmutables
+| [Política de seguridad](../../SECURITY.md) | Reporte de vulnerabilidades |
 
 ---
 

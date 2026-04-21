@@ -19,24 +19,45 @@
 
 ---
 
-## 为什么选择 EnvCP？
+## 功能
 
-- **仅本地存储** — 您的密钥永远不会离开您的机器
-- **静态加密** — 使用 Argon2id 密钥派生的 AES-256-GCM
-- **基于引用的访问** — AI 通过名称引用变量，从不看到实际值
-- **自动 .env 注入** — 值可以自动注入到您的 .env 文件中
-- **AI 访问控制** — 阻止 AI 主动列出或检查您的密钥
-- **通用兼容性** — 支持 MCP、OpenAI、Gemini 或 REST
+- 将密钥存储在本地机器上
+- 让 AI 工具通过名称而非实际值来引用密钥
+- 可在需要时将值同步到 `.env` 文件
+- 支持 MCP、REST、OpenAI 兼容和 Gemini 兼容客户端
+
+---
+
+## v1.2.0 新特性
+
+- 更简便的首次运行设置
+- `config` 和 `rule` 的交互式菜单
+- 按变量和按客户端的 AI 规则
+- 改进的服务/启动设置
+- 全面的清理、安全加固和测试覆盖
 
 ---
 
 ## 快速开始
 
+安装和初始化：
+
 ```bash
 npm install -g @fentz26/envcp
-envcp init
-envcp add API_KEY --value "your-secret-key"
-envcp serve --mode auto --port 3456
+envcp init   # 选择 Basic / Advanced / Manual 设置
+```
+
+添加密钥：
+
+```bash
+envcp add API_KEY --from-env API_KEY
+# 或：printf '%s' "$API_KEY" | envcp add API_KEY --stdin
+```
+
+启动 MCP 服务器：
+
+```bash
+envcp serve
 ```
 
 ---
@@ -45,18 +66,11 @@ envcp serve --mode auto --port 3456
 
 | 指南 | 描述 |
 |------|------|
-| [安装指南](SETUP.zh.md) | 安装、CLI、集成、配置 |
+| [文档网站](https://envcp.org/docs) | 主要文档 |
+| [安装指南](SETUP.zh.md) | 安装、配置、集成 |
+| [安全指南](../../docs/SECURITY_GUIDE.md) | 安全部署和事件响应 |
 | [验证](VERIFICATION.zh.md) | SLSA 3 溯源验证 |
-| [安全政策](../../SECURITY.md) | 漏洞报告、加密详情 |
-
----
-
-## 安全与供应链
-
-- **SLSA Level 3** — 供应链完整性的构建溯源（[验证 →](VERIFICATION.zh.md)）
-- **静态加密** — 使用 Argon2id 的 AES-256-GCM
-- **仅本地** — 您的密钥永远不会离开您的机器
-- **CI SHA 固定** — 所有 GitHub Actions 固定到不可变的提交 SHA
+| [安全政策](../../SECURITY.md) | 漏洞报告 |
 
 ---
 

@@ -9,8 +9,8 @@
 </p>
 
 <p align="center">
-Quản lý biến môi trường an toàn cho lập trình hỗ trợ AI.<br />
-MCP server giúp AI tham chiếu bí mật của bạn theo tên — không bao giờ theo giá trị.
+  Quản lý biến môi trường an toàn cho lập trình hỗ trợ AI.<br />
+  MCP server giúp AI tham chiếu bí mật của bạn theo tên — không bao giờ theo giá trị.
 </p>
 
 ---
@@ -19,24 +19,45 @@ MCP server giúp AI tham chiếu bí mật của bạn theo tên — không bao 
 
 ---
 
-## Thế tại sao bạn nên tin dùng EnvCP?
+## Tính năng
 
-- **Chỉ lưu trữ cục bộ** — Bí mật của bạn không bao giờ rời khỏi máy nên ghệ bạn sẽ không biết
-- **Mã hóa khi lưu trữ** — AES-256-GCM với Argon2id key derivation
-- **Truy cập dựa trên tham chiếu** — AI tham chiếu biến theo tên biến, không bao giờ thấy giá trị thực
-- **Tự động inject .env** — Giá trị có thể được inject vào file .env, vjip chưa
-- **Kiểm soát truy cập AI** — Ngăn AI chủ động liệt kê hoặc kiểm tra bí mật
-- **Tương thích toàn cầu** — MCP, OpenAI, Gemini hoặc REST
+- Lưu trữ bí mật trên máy của bạn
+- Cho phép các công cụ AI tham chiếu bí mật theo tên thay vì giá trị thực
+- Có thể đồng bộ giá trị vào file `.env` khi cần
+- Hỗ trợ MCP, REST, tương thích OpenAI và tương thích Gemini
+
+---
+
+## Điểm mới trong v1.2.0
+
+- Thiết lập lần đầu đơn giản hơn
+- Menu tương tác cho `config` và `rule`
+- Quy tắc AI theo biến và theo client
+- Cài đặt dịch vụ/khởi động cải tiến
+- Dọn dẹp tổng thể, tăng cường bảo mật và độ phủ test
 
 ---
 
 ## Bắt đầu nhanh
 
+Cài đặt và khởi tạo:
+
 ```bash
 npm install -g @fentz26/envcp
-envcp init
-envcp add API_KEY --value "your-secret-key"
-envcp serve --mode auto --port 3456
+envcp init   # chọn thiết lập Basic / Advanced / Manual
+```
+
+Thêm bí mật:
+
+```bash
+envcp add API_KEY --from-env API_KEY
+# hoặc: printf '%s' "$API_KEY" | envcp add API_KEY --stdin
+```
+
+Khởi động MCP server:
+
+```bash
+envcp serve
 ```
 
 ---
@@ -45,18 +66,11 @@ envcp serve --mode auto --port 3456
 
 | Hướng dẫn | Mô tả |
 |-----------|-------|
-| [Hướng dẫn cài đặt](SETUP.vi.md) | Cài đặt, CLI, tích hợp, cấu hình |
+| [Trang tài liệu](https://envcp.org/docs) | Tài liệu chính |
+| [Hướng dẫn cài đặt](SETUP.vi.md) | Cài đặt, cấu hình, tích hợp |
+| [Hướng dẫn bảo mật](../../docs/SECURITY_GUIDE.md) | Triển khai an toàn và xử lý sự cố |
 | [Xác minh](VERIFICATION.vi.md) | Xác minh nguồn gốc SLSA 3 |
-| [Chính sách bảo mật](../../SECURITY.md) | Báo cáo lỗ hổng, chi tiết mã hóa |
-
----
-
-## Bảo mật và chuỗi cung ứng
-
-- **SLSA Level 3** — Xuất xứ build cho toàn vẹn chuỗi cung ứng ([xác minh →](VERIFICATION.vi.md))
-- **Mã hóa khi lưu trữ** — AES-256-GCM với Argon2id
-- **Chỉ cục bộ** — Bí mật không bao giờ rời khỏi máy
-- **CI SHA-pinned** — Tất cả GitHub Actions được ghim vào commit SHA bất biến
+| [Chính sách bảo mật](../../SECURITY.md) | Báo cáo lỗ hổng |
 
 ---
 

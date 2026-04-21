@@ -19,24 +19,45 @@
 
 ---
 
-## 왜 EnvCP인가?
+## 기능
 
-- **로컬 전용 스토리지** — 시크릿이 절대 머신을 벗어나지 않음
-- **저장 시 암호화** — Argon2id 키 파생을 사용한 AES-256-GCM
-- **참조 기반 접근** — AI는 실제 값을 보지 않고 이름으로만 변수를 참조
-- **자동 .env 주입** — 값을 .env 파일에 자동으로 주입 가능
-- **AI 접근 제어** — AI가 시크릿을 목록화하거나 확인하는 것을 차단
-- **범용 호환성** — MCP, OpenAI, Gemini 또는 REST
+- 시크릿을 머신에 저장
+- AI 도구가 실제 값 대신 이름으로 시크릿을 참조하도록 허용
+- 필요 시 `.env` 파일에 값 동기화 가능
+- MCP, REST, OpenAI 호환, Gemini 호환 클라이언트 지원
+
+---
+
+## v1.2.0 새로운 기능
+
+- 간소화된 첫 실행 설정
+- `config` 및 `rule`을 위한 대화형 메뉴
+- 변수별 및 클라이언트별 AI 규칙
+- 개선된 서비스/시작 설정
+- 전반적인 정리, 보안 강화 및 테스트 커버리지
 
 ---
 
 ## 빠른 시작
 
+설치 및 초기화:
+
 ```bash
 npm install -g @fentz26/envcp
-envcp init
-envcp add API_KEY --value "your-secret-key"
-envcp serve --mode auto --port 3456
+envcp init   # Basic / Advanced / Manual 설정 선택
+```
+
+시크릿 추가:
+
+```bash
+envcp add API_KEY --from-env API_KEY
+# 또는: printf '%s' "$API_KEY" | envcp add API_KEY --stdin
+```
+
+MCP 서버 시작:
+
+```bash
+envcp serve
 ```
 
 ---
@@ -45,18 +66,11 @@ envcp serve --mode auto --port 3456
 
 | 가이드 | 설명 |
 |--------|------|
-| [설치 가이드](SETUP.ko.md) | 설치, CLI, 통합, 설정 |
+| [문서 사이트](https://envcp.org/docs) | 메인 문서 |
+| [설치 가이드](SETUP.ko.md) | 설치, 설정, 통합 |
+| [보안 가이드](../../docs/SECURITY_GUIDE.md) | 안전한 설정 및 인시던트 대응 |
 | [검증](VERIFICATION.ko.md) | SLSA 3 출처 검증 |
-| [보안 정책](../../SECURITY.md) | 취약점 신고, 암호화 |
-
----
-
-## 보안 및 공급망
-
-- **SLSA Level 3** — 공급망 무결성을 위한 빌드 출처 ([검증 →](VERIFICATION.ko.md))
-- **저장 시 암호화** — Argon2id를 사용한 AES-256-GCM
-- **로컬 전용** — 시크릿이 절대 머신을 벗어나지 않음
-- **CI SHA 고정** — 모든 GitHub Actions가 불변 커밋 SHA에 고정
+| [보안 정책](../../SECURITY.md) | 취약점 신고 |
 
 ---
 

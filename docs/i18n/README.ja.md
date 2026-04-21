@@ -19,24 +19,45 @@
 
 ---
 
-## なぜ EnvCP なのか？
+## 機能
 
-- **ローカル専用ストレージ** — シークレットがマシンの外に出ることはありません
-- **保存時に暗号化** — Argon2id鍵導出によるAES-256-GCM
-- **参照ベースのアクセス** — AIは実際の値を見ることなく、名前で変数を参照します
-- **自動 .env インジェクション** — .envファイルに値を自動注入できます
-- **AIアクセス制御** — AIがシークレットをリストアップしたり確認するのを防止
-- **ユニバーサル互換性** — MCP、OpenAI、Gemini、またはREST
+- シークレットをマシン上に保存
+- AIツールが実際の値ではなく名前でシークレットを参照できるようにする
+- 必要に応じて`.env`ファイルに値を同期可能
+- MCP、REST、OpenAI互換、Gemini互換クライアントをサポート
+
+---
+
+## v1.2.0 の新機能
+
+- 初回セットアップの簡素化
+- `config`と`rule`のインタラクティブメニュー
+- 変数ごと・クライアントごとのAIルール
+- サービス/起動設定の改善
+- 全般的な整理、セキュリティ強化、テストカバレッジ
 
 ---
 
 ## クイックスタート
 
+インストールと初期化：
+
 ```bash
 npm install -g @fentz26/envcp
-envcp init
-envcp add API_KEY --value "your-secret-key"
-envcp serve --mode auto --port 3456
+envcp init   # Basic / Advanced / Manual 設定を選択
+```
+
+シークレットの追加：
+
+```bash
+envcp add API_KEY --from-env API_KEY
+# または: printf '%s' "$API_KEY" | envcp add API_KEY --stdin
+```
+
+MCPサーバーの起動：
+
+```bash
+envcp serve
 ```
 
 ---
@@ -45,18 +66,11 @@ envcp serve --mode auto --port 3456
 
 | ガイド | 説明 |
 |--------|------|
-| [セットアップガイド](SETUP.ja.md) | インストール、CLI、統合、設定 |
+| [ドキュメントサイト](https://envcp.org/docs) | メインドキュメント |
+| [セットアップガイド](SETUP.ja.md) | インストール、設定、統合 |
+| [セキュリティガイド](../../docs/SECURITY_GUIDE.md) | 安全な設定とインシデント対応 |
 | [検証](VERIFICATION.ja.md) | SLSA 3 出典検証 |
-| [セキュリティポリシー](../../SECURITY.md) | 脆弱性報告、暗号化の詳細 |
-
----
-
-## セキュリティとサプライチェーン
-
-- **SLSA Level 3** — サプライチェーンの整合性のためのビルド出典（[検証 →](VERIFICATION.ja.md)）
-- **保存時に暗号化** — Argon2idによるAES-256-GCM
-- **ローカル専用** — シークレットがマシンの外に出ることはありません
-- **CI SHA固定** — すべてのGitHub Actionsが不変のコミットSHAに固定
+| [セキュリティポリシー](../../SECURITY.md) | 脆弱性報告 |
 
 ---
 

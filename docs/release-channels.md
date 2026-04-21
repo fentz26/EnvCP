@@ -132,13 +132,13 @@ Triggered by pushing a version tag to `main`:
 
 ```bash
 # After PR with release:latest is merged to main
-git tag v1.2.0
-git push origin v1.2.0
+git tag v1.2.1
+git push origin v1.2.1
 ```
 
 Result:
 - `npm publish --tag latest`
-- Docker: `latest` + `v1.2.0`
+- Docker: `latest` + `v1.2.1`
 - GitHub Release (stable)
 - MCP Registry publish
 
@@ -148,8 +148,8 @@ Triggered by pushing a version tag to `experimental`:
 
 ```bash
 # After PR with release:experimental is merged to experimental
-git tag v1.2.0-experimental.1
-git push origin v1.2.0-experimental.1
+git tag v1.2.1-experimental.1
+git push origin v1.2.1-experimental.1
 ```
 
 Result:
@@ -161,7 +161,7 @@ Result:
 
 Automatic nightly build from `canary` branch at 02:00 UTC:
 
-- Auto-versioned: `1.1.0-canary.202604170200.abc1234`
+- Auto-versioned: `1.2.x-canary.202604170200.abc1234`
 - `npm publish --tag canary`
 - Docker: `canary`
 - GitHub Pre-release
@@ -217,7 +217,7 @@ The `main` branch requires:
 
 1. **`label-check` CI must pass** -- Ensures proper release label
 2. **No `Holding` label** -- Blocks accidental merge of incomplete work
-3. **All CI tests pass** -- 3 Node.js versions (18, 20, 22)
+3. **All CI tests pass** -- 3 Node.js versions (20, 22, 24)
 4. **CodeQL analysis passes** -- Security scanning
 5. **Review approval** -- At least 1 approving review
 
@@ -225,11 +225,7 @@ The `main` branch requires:
 
 | PR | Labels | Channel | Status |
 |----|--------|---------|--------|
-| #137 HSM | `feature`, `security`, `Holding`, `release:experimental` | Blocked (Holding) | On hold |
-| #173 Brute-force delays | `feature`, `security`, `release:experimental` | Experimental | Open |
-| #175 Notifications PR | `feature`, `notification`, `Holding`, `release:experimental` | Blocked (Holding) | On hold |
-| #184 Memory hardening | `feature`, `security`, `release:latest` | Latest | Open |
-| #185 Release channels | `release:skip` | Skip | Open |
+| #131 HSM hardware security | `feature`, `security`, `Holding`, `release:experimental` | Blocked (Holding) | On hold |
 
 ## Workflow Files
 
