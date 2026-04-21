@@ -38,10 +38,10 @@ function syncJson(filePath, updater) {
 function syncTextPattern(relPath, pattern, replacement, description = relPath) {
   const filePath = join(root, relPath);
   const content = readFileSync(filePath, 'utf8');
-  const updated = content.replace(pattern, replacement);
-  if (updated === content) {
-    throw new Error(`Could not update ${description}`);
+  if (!pattern.test(content)) {
+    throw new Error(`Could not find version pattern in ${description}`);
   }
+  const updated = content.replace(pattern, replacement);
   writeFileSync(filePath, updated);
   console.log(`✓ ${description} → ${version}`);
 }
