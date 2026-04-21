@@ -3,7 +3,7 @@ import chalk from 'chalk';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import * as fs from 'node:fs/promises';
-import { promptPassword, promptInput, promptConfirm, promptMenu, promptTabbedMenu } from '../utils/prompt.js';
+import { promptPassword, promptInput, promptConfirm, promptMenu, promptTabbedMenu, MenuTab } from '../utils/prompt.js';
 import { ensureDir, pathExists, findProjectRoot } from '../utils/fs.js';
 import { loadConfig, loadScopedConfig, initConfig, saveConfig, saveScopedConfig, parseEnvFile, registerMcpConfig, isBlacklisted, canAccess } from '../config/manager.js';
 import { ConfigGuard } from '../config/config-guard.js';
@@ -1238,147 +1238,169 @@ function describeMergedClientRuleOrigin(
   return 'merged';
 }
 
+async function applyDefaultClientRule(config: EnvCPConfig): Promise<void> {
+  const clientId = await promptClientRuleTarget();
+  if (!clientId) return;
+  const field = await promptMenu(`Default rule for ${clientId}`, [
+    { label: 'AI read', value: 'allow_ai_read' },
+    { label: 'AI write', value: 'allow_ai_write' },
+    { label: 'AI delete', value: 'allow_ai_delete' },
+    { label: 'AI export', value: 'allow_ai_export' },
+    { label: 'AI run', value: 'allow_ai_execute' },
+    { label: 'AI list names', value: 'allow_ai_active_check' },
+    { label: 'Require confirmation', value: 'require_confirmation' },
+  ]) as DefaultRuleField;
+  const value = await promptMenu(`Set ${field} for ${clientId}`, [
+    { label: 'Allow / on', value: 'allow' },
+    { label: 'Deny / off', value: 'deny' },
+    { label: 'Inherit global default', value: 'inherit' },
+  ], 'inherit');
+  applyDefaultRule(config, field, value === 'inherit' ? undefined : value === 'allow', clientId);
+}
+
+async function applyVariableClearWindow(config: EnvCPConfig): Promise<void> {
+  const variable = (await promptInput('Variable name:')).trim();
+  if (variable) {
+    setVariableRuleWindow(config, variable, undefined, undefined);
+  }
+}
+
+async function applyWhoEdit(config: EnvCPConfig): Promise<void> {
+  const clientId = await promptClientRuleTarget();
+  if (clientId) {
+    await editVariableRule(config, clientId);
+  }
+}
+
+async function applyWhoWindow(config: EnvCPConfig): Promise<void> {
+  const clientId = await promptClientRuleTarget();
+  if (clientId) {
+    await editVariableRuleWindow(config, clientId);
+  }
+}
+
+async function applyWhoClearWindow(config: EnvCPConfig): Promise<void> {
+  const clientId = await promptClientRuleTarget();
+  if (!clientId) return;
+  const variable = (await promptInput('Variable name:')).trim();
+  if (variable) {
+    setVariableRuleWindow(config, variable, undefined, undefined, clientId);
+  }
+}
+
+async function applyWhoRemove(config: EnvCPConfig): Promise<void> {
+  const clientId = await promptClientRuleTarget();
+  if (clientId) {
+    await removeVariableRule(config, clientId);
+  }
+}
+
+async function dispatchRuleChoice(choice: string, config: EnvCPConfig): Promise<void> {
+  switch (choice) {
+    case 'default.read': config.access.allow_ai_read = !config.access.allow_ai_read; break;
+    case 'default.write': config.access.allow_ai_write = !config.access.allow_ai_write; break;
+    case 'default.delete': config.access.allow_ai_delete = !config.access.allow_ai_delete; break;
+    case 'default.run': config.access.allow_ai_execute = !config.access.allow_ai_execute; break;
+    case 'default.list': config.access.allow_ai_active_check = !config.access.allow_ai_active_check; break;
+    case 'default.client': await applyDefaultClientRule(config); break;
+    case 'variable.edit': await editVariableRule(config); break;
+    case 'variable.window': await editVariableRuleWindow(config); break;
+    case 'variable.clear-window': await applyVariableClearWindow(config); break;
+    case 'variable.remove': await removeVariableRule(config); break;
+    case 'who.edit': await applyWhoEdit(config); break;
+    case 'who.window': await applyWhoWindow(config); break;
+    case 'who.clear-window': await applyWhoClearWindow(config); break;
+    case 'who.remove': await applyWhoRemove(config); break;
+  }
+}
+
+function buildRuleMenuTabs(config: EnvCPConfig): MenuTab[] {
+  return [
+    {
+      label: 'Defaults',
+      items: [
+        { label: 'Toggle AI read', value: 'default.read', hint: config.access.allow_ai_read ? '(allow)' : '(deny)' },
+        { label: 'Toggle AI write', value: 'default.write', hint: config.access.allow_ai_write ? '(allow)' : '(deny)' },
+        { label: 'Toggle AI delete', value: 'default.delete', hint: config.access.allow_ai_delete ? '(allow)' : '(deny)' },
+        { label: 'Toggle AI run', value: 'default.run', hint: config.access.allow_ai_execute ? '(allow)' : '(deny)' },
+        { label: 'Toggle AI list names', value: 'default.list', hint: config.access.allow_ai_active_check ? '(allow)' : '(deny)' },
+        { label: 'Edit one who default rule', value: 'default.client', hint: `(${Object.keys(config.access.client_rules || {}).length} saved)` },
+        { label: 'Back', value: 'default.back' },
+      ],
+    },
+    {
+      label: 'Variable',
+      items: [
+        { label: 'Edit one variable rule', value: 'variable.edit', hint: `(${Object.keys(config.access.variable_rules || {}).length} saved)` },
+        { label: 'Set active time window', value: 'variable.window', hint: '(HH:MM -> HH:MM)' },
+        { label: 'Clear active time window', value: 'variable.clear-window', hint: '(one variable)' },
+        { label: 'Remove one variable rule', value: 'variable.remove', hint: '(exact variable name)' },
+        { label: 'Show variable rule names', value: 'variable.list', hint: '(saved rules)' },
+        { label: 'Back', value: 'variable.back' },
+      ],
+    },
+    {
+      label: 'Who',
+      items: [
+        { label: 'Edit one who variable rule', value: 'who.edit', hint: `(${Object.keys(config.access.client_rules || {}).length} clients)` },
+        { label: 'Set who time window', value: 'who.window', hint: '(client + variable)' },
+        { label: 'Clear who time window', value: 'who.clear-window', hint: '(client + variable)' },
+        { label: 'Remove one who variable rule', value: 'who.remove', hint: '(client + variable)' },
+        { label: 'Show who names', value: 'who.list', hint: '(saved clients)' },
+        { label: 'Back', value: 'who.back' },
+      ],
+    },
+  ];
+}
+
+async function showRuleNames(projectPath: string, kind: 'variable' | 'who'): Promise<void> {
+  const config = await loadScopedConfig(projectPath, 'merged');
+  const map = kind === 'variable' ? (config.access.variable_rules || {}) : (config.access.client_rules || {});
+  const names = Object.keys(map);
+  const emptyMsg = kind === 'variable' ? 'No variable-specific rules yet.' : 'No who-specific rules yet.';
+  console.log(names.length > 0 ? chalk.gray(names.join(', ')) : chalk.gray(emptyMsg));
+  await promptInput('Press Enter to continue');
+}
+
+function printNonInteractiveRulesSummary(config: EnvCPConfig): void {
+  console.log(chalk.blue('EnvCP rules'));
+  console.log(chalk.gray(`  AI read: ${config.access.allow_ai_read ? 'allow' : 'deny'}`));
+  console.log(chalk.gray(`  AI write: ${config.access.allow_ai_write ? 'allow' : 'deny'}`));
+  console.log(chalk.gray(`  AI delete: ${config.access.allow_ai_delete ? 'allow' : 'deny'}`));
+  console.log(chalk.gray(`  AI run: ${config.access.allow_ai_execute ? 'allow' : 'deny'}`));
+  console.log(chalk.gray(`  Variable rules: ${Object.keys(config.access.variable_rules || {}).length}`));
+  console.log(chalk.gray(`  Who rules: ${Object.keys(config.access.client_rules || {}).length}`));
+}
+
 async function runRuleMenu(): Promise<void> {
   const projectPath = process.cwd();
   let config = await loadScopedConfig(projectPath, 'merged');
 
   if (!isInteractiveCli()) {
-    console.log(chalk.blue('EnvCP rules'));
-    console.log(chalk.gray(`  AI read: ${config.access.allow_ai_read ? 'allow' : 'deny'}`));
-    console.log(chalk.gray(`  AI write: ${config.access.allow_ai_write ? 'allow' : 'deny'}`));
-    console.log(chalk.gray(`  AI delete: ${config.access.allow_ai_delete ? 'allow' : 'deny'}`));
-    console.log(chalk.gray(`  AI run: ${config.access.allow_ai_execute ? 'allow' : 'deny'}`));
-    console.log(chalk.gray(`  Variable rules: ${Object.keys(config.access.variable_rules || {}).length}`));
-    console.log(chalk.gray(`  Who rules: ${Object.keys(config.access.client_rules || {}).length}`));
+    printNonInteractiveRulesSummary(config);
     return;
   }
 
   while (true) {
-    const choice = await promptTabbedMenu('EnvCP rules', [
-      {
-        label: 'Defaults',
-        items: [
-          { label: 'Toggle AI read', value: 'default.read', hint: config.access.allow_ai_read ? '(allow)' : '(deny)' },
-          { label: 'Toggle AI write', value: 'default.write', hint: config.access.allow_ai_write ? '(allow)' : '(deny)' },
-          { label: 'Toggle AI delete', value: 'default.delete', hint: config.access.allow_ai_delete ? '(allow)' : '(deny)' },
-          { label: 'Toggle AI run', value: 'default.run', hint: config.access.allow_ai_execute ? '(allow)' : '(deny)' },
-          { label: 'Toggle AI list names', value: 'default.list', hint: config.access.allow_ai_active_check ? '(allow)' : '(deny)' },
-          { label: 'Edit one who default rule', value: 'default.client', hint: `(${Object.keys(config.access.client_rules || {}).length} saved)` },
-          { label: 'Back', value: 'default.back' },
-        ],
-      },
-      {
-        label: 'Variable',
-        items: [
-          { label: 'Edit one variable rule', value: 'variable.edit', hint: `(${Object.keys(config.access.variable_rules || {}).length} saved)` },
-          { label: 'Set active time window', value: 'variable.window', hint: '(HH:MM -> HH:MM)' },
-          { label: 'Clear active time window', value: 'variable.clear-window', hint: '(one variable)' },
-          { label: 'Remove one variable rule', value: 'variable.remove', hint: '(exact variable name)' },
-          { label: 'Show variable rule names', value: 'variable.list', hint: '(saved rules)' },
-          { label: 'Back', value: 'variable.back' },
-        ],
-      },
-      {
-        label: 'Who',
-        items: [
-          { label: 'Edit one who variable rule', value: 'who.edit', hint: `(${Object.keys(config.access.client_rules || {}).length} clients)` },
-          { label: 'Set who time window', value: 'who.window', hint: '(client + variable)' },
-          { label: 'Clear who time window', value: 'who.clear-window', hint: '(client + variable)' },
-          { label: 'Remove one who variable rule', value: 'who.remove', hint: '(client + variable)' },
-          { label: 'Show who names', value: 'who.list', hint: '(saved clients)' },
-          { label: 'Back', value: 'who.back' },
-        ],
-      },
-    ]);
+    const choice = await promptTabbedMenu('EnvCP rules', buildRuleMenuTabs(config));
 
     if (choice.endsWith('.back')) {
       return;
     }
 
     if (choice === 'variable.list') {
-      config = await loadScopedConfig(projectPath, 'merged');
-      const names = Object.keys(config.access.variable_rules || {});
-      console.log(names.length > 0 ? chalk.gray(names.join(', ')) : chalk.gray('No variable-specific rules yet.'));
-      await promptInput('Press Enter to continue');
+      await showRuleNames(projectPath, 'variable');
       continue;
     }
 
     if (choice === 'who.list') {
-      config = await loadScopedConfig(projectPath, 'merged');
-      const names = Object.keys(config.access.client_rules || {});
-      console.log(names.length > 0 ? chalk.gray(names.join(', ')) : chalk.gray('No who-specific rules yet.'));
-      await promptInput('Press Enter to continue');
+      await showRuleNames(projectPath, 'who');
       continue;
     }
 
     const scope = await chooseEditableRuleScope();
     config = await loadScopedConfig(projectPath, scope);
-
-    if (choice === 'default.read') {
-      config.access.allow_ai_read = !config.access.allow_ai_read;
-    } else if (choice === 'default.write') {
-      config.access.allow_ai_write = !config.access.allow_ai_write;
-    } else if (choice === 'default.delete') {
-      config.access.allow_ai_delete = !config.access.allow_ai_delete;
-    } else if (choice === 'default.run') {
-      config.access.allow_ai_execute = !config.access.allow_ai_execute;
-    } else if (choice === 'default.list') {
-      config.access.allow_ai_active_check = !config.access.allow_ai_active_check;
-    } else if (choice === 'default.client') {
-      const clientId = await promptClientRuleTarget();
-      if (clientId) {
-        const field = await promptMenu(`Default rule for ${clientId}`, [
-          { label: 'AI read', value: 'allow_ai_read' },
-          { label: 'AI write', value: 'allow_ai_write' },
-          { label: 'AI delete', value: 'allow_ai_delete' },
-          { label: 'AI export', value: 'allow_ai_export' },
-          { label: 'AI run', value: 'allow_ai_execute' },
-          { label: 'AI list names', value: 'allow_ai_active_check' },
-          { label: 'Require confirmation', value: 'require_confirmation' },
-        ]) as DefaultRuleField;
-        const value = await promptMenu(`Set ${field} for ${clientId}`, [
-          { label: 'Allow / on', value: 'allow' },
-          { label: 'Deny / off', value: 'deny' },
-          { label: 'Inherit global default', value: 'inherit' },
-        ], 'inherit');
-        applyDefaultRule(config, field, value === 'inherit' ? undefined : value === 'allow', clientId);
-      }
-    } else if (choice === 'variable.edit') {
-      await editVariableRule(config);
-    } else if (choice === 'variable.window') {
-      await editVariableRuleWindow(config);
-    } else if (choice === 'variable.clear-window') {
-      const variable = (await promptInput('Variable name:')).trim();
-      if (variable) {
-        setVariableRuleWindow(config, variable, undefined, undefined);
-      }
-    } else if (choice === 'variable.remove') {
-      await removeVariableRule(config);
-    } else if (choice === 'who.edit') {
-      const clientId = await promptClientRuleTarget();
-      if (clientId) {
-        await editVariableRule(config, clientId);
-      }
-    } else if (choice === 'who.window') {
-      const clientId = await promptClientRuleTarget();
-      if (clientId) {
-        await editVariableRuleWindow(config, clientId);
-      }
-    } else if (choice === 'who.clear-window') {
-      const clientId = await promptClientRuleTarget();
-      if (clientId) {
-        const variable = (await promptInput('Variable name:')).trim();
-        if (variable) {
-          setVariableRuleWindow(config, variable, undefined, undefined, clientId);
-        }
-      }
-    } else if (choice === 'who.remove') {
-      const clientId = await promptClientRuleTarget();
-      if (clientId) {
-        await removeVariableRule(config, clientId);
-      }
-    }
-
+    await dispatchRuleChoice(choice, config);
     await saveScopedConfig(config, projectPath, scope);
   }
 }
@@ -1392,6 +1414,287 @@ type UnlockOptions = {
   pkcs11Lib?: string;
   global?: boolean;
 };
+
+interface BfpSettings {
+  lockoutThreshold: number;
+  lockoutBaseSeconds: number;
+  progressiveDelay: boolean;
+  maxDelay: number;
+  permanentThreshold: number;
+}
+
+function resolveBfpSettings(config: EnvCPConfig): BfpSettings {
+  const bfpConfig = config.security?.brute_force_protection;
+  return {
+    lockoutThreshold: bfpConfig?.max_attempts ?? config.session?.lockout_threshold ?? 5,
+    lockoutBaseSeconds: bfpConfig?.lockout_duration ?? config.session?.lockout_base_seconds ?? 60,
+    progressiveDelay: bfpConfig?.progressive_delay ?? true,
+    maxDelay: bfpConfig?.max_delay ?? 60,
+    permanentThreshold: bfpConfig?.permanent_lockout_threshold ?? 0,
+  };
+}
+
+async function clearLockoutWithRecoveryKey(
+  projectPath: string,
+  config: EnvCPConfig,
+  lockoutManager: LockoutManager,
+  logManager: LogManager,
+  recoveryKey: string,
+  logMessage: string,
+): Promise<boolean> {
+  const recoveryPath = path.join(projectPath, config.security?.recovery_file || '.envcp/.recovery');
+  if (!await pathExists(recoveryPath)) {
+    console.log(chalk.red('No recovery file found.'));
+    return false;
+  }
+
+  const recoveryData = await fs.readFile(recoveryPath, 'utf8');
+  try {
+    await recoverPassword(recoveryData, recoveryKey);
+    await lockoutManager.clearPermanentLockout();
+    console.log(chalk.green('Permanent lockout cleared.'));
+
+    await logManager.log({
+      timestamp: new Date().toISOString(),
+      operation: 'unlock',
+      variable: '',
+      source: 'cli',
+      success: true,
+      message: logMessage,
+      session_id: '',
+      client_id: 'cli',
+      client_type: 'terminal',
+      ip: '127.0.0.1',
+    });
+    return true;
+  } catch {
+    console.log(chalk.red('Invalid recovery key.'));
+    return false;
+  }
+}
+
+async function handlePermanentLockoutPrompt(
+  projectPath: string,
+  config: EnvCPConfig,
+  lockoutManager: LockoutManager,
+  logManager: LogManager,
+): Promise<boolean> {
+  console.log(chalk.red.bold('PERMANENT LOCKOUT: Too many failed attempts.'));
+  console.log(chalk.red('Recovery key or administrator intervention required.'));
+
+  const useRecovery = await promptConfirm('Use recovery key to clear lockout?', true);
+  if (!useRecovery) return false;
+
+  const recoveryKey = await promptPassword('Enter recovery key:');
+  const ok = await clearLockoutWithRecoveryKey(
+    projectPath,
+    config,
+    lockoutManager,
+    logManager,
+    recoveryKey,
+    'Permanent lockout cleared with recovery key',
+  );
+  if (ok) {
+    console.log(chalk.yellow('Note: You still need to enter the correct password.'));
+  }
+  return ok;
+}
+
+async function ensureInitialLockoutCleared(
+  projectPath: string,
+  config: EnvCPConfig,
+  lockoutManager: LockoutManager,
+  logManager: LogManager,
+  storeExists: boolean,
+): Promise<boolean> {
+  if (!storeExists) return true;
+  const lockoutStatus = await lockoutManager.check();
+  if (!lockoutStatus.locked) return true;
+
+  if (lockoutStatus.permanent_locked) {
+    return handlePermanentLockoutPrompt(projectPath, config, lockoutManager, logManager);
+  }
+
+  console.log(chalk.red(`Too many failed attempts. Try again in ${lockoutStatus.remaining_seconds} second(s).`));
+  return false;
+}
+
+async function maybeCreateRecoveryData(projectPath: string, config: EnvCPConfig, password: string): Promise<void> {
+  if (config.security?.mode !== 'recoverable') return;
+  const recoveryPath = path.join(projectPath, config.security.recovery_file || '.envcp/.recovery');
+  if (await pathExists(recoveryPath)) return;
+
+  const recoveryKey = generateRecoveryKey();
+  const recoveryData = await createRecoveryData(password, recoveryKey);
+  await ensureDir(path.dirname(recoveryPath));
+  await fs.writeFile(recoveryPath, recoveryData, 'utf8');
+
+  console.log('');
+  console.log(chalk.yellow.bold('RECOVERY KEY (save this somewhere safe!):'));
+  console.log(chalk.yellow.bold(`  ${recoveryKey}`));
+  console.log(chalk.gray('This key is shown ONCE. If you lose it, you cannot recover your password.'));
+  console.log('');
+}
+
+async function recordUnlockFailure(
+  lockoutManager: LockoutManager,
+  logManager: LogManager,
+  bfp: BfpSettings,
+): Promise<void> {
+  const status = await lockoutManager.recordFailure(
+    bfp.lockoutThreshold,
+    bfp.lockoutBaseSeconds,
+    bfp.progressiveDelay,
+    bfp.maxDelay,
+    bfp.permanentThreshold,
+  );
+
+  await logManager.log({
+    timestamp: new Date().toISOString(),
+    operation: 'auth_failure',
+    variable: '',
+    source: 'cli',
+    success: false,
+    message: `Failed unlock attempt (attempt ${status.attempts})`,
+    session_id: '',
+    client_id: 'cli',
+    client_type: 'terminal',
+    ip: '127.0.0.1',
+  });
+
+  if (status.permanent_locked) {
+    console.log(chalk.red.bold('PERMANENT LOCKOUT TRIGGERED: Too many failed attempts.'));
+    console.log(chalk.red('Recovery key or administrator intervention required.'));
+    await logManager.log({
+      timestamp: new Date().toISOString(),
+      operation: 'permanent_lockout',
+      variable: '',
+      source: 'cli',
+      success: false,
+      message: `Permanent lockout triggered after ${status.permanent_lockout_count} lockouts`,
+      session_id: '',
+      client_id: 'cli',
+      client_type: 'terminal',
+      ip: '127.0.0.1',
+    });
+    return;
+  }
+
+  if (status.locked) {
+    console.log(chalk.red(`Invalid password. Too many failed attempts — locked out for ${status.remaining_seconds} second(s).`));
+    await logManager.log({
+      timestamp: new Date().toISOString(),
+      operation: 'lockout_triggered',
+      variable: '',
+      source: 'cli',
+      success: false,
+      message: `Lockout triggered for ${status.remaining_seconds}s (lockout #${status.lockout_count})`,
+      session_id: '',
+      client_id: 'cli',
+      client_type: 'terminal',
+      ip: '127.0.0.1',
+    });
+    return;
+  }
+
+  const remaining = bfp.lockoutThreshold - status.attempts;
+  let message = `Invalid password. ${remaining} attempt(s) remaining before lockout.`;
+  if (status.delay_seconds && status.delay_seconds > 0) {
+    message += ` (Delayed ${status.delay_seconds}s)`;
+  }
+  console.log(chalk.red(message));
+}
+
+async function createUnlockSession(
+  config: EnvCPConfig,
+  sessionManager: SessionManager,
+  logManager: LogManager,
+  password: string,
+): Promise<void> {
+  if (config.session?.enabled === false) {
+    await sessionManager.destroy();
+    console.log(chalk.green('Password verified.'));
+    console.log(chalk.gray('Session mode is off, so EnvCP will ask again next time.'));
+    return;
+  }
+
+  const session = await sessionManager.create(password);
+  await logManager.log({
+    timestamp: new Date().toISOString(),
+    operation: 'unlock',
+    variable: '',
+    source: 'cli',
+    success: true,
+    message: 'Session unlocked successfully',
+    session_id: session.id,
+    client_id: 'cli',
+    client_type: 'terminal',
+    ip: '127.0.0.1',
+  });
+
+  console.log(chalk.green('Session unlocked!'));
+  console.log(chalk.gray(`  Session ID: ${session.id}`));
+  console.log(chalk.gray(`  Expires in: ${config.session?.timeout_minutes || 30} minutes`));
+  const maxExt = config.session?.max_extensions || 5;
+  console.log(chalk.gray(`  Extensions remaining: ${maxExt - session.extensions}/${maxExt}`));
+}
+
+async function savePasswordToKeychainIfRequested(
+  config: EnvCPConfig,
+  projectPath: string,
+  password: string,
+): Promise<void> {
+  const keychain = new KeychainManager(config.keychain?.service || 'envcp');
+  if (!await keychain.isAvailable()) {
+    console.log(chalk.red(`OS keychain not available (${keychain.backendName})`));
+    return;
+  }
+  const result = await keychain.storePassword(password, projectPath);
+  if (result.success) {
+    config.keychain = { ...config.keychain, enabled: true };
+    await saveConfig(config, projectPath);
+    console.log(chalk.green(`Password saved to ${keychain.backendName}`));
+    console.log(chalk.gray('  Future sessions will auto-unlock from keychain'));
+  } else {
+    console.log(chalk.red(`Failed to save to keychain: ${result.error}`));
+  }
+}
+
+async function setupHsmIfRequested(
+  config: EnvCPConfig,
+  projectPath: string,
+  password: string,
+  options: UnlockOptions,
+): Promise<void> {
+  const hsmType = (options.hsmType as HsmType) || 'yubikey';
+
+  config.hsm = {
+    ...config.hsm,
+    enabled: true,
+    type: hsmType,
+    key_id: options.keyId ?? config.hsm?.key_id,
+    pkcs11_lib: options.pkcs11Lib ?? config.hsm?.pkcs11_lib,
+    require_touch: config.hsm?.require_touch ?? true,
+    protected_key_path: config.hsm?.protected_key_path ?? '.envcp/.hsm-key',
+  };
+  config.auth = { ...config.auth, method: 'hsm', fallback: config.auth?.fallback ?? 'password' };
+
+  const hsm = HsmManager.fromConfig(config, projectPath);
+  if (!await hsm.isAvailable()) {
+    console.log(chalk.red(`HSM device (${hsm.backendName}) not available. Aborting HSM setup.`));
+    return;
+  }
+
+  try {
+    await hsm.protectVaultPassword(password);
+    await saveConfig(config, projectPath);
+    console.log(chalk.green(`Vault password protected by ${hsm.backendName}`));
+    console.log(chalk.gray(`  Key file: ${config.hsm.protected_key_path}`));
+    console.log(chalk.gray('  Future sessions will authenticate via hardware'));
+  } catch (err: unknown) {
+    console.log(chalk.red(`HSM setup failed: ${err instanceof Error ? err.message : String(err)}`));
+  }
+}
 
 async function runUnlockFlow(options: UnlockOptions = {}): Promise<void> {
   const { projectPath, config } = await resolveCliContext(options.global ? 'global' : undefined);
@@ -1409,47 +1712,23 @@ async function runUnlockFlow(options: UnlockOptions = {}): Promise<void> {
   const sessionDir = path.dirname(resolveSessionPath(projectPath, config));
   const lockoutManager = new LockoutManager(path.join(sessionDir, '.lockout'));
 
+  const logManager = new LogManager(resolveLogPath(config.audit, projectPath), config.audit);
+  await logManager.init();
+
   if (options.recoveryKey) {
-    const recoveryPath = path.join(projectPath, config.security?.recovery_file || '.envcp/.recovery');
-    if (!await pathExists(recoveryPath)) {
-      console.log(chalk.red('No recovery file found.'));
-      return;
-    }
-
-    const recoveryData = await fs.readFile(recoveryPath, 'utf8');
-    try {
-      await recoverPassword(recoveryData, options.recoveryKey);
-      await lockoutManager.clearPermanentLockout();
-      console.log(chalk.green('Permanent lockout cleared.'));
-
-      const logManager = new LogManager(resolveLogPath(config.audit, projectPath), config.audit);
-      await logManager.init();
-      await logManager.log({
-        timestamp: new Date().toISOString(),
-        operation: 'unlock',
-        variable: '',
-        source: 'cli',
-        success: true,
-        message: 'Permanent lockout cleared with recovery key (via --recovery-key flag)',
-        session_id: '',
-        client_id: 'cli',
-        client_type: 'terminal',
-        ip: '127.0.0.1',
-      });
-
-      console.log(chalk.yellow('Note: You still need to enter the correct password.'));
-    } catch {
-      console.log(chalk.red('Invalid recovery key.'));
-      return;
-    }
+    const ok = await clearLockoutWithRecoveryKey(
+      projectPath,
+      config,
+      lockoutManager,
+      logManager,
+      options.recoveryKey,
+      'Permanent lockout cleared with recovery key (via --recovery-key flag)',
+    );
+    if (!ok) return;
+    console.log(chalk.yellow('Note: You still need to enter the correct password.'));
   }
 
-  const bfpConfig = config.security?.brute_force_protection;
-  const lockoutThreshold = bfpConfig?.max_attempts ?? config.session?.lockout_threshold ?? 5;
-  const lockoutBaseSeconds = bfpConfig?.lockout_duration ?? config.session?.lockout_base_seconds ?? 60;
-  const progressiveDelay = bfpConfig?.progressive_delay ?? true;
-  const maxDelay = bfpConfig?.max_delay ?? 60;
-  const permanentThreshold = bfpConfig?.permanent_lockout_threshold ?? 0;
+  const bfp = resolveBfpSettings(config);
 
   const sessionManager = new SessionManager(
     resolveSessionPath(projectPath, config),
@@ -1458,62 +1737,14 @@ async function runUnlockFlow(options: UnlockOptions = {}): Promise<void> {
   );
   await sessionManager.init();
 
-  const logManager = new LogManager(resolveLogPath(config.audit, projectPath), config.audit);
-  await logManager.init();
-
   const vaultPathForUnlock = await resolveVaultPath(projectPath, config);
   const storage = new StorageManager(vaultPathForUnlock, config.storage.encrypted);
   storage.setPassword(password);
 
   const storeExists = await storage.exists();
 
-  if (storeExists) {
-    const lockoutStatus = await lockoutManager.check();
-    if (lockoutStatus.locked) {
-      if (lockoutStatus.permanent_locked) {
-        console.log(chalk.red.bold('PERMANENT LOCKOUT: Too many failed attempts.'));
-        console.log(chalk.red('Recovery key or administrator intervention required.'));
-
-        const useRecovery = await promptConfirm('Use recovery key to clear lockout?', true);
-        if (useRecovery) {
-          const recoveryKey = await promptPassword('Enter recovery key:');
-          const recoveryPath = path.join(projectPath, config.security?.recovery_file || '.envcp/.recovery');
-          if (!await pathExists(recoveryPath)) {
-            console.log(chalk.red('No recovery file found.'));
-            return;
-          }
-
-          const recoveryData = await fs.readFile(recoveryPath, 'utf8');
-          try {
-            await recoverPassword(recoveryData, recoveryKey);
-            await lockoutManager.clearPermanentLockout();
-            console.log(chalk.green('Permanent lockout cleared. You can now attempt to unlock.'));
-            console.log(chalk.yellow('Note: You still need to enter the correct password.'));
-
-            await logManager.log({
-              timestamp: new Date().toISOString(),
-              operation: 'unlock',
-              variable: '',
-              source: 'cli',
-              success: true,
-              message: 'Permanent lockout cleared with recovery key',
-              session_id: '',
-              client_id: 'cli',
-              client_type: 'terminal',
-              ip: '127.0.0.1',
-            });
-          } catch {
-            console.log(chalk.red('Invalid recovery key.'));
-            return;
-          }
-        } else {
-          return;
-        }
-      } else {
-        console.log(chalk.red(`Too many failed attempts. Try again in ${lockoutStatus.remaining_seconds} second(s).`));
-        return;
-      }
-    }
+  if (!await ensureInitialLockoutCleared(projectPath, config, lockoutManager, logManager, storeExists)) {
+    return;
   }
 
   if (!storeExists) {
@@ -1522,86 +1753,14 @@ async function runUnlockFlow(options: UnlockOptions = {}): Promise<void> {
       console.log(chalk.red('Passwords do not match'));
       return;
     }
-
-    if (config.security?.mode === 'recoverable') {
-      const recoveryPath = path.join(projectPath, config.security.recovery_file || '.envcp/.recovery');
-      if (!await pathExists(recoveryPath)) {
-        const recoveryKey = generateRecoveryKey();
-        const recoveryData = await createRecoveryData(password, recoveryKey);
-        await ensureDir(path.dirname(recoveryPath));
-        await fs.writeFile(recoveryPath, recoveryData, 'utf8');
-
-        console.log('');
-        console.log(chalk.yellow.bold('RECOVERY KEY (save this somewhere safe!):'));
-        console.log(chalk.yellow.bold(`  ${recoveryKey}`));
-        console.log(chalk.gray('This key is shown ONCE. If you lose it, you cannot recover your password.'));
-        console.log('');
-      }
-    }
+    await maybeCreateRecoveryData(projectPath, config, password);
   }
 
   try {
     await storage.load();
   } catch {
     if (storeExists) {
-      const status = await lockoutManager.recordFailure(
-        lockoutThreshold,
-        lockoutBaseSeconds,
-        progressiveDelay,
-        maxDelay,
-        permanentThreshold,
-      );
-
-      await logManager.log({
-        timestamp: new Date().toISOString(),
-        operation: 'auth_failure',
-        variable: '',
-        source: 'cli',
-        success: false,
-        message: `Failed unlock attempt (attempt ${status.attempts})`,
-        session_id: '',
-        client_id: 'cli',
-        client_type: 'terminal',
-        ip: '127.0.0.1',
-      });
-
-      if (status.permanent_locked) {
-        console.log(chalk.red.bold('PERMANENT LOCKOUT TRIGGERED: Too many failed attempts.'));
-        console.log(chalk.red('Recovery key or administrator intervention required.'));
-        await logManager.log({
-          timestamp: new Date().toISOString(),
-          operation: 'permanent_lockout',
-          variable: '',
-          source: 'cli',
-          success: false,
-          message: `Permanent lockout triggered after ${status.permanent_lockout_count} lockouts`,
-          session_id: '',
-          client_id: 'cli',
-          client_type: 'terminal',
-          ip: '127.0.0.1',
-        });
-      } else if (status.locked) {
-        console.log(chalk.red(`Invalid password. Too many failed attempts — locked out for ${status.remaining_seconds} second(s).`));
-        await logManager.log({
-          timestamp: new Date().toISOString(),
-          operation: 'lockout_triggered',
-          variable: '',
-          source: 'cli',
-          success: false,
-          message: `Lockout triggered for ${status.remaining_seconds}s (lockout #${status.lockout_count})`,
-          session_id: '',
-          client_id: 'cli',
-          client_type: 'terminal',
-          ip: '127.0.0.1',
-        });
-      } else {
-        const remaining = lockoutThreshold - status.attempts;
-        let message = `Invalid password. ${remaining} attempt(s) remaining before lockout.`;
-        if (status.delay_seconds && status.delay_seconds > 0) {
-          message += ` (Delayed ${status.delay_seconds}s)`;
-        }
-        console.log(chalk.red(message));
-      }
+      await recordUnlockFailure(lockoutManager, logManager, bfp);
     } else {
       console.log(chalk.red('Invalid password'));
     }
@@ -1609,79 +1768,14 @@ async function runUnlockFlow(options: UnlockOptions = {}): Promise<void> {
   }
 
   await lockoutManager.reset();
-
-  if (config.session?.enabled === false) {
-    await sessionManager.destroy();
-    console.log(chalk.green('Password verified.'));
-    console.log(chalk.gray('Session mode is off, so EnvCP will ask again next time.'));
-  } else {
-    const session = await sessionManager.create(password);
-    await logManager.log({
-      timestamp: new Date().toISOString(),
-      operation: 'unlock',
-      variable: '',
-      source: 'cli',
-      success: true,
-      message: 'Session unlocked successfully',
-      session_id: session.id,
-      client_id: 'cli',
-      client_type: 'terminal',
-      ip: '127.0.0.1',
-    });
-
-    console.log(chalk.green('Session unlocked!'));
-    console.log(chalk.gray(`  Session ID: ${session.id}`));
-    console.log(chalk.gray(`  Expires in: ${config.session?.timeout_minutes || 30} minutes`));
-    const maxExt = config.session?.max_extensions || 5;
-    console.log(chalk.gray(`  Extensions remaining: ${maxExt - session.extensions}/${maxExt}`));
-  }
+  await createUnlockSession(config, sessionManager, logManager, password);
 
   if (options.saveToKeychain) {
-    const keychain = new KeychainManager(config.keychain?.service || 'envcp');
-    if (await keychain.isAvailable()) {
-      const result = await keychain.storePassword(password, projectPath);
-      if (result.success) {
-        config.keychain = { ...config.keychain, enabled: true };
-        await saveConfig(config, projectPath);
-        console.log(chalk.green(`Password saved to ${keychain.backendName}`));
-        console.log(chalk.gray('  Future sessions will auto-unlock from keychain'));
-      } else {
-        console.log(chalk.red(`Failed to save to keychain: ${result.error}`));
-      }
-    } else {
-      console.log(chalk.red(`OS keychain not available (${keychain.backendName})`));
-    }
+    await savePasswordToKeychainIfRequested(config, projectPath, password);
   }
 
   if (options.setupHsm) {
-    const hsmType = (options.hsmType as HsmType) || 'yubikey';
-
-    config.hsm = {
-      ...config.hsm,
-      enabled: true,
-      type: hsmType,
-      key_id: options.keyId ?? config.hsm?.key_id,
-      pkcs11_lib: options.pkcs11Lib ?? config.hsm?.pkcs11_lib,
-      require_touch: config.hsm?.require_touch ?? true,
-      protected_key_path: config.hsm?.protected_key_path ?? '.envcp/.hsm-key',
-    };
-    config.auth = { ...config.auth, method: 'hsm', fallback: config.auth?.fallback ?? 'password' };
-
-    const hsm = HsmManager.fromConfig(config, projectPath);
-    if (!await hsm.isAvailable()) {
-      console.log(chalk.red(`HSM device (${hsm.backendName}) not available. Aborting HSM setup.`));
-      return;
-    }
-
-    try {
-      await hsm.protectVaultPassword(password);
-      await saveConfig(config, projectPath);
-      console.log(chalk.green(`Vault password protected by ${hsm.backendName}`));
-      console.log(chalk.gray(`  Key file: ${config.hsm.protected_key_path}`));
-      console.log(chalk.gray('  Future sessions will authenticate via hardware'));
-    } catch (err: unknown) {
-      console.log(chalk.red(`HSM setup failed: ${err instanceof Error ? err.message : String(err)}`));
-    }
+    await setupHsmIfRequested(config, projectPath, password, options);
   }
 }
 

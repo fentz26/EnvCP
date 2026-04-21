@@ -462,8 +462,65 @@ export class UnifiedServer {
     });
   }
 
+  private async dispatchVariablesRoute(
+    restAdapter: NonNullable<typeof this.restAdapter>,
+    res: http.ServerResponse,
+    method: string,
+    name: string | undefined,
+    url: URL,
+    body: Record<string, unknown>,
+  ): Promise<boolean> {
+    const now = new Date().toISOString();
+    if (!name && method === 'GET') {
+      const result = await restAdapter.callTool('envcp_list', {});
+      sendJson(res, 200, { success: true, data: result, timestamp: now });
+      return true;
+    }
+    if (!name && method === 'POST') {
+      const result = await restAdapter.callTool('envcp_set', body);
+      sendJson(res, 201, { success: true, data: result, timestamp: now });
+      return true;
+    }
+    if (name && method === 'GET') {
+      const result = await restAdapter.callTool('envcp_get', { name, show_value: url.searchParams.get('show_value') === 'true' });
+      sendJson(res, 200, { success: true, data: result, timestamp: now });
+      return true;
+    }
+    if (name && method === 'PUT') {
+      const result = await restAdapter.callTool('envcp_set', { ...body, name });
+      sendJson(res, 200, { success: true, data: result, timestamp: now });
+      return true;
+    }
+    if (name && method === 'DELETE') {
+      const result = await restAdapter.callTool('envcp_delete', { name });
+      sendJson(res, 200, { success: true, data: result, timestamp: now });
+      return true;
+    }
+    return false;
+  }
+
+  private async dispatchToolsRoute(
+    restAdapter: NonNullable<typeof this.restAdapter>,
+    res: http.ServerResponse,
+    method: string,
+    toolName: string | undefined,
+    body: Record<string, unknown>,
+  ): Promise<boolean> {
+    const now = new Date().toISOString();
+    if (!toolName && method === 'GET') {
+      const tools = restAdapter.getToolDefinitions().map(t => ({ name: t.name, description: t.description }));
+      sendJson(res, 200, { success: true, data: { tools }, timestamp: now });
+      return true;
+    }
+    if (toolName && method === 'POST') {
+      const result = await restAdapter.callTool(toolName, body);
+      sendJson(res, 200, { success: true, data: result, timestamp: now });
+      return true;
+    }
+    return false;
+  }
+
   private async handleRESTRequest(req: http.IncomingMessage, res: http.ServerResponse, parsedUrl?: URL): Promise<void> {
-    // Delegate to REST adapter's internal handling
     /* c8 ignore next -- parsedUrl is always provided by caller; the fallback is unreachable in practice */
     const url = parsedUrl ?? new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
     /* c8 ignore next -- URL.pathname is always '/' at minimum; the '/' fallback is unreachable */
@@ -476,80 +533,66 @@ export class UnifiedServer {
     }
 
     const body = (req.method === 'POST' || req.method === 'PUT' || req.method === 'PATCH') ? await parseBody(req) : {};
+    const method = req.method || 'GET';
+    const now = new Date().toISOString();
 
     try {
-      if (segments[0] === 'api') {
-        const resource = segments[1];
-
-        // Health
-        if (pathname === '/api/health' || pathname === '/api') {
-          sendJson(res, 200, { success: true, data: { status: 'ok', mode: 'rest' }, timestamp: new Date().toISOString() });
-          return;
-        }
-
-        // Tools
-        if (resource === 'tools' && !segments[2] && req.method === 'GET') {
-          const tools = this.restAdapter.getToolDefinitions().map(t => ({ name: t.name, description: t.description }));
-          sendJson(res, 200, { success: true, data: { tools }, timestamp: new Date().toISOString() });
-          return;
-        }
-
-        if (resource === 'tools' && segments[2] && req.method === 'POST') {
-          const result = await this.restAdapter.callTool(segments[2], body);
-          sendJson(res, 200, { success: true, data: result, timestamp: new Date().toISOString() });
-          return;
-        }
-
-        // Variables
-        if (resource === 'variables') {
-          if (!segments[2] && req.method === 'GET') {
-            const result = await this.restAdapter.callTool('envcp_list', {});
-            sendJson(res, 200, { success: true, data: result, timestamp: new Date().toISOString() });
-            return;
-          }
-          if (!segments[2] && req.method === 'POST') {
-            const result = await this.restAdapter.callTool('envcp_set', body);
-            sendJson(res, 201, { success: true, data: result, timestamp: new Date().toISOString() });
-            return;
-          }
-          if (segments[2] && req.method === 'GET') {
-            const result = await this.restAdapter.callTool('envcp_get', { name: segments[2], show_value: url.searchParams.get('show_value') === 'true' });
-            sendJson(res, 200, { success: true, data: result, timestamp: new Date().toISOString() });
-            return;
-          }
-          if (segments[2] && req.method === 'PUT') {
-            const result = await this.restAdapter.callTool('envcp_set', { ...body, name: segments[2] });
-            sendJson(res, 200, { success: true, data: result, timestamp: new Date().toISOString() });
-            return;
-          }
-          if (segments[2] && req.method === 'DELETE') {
-            const result = await this.restAdapter.callTool('envcp_delete', { name: segments[2] });
-            sendJson(res, 200, { success: true, data: result, timestamp: new Date().toISOString() });
-            return;
-          }
-        }
-
-        // Sync
-        if (resource === 'sync' && req.method === 'POST') {
-          const result = await this.restAdapter.callTool('envcp_sync', {});
-          sendJson(res, 200, { success: true, data: result, timestamp: new Date().toISOString() });
-          return;
-        }
-
-        // Run
-        if (resource === 'run' && req.method === 'POST') {
-          const result = await this.restAdapter.callTool('envcp_run', body);
-          sendJson(res, 200, { success: true, data: result, timestamp: new Date().toISOString() });
-          return;
-        }
+      if (segments[0] !== 'api') {
+        sendJson(res, 404, { success: false, error: 'Not found', timestamp: now });
+        return;
       }
 
-      sendJson(res, 404, { success: false, error: 'Not found', timestamp: new Date().toISOString() });
+      if (pathname === '/api/health' || pathname === '/api') {
+        sendJson(res, 200, { success: true, data: { status: 'ok', mode: 'rest' }, timestamp: now });
+        return;
+      }
+
+      const resource = segments[1];
+
+      if (resource === 'tools' && await this.dispatchToolsRoute(this.restAdapter, res, method, segments[2], body)) {
+        return;
+      }
+
+      if (resource === 'variables' && await this.dispatchVariablesRoute(this.restAdapter, res, method, segments[2], url, body)) {
+        return;
+      }
+
+      if (resource === 'sync' && method === 'POST') {
+        const result = await this.restAdapter.callTool('envcp_sync', {});
+        sendJson(res, 200, { success: true, data: result, timestamp: now });
+        return;
+      }
+
+      if (resource === 'run' && method === 'POST') {
+        const result = await this.restAdapter.callTool('envcp_run', body);
+        sendJson(res, 200, { success: true, data: result, timestamp: now });
+        return;
+      }
+
+      sendJson(res, 404, { success: false, error: 'Not found', timestamp: now });
 
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
       sendJson(res, 500, { success: false, error: message, timestamp: new Date().toISOString() });
     }
+  }
+
+  private async handleOpenAIChatCompletions(
+    openaiAdapter: NonNullable<typeof this.openaiAdapter>,
+    res: http.ServerResponse,
+    body: Record<string, unknown>,
+  ): Promise<void> {
+    const { messages: rawMessages } = body as { messages?: unknown };
+    const messages = Array.isArray(rawMessages) ? rawMessages : [];
+    const lastMessage = messages?.[messages.length - 1];
+
+    if (lastMessage?.tool_calls) {
+      const results = await openaiAdapter.processToolCalls(lastMessage.tool_calls);
+      sendJson(res, 200, openaiAdapter.createToolResultsCompletion(results));
+      return;
+    }
+
+    sendJson(res, 200, openaiAdapter.createAvailableToolsCompletion());
   }
 
   private async handleOpenAIRequest(req: http.IncomingMessage, res: http.ServerResponse, parsedUrl?: URL): Promise<void> {
@@ -563,9 +606,10 @@ export class UnifiedServer {
     /* c8 ignore next -- URL.pathname is always '/' at minimum; the '/' fallback is unreachable */
     const pathname = url.pathname || '/';
     const body = req.method === 'POST' ? await parseBody(req) : {};
+    const method = req.method || 'GET';
 
     try {
-      if (pathname === '/v1/models' && req.method === 'GET') {
+      if (pathname === '/v1/models' && method === 'GET') {
         sendJson(res, 200, {
           object: 'list',
           data: [{ id: 'envcp-1.0', object: 'model', created: Date.now(), owned_by: 'envcp' }],
@@ -573,12 +617,12 @@ export class UnifiedServer {
         return;
       }
 
-      if (pathname === '/v1/functions' && req.method === 'GET') {
+      if (pathname === '/v1/functions' && method === 'GET') {
         sendJson(res, 200, this.openaiAdapter.createFunctionsListResponse());
         return;
       }
 
-      if (pathname === '/v1/functions/call' && req.method === 'POST') {
+      if (pathname === '/v1/functions/call' && method === 'POST') {
         const b = body as { name?: unknown; arguments?: unknown };
         const name = typeof b.name === 'string' ? b.name : '';
         const args = (b.arguments && typeof b.arguments === 'object') ? b.arguments as Record<string, unknown> : {};
@@ -587,25 +631,15 @@ export class UnifiedServer {
         return;
       }
 
-      if (pathname === '/v1/tool_calls' && req.method === 'POST') {
+      if (pathname === '/v1/tool_calls' && method === 'POST') {
         const { tool_calls } = body as { tool_calls?: unknown };
         const results = await this.openaiAdapter.processToolCalls(Array.isArray(tool_calls) ? tool_calls : []);
         sendJson(res, 200, { object: 'list', data: results });
         return;
       }
 
-      if (pathname === '/v1/chat/completions' && req.method === 'POST') {
-        const { messages: rawMessages } = body as { messages?: unknown };
-        const messages = Array.isArray(rawMessages) ? rawMessages : [];
-        const lastMessage = messages?.[messages.length - 1];
-        
-        if (lastMessage?.tool_calls) {
-          const results = await this.openaiAdapter.processToolCalls(lastMessage.tool_calls);
-          sendJson(res, 200, this.openaiAdapter.createToolResultsCompletion(results));
-          return;
-        }
-
-        sendJson(res, 200, this.openaiAdapter.createAvailableToolsCompletion());
+      if (pathname === '/v1/chat/completions' && method === 'POST') {
+        await this.handleOpenAIChatCompletions(this.openaiAdapter, res, body);
         return;
       }
 
@@ -615,6 +649,38 @@ export class UnifiedServer {
       const message = error instanceof Error ? error.message : String(error);
       sendJson(res, 500, { error: { message, type: 'internal_error' } });
     }
+  }
+
+  private extractGeminiFunctionCalls(contents: unknown): Array<{ name: string; args: Record<string, unknown> }> {
+    const functionCalls: Array<{ name: string; args: Record<string, unknown> }> = [];
+    if (!Array.isArray(contents)) return functionCalls;
+    for (const content of contents) {
+      const parts = (content && typeof content === 'object' && Array.isArray((content as Record<string, unknown>).parts))
+        ? (content as Record<string, unknown>).parts as unknown[]
+        : [];
+      for (const part of parts) {
+        const p = part as Record<string, unknown>;
+        if (p.functionCall) functionCalls.push(p.functionCall as { name: string; args: Record<string, unknown> });
+      }
+    }
+    return functionCalls;
+  }
+
+  private async handleGeminiGenerateContent(
+    geminiAdapter: NonNullable<typeof this.geminiAdapter>,
+    res: http.ServerResponse,
+    body: Record<string, unknown>,
+  ): Promise<void> {
+    const { contents } = body as { contents?: unknown };
+    const functionCalls = this.extractGeminiFunctionCalls(contents);
+
+    if (functionCalls.length > 0) {
+      const results = await geminiAdapter.processFunctionCalls(functionCalls);
+      sendJson(res, 200, geminiAdapter.createGenerateContentResponse(results));
+      return;
+    }
+
+    sendJson(res, 200, geminiAdapter.createAvailableToolsResponse());
   }
 
   private async handleGeminiRequest(req: http.IncomingMessage, res: http.ServerResponse, parsedUrl?: URL): Promise<void> {
@@ -628,14 +694,15 @@ export class UnifiedServer {
     /* c8 ignore next -- URL.pathname is always '/' at minimum; the '/' fallback is unreachable */
     const pathname = url.pathname || '/';
     const body = req.method === 'POST' ? await parseBody(req) : {};
+    const method = req.method || 'GET';
 
     try {
-      if (pathname === '/v1/tools' && req.method === 'GET') {
+      if (pathname === '/v1/tools' && method === 'GET') {
         sendJson(res, 200, this.geminiAdapter.createToolsListResponse());
         return;
       }
 
-      if (pathname === '/v1/functions/call' && req.method === 'POST') {
+      if (pathname === '/v1/functions/call' && method === 'POST') {
         const bg = body as { name?: unknown; args?: unknown };
         /* c8 ignore next -- function name validation always returns string for valid requests; the else branch is unreachable in practice */
         const name = typeof bg.name === 'string' ? bg.name : '';
@@ -645,36 +712,15 @@ export class UnifiedServer {
         return;
       }
 
-      if (pathname === '/v1/function_calls' && req.method === 'POST') {
+      if (pathname === '/v1/function_calls' && method === 'POST') {
         const { functionCalls: rawFunctionCalls } = body as { functionCalls?: unknown };
         const results = await this.geminiAdapter.processFunctionCalls(Array.isArray(rawFunctionCalls) ? rawFunctionCalls : []);
         sendJson(res, 200, { functionResponses: results });
         return;
       }
 
-      if (pathname.includes(':generateContent') && req.method === 'POST') {
-        const { contents } = body as { contents?: unknown };
-        const functionCalls: Array<{ name: string; args: Record<string, unknown> }> = [];
-        
-        if (Array.isArray(contents)) {
-          for (const content of contents) {
-            const parts = (content && typeof content === 'object' && Array.isArray((content as Record<string, unknown>).parts))
-              ? (content as Record<string, unknown>).parts as unknown[]
-              : [];
-            for (const part of parts) {
-              const p = part as Record<string, unknown>;
-              if (p.functionCall) functionCalls.push(p.functionCall as { name: string; args: Record<string, unknown> });
-            }
-          }
-        }
-
-        if (functionCalls.length > 0) {
-          const results = await this.geminiAdapter.processFunctionCalls(functionCalls);
-          sendJson(res, 200, this.geminiAdapter.createGenerateContentResponse(results));
-          return;
-        }
-
-        sendJson(res, 200, this.geminiAdapter.createAvailableToolsResponse());
+      if (pathname.includes(':generateContent') && method === 'POST') {
+        await this.handleGeminiGenerateContent(this.geminiAdapter, res, body);
         return;
       }
 
