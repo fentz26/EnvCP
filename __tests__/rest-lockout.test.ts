@@ -3,6 +3,7 @@ import * as os from 'os';
 import * as path from 'path';
 import * as http from 'http';
 import * as net from 'net';
+import { jest } from '@jest/globals';
 import { RESTAdapter } from '../src/adapters/rest.js';
 import { LockoutManager } from '../src/utils/lockout.js';
 import { EnvCPConfig, EnvCPConfigSchema } from '../src/types.js';
@@ -108,9 +109,13 @@ describe('RESTAdapter — constructor clears API lockout when password is provid
 
   it('silently ignores reset errors (construction does not throw)', async () => {
     const config = makeConfig();
+    const resetSpy = jest.spyOn(RESTAdapter.prototype as any, 'clearApiKeyLockout')
+      .mockRejectedValueOnce(new Error('boom'));
     expect(() => {
       new RESTAdapter(config, '/definitely/not/a/real/path', 'pw');
     }).not.toThrow();
+    await new Promise((r) => setTimeout(r, 0));
+    resetSpy.mockRestore();
   });
 });
 

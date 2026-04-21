@@ -6,6 +6,7 @@ import * as http from 'node:http';
 
 export class OpenAIAdapter extends BaseAdapter {
   private server: http.Server | null = null;
+  private static readonly TOOLS_MESSAGE = 'EnvCP tools available. Use function calling to interact with environment variables.';
 
   getOpenAIFunctions(): OpenAIFunction[] {
     return this.getStructuredToolDefinitions();
@@ -36,6 +37,41 @@ export class OpenAIAdapter extends BaseAdapter {
     return results;
   }
 
+  createToolResultsCompletion(results: OpenAIMessage[]): Record<string, unknown> {
+    return {
+      id: `chatcmpl-${Date.now()}`,
+      object: 'chat.completion',
+      created: Math.floor(Date.now() / 1000),
+      model: `envcp-${VERSION}`,
+      choices: [{ index: 0, message: { role: 'assistant', content: null, tool_calls: null }, finish_reason: 'tool_calls' }],
+      tool_results: results,
+    };
+  }
+
+  createAvailableToolsCompletion(): Record<string, unknown> {
+    return {
+      id: `chatcmpl-${Date.now()}`,
+      object: 'chat.completion',
+      created: Math.floor(Date.now() / 1000),
+      model: `envcp-${VERSION}`,
+      choices: [{ index: 0, message: { role: 'assistant', content: OpenAIAdapter.TOOLS_MESSAGE }, finish_reason: 'stop' }],
+      available_tools: this.getOpenAIFunctions().map(f => ({ type: 'function', function: f })),
+    };
+  }
+
+  createFunctionsListResponse(): Record<string, unknown> {
+    return { object: 'list', data: this.getOpenAIFunctions() };
+  }
+
+  createHealthResponse(): Record<string, unknown> {
+    return {
+      status: 'ok',
+      version: VERSION,
+      mode: 'openai',
+      endpoints: ['/v1/models', '/v1/functions', '/v1/functions/call', '/v1/tool_calls', '/v1/chat/completions'],
+    };
+  }
+
   async startServer(port: number, host: string, apiKey?: string, rateLimitConfig?: RateLimitConfig): Promise<void> {
     await this.init();
 
@@ -60,7 +96,7 @@ export class OpenAIAdapter extends BaseAdapter {
         }
 
         if (pathname === '/v1/functions' && req.method === 'GET') {
-          sendJson(res, 200, { object: 'list', data: this.getOpenAIFunctions() });
+          sendJson(res, 200, this.createFunctionsListResponse());
           return;
         }
 
@@ -99,24 +135,16 @@ export class OpenAIAdapter extends BaseAdapter {
           const lastMessage = messages[messages.length - 1];
           if (lastMessage?.tool_calls) {
             const results = await this.processToolCalls(lastMessage.tool_calls);
-            sendJson(res, 200, {
-              id: `chatcmpl-${Date.now()}`, object: 'chat.completion', created: Math.floor(Date.now() / 1000), model: `envcp-${VERSION}`,
-              choices: [{ index: 0, message: { role: 'assistant', content: null, tool_calls: null }, finish_reason: 'tool_calls' }],
-              tool_results: results,
-            });
+            sendJson(res, 200, this.createToolResultsCompletion(results));
             return;
           }
 
-          sendJson(res, 200, {
-            id: `chatcmpl-${Date.now()}`, object: 'chat.completion', created: Math.floor(Date.now() / 1000), model: `envcp-${VERSION}`,
-            choices: [{ index: 0, message: { role: 'assistant', content: 'EnvCP tools available. Use function calling to interact with environment variables.' }, finish_reason: 'stop' }],
-            available_tools: this.getOpenAIFunctions().map(f => ({ type: 'function', function: f })),
-          });
+          sendJson(res, 200, this.createAvailableToolsCompletion());
           return;
         }
 
         if (pathname === '/v1/health' || pathname === '/') {
-          sendJson(res, 200, { status: 'ok', version: VERSION, mode: 'openai', endpoints: ['/v1/models', '/v1/functions', '/v1/functions/call', '/v1/tool_calls', '/v1/chat/completions'] });
+          sendJson(res, 200, this.createHealthResponse());
           return;
         }
 

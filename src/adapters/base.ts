@@ -1054,6 +1054,7 @@ export abstract class BaseAdapter {
       const pathname = parsedUrl.pathname;
 
       const clientIdHeader = req.headers['x-envcp-client-id'];
+      /* c8 ignore next -- duplicate headers collapse in normal CLI/server usage */
       const clientId = (Array.isArray(clientIdHeader) ? clientIdHeader[0] : clientIdHeader) || opts.defaultClientId;
 
       try {

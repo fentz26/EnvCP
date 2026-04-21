@@ -630,6 +630,7 @@ describe('protectLogFiles with unknown protection type', () => {
 describe('execChattr on Linux (mocked)', () => {
   let tmpDir: string;
   let logDir: string;
+  const origPlatform = process.platform;
 
   beforeEach(async () => {
     tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-chattr-'));
@@ -637,6 +638,7 @@ describe('execChattr on Linux (mocked)', () => {
   });
 
   afterEach(async () => {
+    Object.defineProperty(process, 'platform', { value: origPlatform, configurable: true });
     await fs.rm(tmpDir, { recursive: true, force: true });
   });
 
@@ -667,6 +669,42 @@ describe('execChattr on Linux (mocked)', () => {
     await logs.init();
 
     const result = await logs.setAppendOnly('/proc/nonexistent-test-file.log');
+    expect(result).toBe(false);
+  });
+
+  it('returns false immediately on non-linux when platform is mocked', async () => {
+    Object.defineProperty(process, 'platform', { value: 'darwin', configurable: true });
+    const config = makeConfig({ protection: 'append_only' });
+    const logs = new LogManager(logDir, config);
+    await logs.init();
+
+    const result = await (logs as any).execChattr(path.join(logDir, 'test.log'), '+a');
+    expect(result).toBe(false);
+  });
+
+  it('returns false for invalid chattr flags', async () => {
+    if (process.platform !== 'linux') {
+      return;
+    }
+
+    const config = makeConfig({ protection: 'append_only' });
+    const logs = new LogManager(logDir, config);
+    await logs.init();
+
+    const result = await (logs as any).execChattr(path.join(logDir, 'test.log'), 'invalid');
+    expect(result).toBe(false);
+  });
+
+  it('removeAppendOnly returns false when fails on Linux', async () => {
+    if (process.platform !== 'linux') {
+      return;
+    }
+
+    const config = makeConfig({ protection: 'append_only' });
+    const logs = new LogManager(logDir, config);
+    await logs.init();
+
+    const result = await logs.removeAppendOnly('/nonexistent/path/file.log');
     expect(result).toBe(false);
   });
 

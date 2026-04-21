@@ -225,56 +225,33 @@ interface McpTarget {
   format: 'mcpServers' | 'servers' | 'context_servers' | 'mcp_key' | 'mcp_servers_array';
 }
 
+function globalMcpTarget(name: string, getPath: McpTarget['getPath'], format: McpTarget['format']): McpTarget {
+  return { name, getPath, projectLocal: false, requireExisting: true, format };
+}
+
+function getRoamingConfigPath(home: string, ...segments: string[]): string {
+  const appData = process.env.APPDATA || path.join(home, 'AppData', 'Roaming');
+  return path.join(appData, ...segments);
+}
+
 function getMcpTargets(): McpTarget[] {
   return [
     // --- Global configs (require existing file = tool is installed) ---
-    {
-      name: 'Claude Desktop',
-      getPath: (_proj, home, platform) => {
-        if (platform === 'darwin') return path.join(home, 'Library', 'Application Support', 'Claude', 'claude_desktop_config.json');
-        if (platform === 'win32') return path.join(process.env.APPDATA || path.join(home, 'AppData', 'Roaming'), 'Claude', 'claude_desktop_config.json');
-        return path.join(home, '.config', 'Claude', 'claude_desktop_config.json');
-      },
-      projectLocal: false, requireExisting: true, format: 'mcpServers',
-    },
-    {
-      name: 'Claude Code',
-      getPath: (_proj, home) => path.join(home, '.claude', 'mcp.json'),
-      projectLocal: false, requireExisting: true, format: 'mcpServers',
-    },
-    {
-      name: 'Cursor',
-      getPath: (_proj, home) => path.join(home, '.cursor', 'mcp.json'),
-      projectLocal: false, requireExisting: true, format: 'mcpServers',
-    },
-    {
-      name: 'Windsurf',
-      getPath: (_proj, home) => path.join(home, '.codeium', 'windsurf', 'mcp_config.json'),
-      projectLocal: false, requireExisting: true, format: 'mcpServers',
-    },
-    {
-      name: 'Zed',
-      getPath: (_proj, home, platform) => {
-        if (platform === 'win32') return path.join(process.env.APPDATA || path.join(home, 'AppData', 'Roaming'), 'Zed', 'settings.json');
-        return path.join(home, '.config', 'zed', 'settings.json');
-      },
-      projectLocal: false, requireExisting: true, format: 'context_servers',
-    },
-    {
-      name: 'Continue.dev',
-      getPath: (_proj, home) => path.join(home, '.continue', 'mcp.json'),
-      projectLocal: false, requireExisting: true, format: 'mcpServers',
-    },
-    {
-      name: 'OpenCode',
-      getPath: (_proj, home) => path.join(home, '.config', 'opencode', 'opencode.json'),
-      projectLocal: false, requireExisting: true, format: 'mcp_key',
-    },
-    {
-      name: 'GitHub Copilot CLI',
-      getPath: (_proj, home) => path.join(home, '.copilot', 'mcp-config.json'),
-      projectLocal: false, requireExisting: true, format: 'mcp_servers_array',
-    },
+    globalMcpTarget('Claude Desktop', (_proj, home, platform) => {
+      if (platform === 'darwin') return path.join(home, 'Library', 'Application Support', 'Claude', 'claude_desktop_config.json');
+      if (platform === 'win32') return getRoamingConfigPath(home, 'Claude', 'claude_desktop_config.json');
+      return path.join(home, '.config', 'Claude', 'claude_desktop_config.json');
+    }, 'mcpServers'),
+    globalMcpTarget('Claude Code', (_proj, home) => path.join(home, '.claude', 'mcp.json'), 'mcpServers'),
+    globalMcpTarget('Cursor', (_proj, home) => path.join(home, '.cursor', 'mcp.json'), 'mcpServers'),
+    globalMcpTarget('Windsurf', (_proj, home) => path.join(home, '.codeium', 'windsurf', 'mcp_config.json'), 'mcpServers'),
+    globalMcpTarget('Zed', (_proj, home, platform) => {
+      if (platform === 'win32') return getRoamingConfigPath(home, 'Zed', 'settings.json');
+      return path.join(home, '.config', 'zed', 'settings.json');
+    }, 'context_servers'),
+    globalMcpTarget('Continue.dev', (_proj, home) => path.join(home, '.continue', 'mcp.json'), 'mcpServers'),
+    globalMcpTarget('OpenCode', (_proj, home) => path.join(home, '.config', 'opencode', 'opencode.json'), 'mcp_key'),
+    globalMcpTarget('GitHub Copilot CLI', (_proj, home) => path.join(home, '.copilot', 'mcp-config.json'), 'mcp_servers_array'),
     // --- Project-local configs (create if tool dir detected) ---
     {
       name: 'Cursor (project)',

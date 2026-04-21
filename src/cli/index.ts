@@ -14,7 +14,7 @@ import { maskValue, validatePassword, encrypt, decrypt, generateRecoveryKey, cre
 import { KeychainManager } from '../utils/keychain.js';
 import { HsmManager } from '../utils/hsm.js';
 import { checkForUpdate, formatUpdateMessage, logUpdateCheck, fetchReleases, filterByChannel, ReleaseChannel } from '../utils/update-checker.js';
-import { spawnSync } from 'child_process';
+import { spawnSync } from 'node:child_process';
 import { LockoutManager } from '../utils/lockout.js';
 
 import { Variable, EnvCPConfig } from '../types.js';
@@ -84,6 +84,44 @@ function buildSecuritySettings(securityChoice: 'none' | 'recoverable' | 'hard-lo
       brute_force_protection: bruteForceProtection,
     },
   };
+}
+
+type TransferMeta = {
+  project?: string;
+  timestamp?: string;
+  count?: number;
+};
+
+function extractTransferVariables(
+  data: Record<string, unknown>,
+  invalidMessage: string,
+): { meta?: TransferMeta; variables: Record<string, Variable> } | null {
+  const variables = data.variables;
+  if (!variables || typeof variables !== 'object') {
+    console.log(chalk.red(invalidMessage));
+    return null;
+  }
+
+  return {
+    meta: data.meta as TransferMeta | undefined,
+    variables: variables as Record<string, Variable>,
+  };
+}
+
+function logTransferInfo(
+  title: string,
+  meta: TransferMeta | undefined,
+  variables: Record<string, Variable>,
+  labels: { project: string; timestamp: string },
+): void {
+  if (!meta) {
+    return;
+  }
+
+  console.log(chalk.blue(title));
+  if (meta.project) console.log(chalk.gray(`  ${labels.project}: ${meta.project}`));
+  if (meta.timestamp) console.log(chalk.gray(`  ${labels.timestamp}: ${meta.timestamp}`));
+  console.log(chalk.gray(`  Variables: ${meta.count || Object.keys(variables).length}`));
 }
 
 async function withSession(fn: (storage: StorageManager, password: string, config: EnvCPConfig, projectPath: string, logManager: LogManager) => Promise<void>, vaultOverride?: 'global' | 'project'): Promise<void> {
@@ -1501,20 +1539,13 @@ const importPassword = await promptPassword('Enter export file password:');
         return;
       }
 
-      const meta = importData.meta as { project?: string; timestamp?: string; count?: number } | undefined;
-      const variables = importData.variables as Record<string, Variable>;
-
-      if (!variables || typeof variables !== 'object') {
-        console.log(chalk.red('Invalid export format'));
+      const transferData = extractTransferVariables(importData, 'Invalid export format');
+      if (!transferData) {
         return;
       }
+      const { meta, variables } = transferData;
 
-      if (meta) {
-        console.log(chalk.blue('Import info:'));
-        if (meta.project) console.log(chalk.gray(`  From project: ${meta.project}`));
-        if (meta.timestamp) console.log(chalk.gray(`  Exported: ${meta.timestamp}`));
-        console.log(chalk.gray(`  Variables: ${meta.count || Object.keys(variables).length}`));
-      }
+      logTransferInfo('Import info:', meta, variables, { project: 'From project', timestamp: 'Exported' });
 
       if (options.dryRun) {
         const current = await storage.load();
@@ -1631,20 +1662,13 @@ program
         return;
       }
 
-      const meta = backupData.meta as { project?: string; timestamp?: string; count?: number } | undefined;
-      const variables = backupData.variables as Record<string, Variable>;
-
-      if (!variables || typeof variables !== 'object') {
-        console.log(chalk.red('Invalid backup format'));
+      const transferData = extractTransferVariables(backupData, 'Invalid backup format');
+      if (!transferData) {
         return;
       }
+      const { meta, variables } = transferData;
 
-      if (meta) {
-        console.log(chalk.blue('Backup info:'));
-        if (meta.project) console.log(chalk.gray(`  Project: ${meta.project}`));
-        if (meta.timestamp) console.log(chalk.gray(`  Created: ${meta.timestamp}`));
-        console.log(chalk.gray(`  Variables: ${meta.count || Object.keys(variables).length}`));
-      }
+      logTransferInfo('Backup info:', meta, variables, { project: 'Project', timestamp: 'Created' });
 
 const confirm = await promptConfirm(options.merge ? 'Merge backup into current store?' : 'Replace current store with backup?', false);
 

@@ -200,6 +200,20 @@ describe('StorageManager advanced', () => {
     }
   });
 
+  it('silently skips corrupted backups when restore attempts fail', async () => {
+    const storage = new StorageManager(storePath, true, 1);
+    storage.setPassword('test');
+    const now = new Date().toISOString();
+
+    await storage.set('GOOD', { name: 'GOOD', value: 'data', encrypted: true, created: now, updated: now, sync_to_env: true });
+    await fs.writeFile(storePath, 'v2:' + '00'.repeat(48) + 'deadbeef');
+    await fs.writeFile(`${storePath}.bak.1`, 'not-a-valid-backup');
+
+    const storage2 = new StorageManager(storePath, true, 1);
+    storage2.setPassword('test');
+    await expect(storage2.load()).rejects.toThrow('Failed to decrypt storage');
+  });
+
   it('throws for symlink store path', async () => {
     const realFile = path.join(tmpDir, 'real.enc');
     await fs.writeFile(realFile, 'data');

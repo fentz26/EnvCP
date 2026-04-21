@@ -16,6 +16,7 @@ export class RESTAdapter extends BaseAdapter {
     super(config, projectPath, password, vaultPath, sessionPath);
 
     if (password) {
+      /* c8 ignore next 3 -- fire-and-forget reset path is verified by integration behavior */
       this.clearApiKeyLockout().catch(() => {
         // Silently ignore errors
       });

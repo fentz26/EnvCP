@@ -6,6 +6,7 @@ import * as http from 'node:http';
 
 export class GeminiAdapter extends BaseAdapter {
   private server: http.Server | null = null;
+  private static readonly TOOLS_MESSAGE = 'EnvCP tools available. Use function calling to interact with environment variables.';
 
   getGeminiFunctionDeclarations(): GeminiFunctionDeclaration[] {
     return this.getStructuredToolDefinitions();
@@ -31,6 +32,32 @@ export class GeminiAdapter extends BaseAdapter {
     }
 
     return results;
+  }
+
+  createGenerateContentResponse(results: GeminiFunctionResponse[]): Record<string, unknown> {
+    return {
+      candidates: [{ content: { parts: results.map(r => ({ functionResponse: r })), role: 'model' }, finishReason: 'STOP' }],
+    };
+  }
+
+  createAvailableToolsResponse(): Record<string, unknown> {
+    return {
+      candidates: [{ content: { parts: [{ text: GeminiAdapter.TOOLS_MESSAGE }], role: 'model' }, finishReason: 'STOP' }],
+      availableTools: [{ functionDeclarations: this.getGeminiFunctionDeclarations() }],
+    };
+  }
+
+  createToolsListResponse(): Record<string, unknown> {
+    return { tools: [{ functionDeclarations: this.getGeminiFunctionDeclarations() }] };
+  }
+
+  createHealthResponse(): Record<string, unknown> {
+    return {
+      status: 'ok',
+      version: VERSION,
+      mode: 'gemini',
+      endpoints: ['/v1/models', '/v1/tools', '/v1/functions/call', '/v1/function_calls', '/v1/models/envcp:generateContent'],
+    };
   }
 
   async startServer(port: number, host: string, apiKey?: string, rateLimitConfig?: RateLimitConfig): Promise<void> {
@@ -59,7 +86,7 @@ export class GeminiAdapter extends BaseAdapter {
         }
 
         if (pathname === '/v1/tools' && req.method === 'GET') {
-          sendJson(res, 200, { tools: [{ functionDeclarations: this.getGeminiFunctionDeclarations() }] });
+          sendJson(res, 200, this.createToolsListResponse());
           return;
         }
 
@@ -101,21 +128,16 @@ export class GeminiAdapter extends BaseAdapter {
 
           if (functionCalls.length > 0) {
             const results = await this.processFunctionCalls(functionCalls);
-            sendJson(res, 200, {
-              candidates: [{ content: { parts: results.map(r => ({ functionResponse: r })), role: 'model' }, finishReason: 'STOP' }],
-            });
+            sendJson(res, 200, this.createGenerateContentResponse(results));
             return;
           }
 
-          sendJson(res, 200, {
-            candidates: [{ content: { parts: [{ text: 'EnvCP tools available. Use function calling to interact with environment variables.' }], role: 'model' }, finishReason: 'STOP' }],
-            availableTools: [{ functionDeclarations: this.getGeminiFunctionDeclarations() }],
-          });
+          sendJson(res, 200, this.createAvailableToolsResponse());
           return;
         }
 
         if (pathname === '/v1/health' || pathname === '/') {
-          sendJson(res, 200, { status: 'ok', version: VERSION, mode: 'gemini', endpoints: ['/v1/models', '/v1/tools', '/v1/functions/call', '/v1/function_calls', '/v1/models/envcp:generateContent'] });
+          sendJson(res, 200, this.createHealthResponse());
           return;
         }
 

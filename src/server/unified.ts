@@ -404,7 +404,7 @@ const whitelist = rl?.whitelist ?? [];
       }
 
       if (pathname === '/v1/functions' && req.method === 'GET') {
-        sendJson(res, 200, { object: 'list', data: this.openaiAdapter.getOpenAIFunctions() });
+        sendJson(res, 200, this.openaiAdapter.createFunctionsListResponse());
         return;
       }
 
@@ -431,23 +431,11 @@ const whitelist = rl?.whitelist ?? [];
         
         if (lastMessage?.tool_calls) {
           const results = await this.openaiAdapter.processToolCalls(lastMessage.tool_calls);
-          sendJson(res, 200, {
-            id: `chatcmpl-${Date.now()}`,
-            object: 'chat.completion',
-            model: 'envcp-1.0',
-            choices: [{ index: 0, message: { role: 'assistant', content: null }, finish_reason: 'tool_calls' }],
-            tool_results: results,
-          });
+          sendJson(res, 200, this.openaiAdapter.createToolResultsCompletion(results));
           return;
         }
 
-        sendJson(res, 200, {
-          id: `chatcmpl-${Date.now()}`,
-          object: 'chat.completion',
-          model: 'envcp-1.0',
-          choices: [{ index: 0, message: { role: 'assistant', content: 'EnvCP tools available.' }, finish_reason: 'stop' }],
-          available_tools: this.openaiAdapter.getOpenAIFunctions().map(f => ({ type: 'function', function: f })),
-        });
+        sendJson(res, 200, this.openaiAdapter.createAvailableToolsCompletion());
         return;
       }
 
@@ -473,7 +461,7 @@ const whitelist = rl?.whitelist ?? [];
 
     try {
       if (pathname === '/v1/tools' && req.method === 'GET') {
-        sendJson(res, 200, { tools: [{ functionDeclarations: this.geminiAdapter.getGeminiFunctionDeclarations() }] });
+        sendJson(res, 200, this.geminiAdapter.createToolsListResponse());
         return;
       }
 
@@ -512,22 +500,11 @@ const whitelist = rl?.whitelist ?? [];
 
         if (functionCalls.length > 0) {
           const results = await this.geminiAdapter.processFunctionCalls(functionCalls);
-          sendJson(res, 200, {
-            candidates: [{
-              content: { parts: results.map(r => ({ functionResponse: r })), role: 'model' },
-              finishReason: 'STOP',
-            }],
-          });
+          sendJson(res, 200, this.geminiAdapter.createGenerateContentResponse(results));
           return;
         }
 
-        sendJson(res, 200, {
-          candidates: [{
-            content: { parts: [{ text: 'EnvCP tools available.' }], role: 'model' },
-            finishReason: 'STOP',
-          }],
-          availableTools: [{ functionDeclarations: this.geminiAdapter.getGeminiFunctionDeclarations() }],
-        });
+        sendJson(res, 200, this.geminiAdapter.createAvailableToolsResponse());
         return;
       }
 
