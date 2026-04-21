@@ -147,7 +147,8 @@ export class RESTAdapter extends BaseAdapter {
 
   private async rejectLockedRequest(
     res: http.ServerResponse,
-    message: string,
+    logMessage: string,
+    responseMessage: string,
     statusCode: 403 | 429,
     req: http.IncomingMessage,
   ): Promise<void> {
@@ -161,11 +162,9 @@ export class RESTAdapter extends BaseAdapter {
       variable: '',
       source: 'api',
       success: false,
-      message: `${message} from ${req.socket.remoteAddress ?? 'unknown'}`,
+      message: `${logMessage} from ${req.socket.remoteAddress ?? 'unknown'}`,
     });
-    sendJson(res, statusCode, this.createResponse(false, undefined, statusCode === 403
-      ? 'Authentication permanently locked - recovery required'
-      : message));
+    sendJson(res, statusCode, this.createResponse(false, undefined, responseMessage));
   }
 
   private async enforceApiKey(
@@ -180,12 +179,16 @@ export class RESTAdapter extends BaseAdapter {
     if (this.lockoutManager) {
       const lockoutStatus = await this.lockoutManager.check();
       if (lockoutStatus.locked) {
-        const lockoutMessage = lockoutStatus.permanent_locked
+        const logMessage = lockoutStatus.permanent_locked
           ? 'API authentication blocked - permanent lockout'
           : `API authentication blocked - lockout for ${lockoutStatus.remaining_seconds}s`;
+        const responseMessage = lockoutStatus.permanent_locked
+          ? 'Authentication permanently locked - recovery required'
+          : `Too many failed attempts - try again in ${lockoutStatus.remaining_seconds} seconds`;
         await this.rejectLockedRequest(
           res,
-          lockoutMessage,
+          logMessage,
+          responseMessage,
           lockoutStatus.permanent_locked ? 403 : 429,
           req,
         );
@@ -220,10 +223,13 @@ export class RESTAdapter extends BaseAdapter {
       );
 
       if (status.locked) {
-        const lockoutMessage = status.permanent_locked
+        const logMessage = status.permanent_locked
           ? 'Invalid API key - permanent lockout'
           : `Invalid API key - lockout for ${status.remaining_seconds}s`;
-        await this.rejectLockedRequest(res, lockoutMessage, status.permanent_locked ? 403 : 429, req);
+        const responseMessage = status.permanent_locked
+          ? 'Authentication permanently locked - recovery required'
+          : `Too many failed attempts - try again in ${status.remaining_seconds} seconds`;
+        await this.rejectLockedRequest(res, logMessage, responseMessage, status.permanent_locked ? 403 : 429, req);
         return false;
       }
     }

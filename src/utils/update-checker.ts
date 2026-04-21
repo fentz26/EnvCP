@@ -1,5 +1,4 @@
 import * as fs from 'node:fs';
-import * as https from 'node:https';
 import * as path from 'node:path';
 
 const GITHUB_REPO = 'fentz26/EnvCP';
@@ -113,6 +112,7 @@ export function writeCache(projectPath: string, data: CachedCheck): void {
 }
 
 export async function fetchReleases(perPage = 50): Promise<ReleaseInfo[]> {
+  const https = await import('https');
   return new Promise((resolve, reject) => {
     const options = {
       hostname: 'api.github.com',
@@ -157,6 +157,7 @@ export function filterByChannel(releases: ReleaseInfo[], channel: ReleaseChannel
 }
 
 export async function fetchLatestRelease(): Promise<ReleaseInfo> {
+  const https = await import('https');
   return new Promise((resolve, reject) => {
     const options = {
       hostname: 'api.github.com',
