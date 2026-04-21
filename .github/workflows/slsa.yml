@@ -40,10 +40,11 @@ jobs:
           hashes=$(sha256sum *.tgz | base64 -w0)
           echo "hashes=$hashes" >> "$GITHUB_OUTPUT"
 
-      - name: Upload tarball to release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release upload ${{ github.event.release.tag_name }} *.tgz
+      - name: Upload tarball artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: npm-package-tarball
+          path: "*.tgz"
 
   provenance:
     needs: build
@@ -55,4 +56,4 @@ jobs:
     uses: slsa-framework/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml@f7dd8c54c2067bafc12ca7a55595d5ee9b75204a # v2.1.0
     with:
       base64-subjects: ${{ needs.build.outputs.hashes }}
-      upload-assets: true
+      upload-assets: false

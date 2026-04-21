@@ -134,9 +134,43 @@ jobs:
           path: python/dist/
 
       - name: Publish to PyPI
+        id: publish_pypi
+        continue-on-error: true
         uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b # release/v1
         with:
           packages-dir: python/dist/
+
+      - name: Verify PyPI publish state
+        env:
+          EXPECTED_TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          VERSION="${EXPECTED_TAG#v}"
+          LIVE_VERSION="$(python - <<'PY'
+          import json
+          import urllib.error
+          import urllib.request
+
+          try:
+              with urllib.request.urlopen('https://pypi.org/pypi/envcp/json') as response:
+                  data = json.load(response)
+              print(data['info']['version'])
+          except urllib.error.HTTPError as error:
+              if error.code == 404:
+                  print('')
+              else:
+                  raise
+          PY
+          )"
+
+          if [[ "${{ steps.publish_pypi.outcome }}" == "success" ]]; then
+            echo "PyPI publish succeeded."
+          elif [[ "$LIVE_VERSION" == "$VERSION" ]]; then
+            echo "PyPI already has envcp $VERSION; treating release as published."
+          else
+            echo "PyPI publish failed and envcp $VERSION is not live."
+            exit 1
+          fi
 
   publish-docker:
     needs: determine-channel
@@ -304,18 +338,18 @@ jobs:
             PRERELEASE_FLAG="--prerelease"
           fi
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
-            echo "Release $TAG already exists, updating with PyPI artifacts..."
-            gh release upload "$TAG" pypi-dist/*.whl pypi-dist/*.tar.gz --clobber --repo "$GITHUB_REPOSITORY"
-          else
-            CHANGELOG_FILE=/tmp/changelog_body.md
-            echo "${{ steps.changelog.outputs.body }}" > "$CHANGELOG_FILE"
-            gh release create "$TAG" \
-              --repo "$GITHUB_REPOSITORY" \
-              --title "$TAG" \
-              --notes-file "$CHANGELOG_FILE" \
-              $PRERELEASE_FLAG \
-              pypi-dist/*.whl pypi-dist/*.tar.gz
+            echo "Release $TAG already exists; leaving it unchanged."
+            exit 0
           fi
+
+          CHANGELOG_FILE=/tmp/changelog_body.md
+          echo "${{ steps.changelog.outputs.body }}" > "$CHANGELOG_FILE"
+          gh release create "$TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "$TAG" \
+            --notes-file "$CHANGELOG_FILE" \
+            $PRERELEASE_FLAG \
+            pypi-dist/*.whl pypi-dist/*.tar.gz
 
       - name: Update pinned Changelog issue
         env:
@@ -383,11 +417,31 @@ jobs:
           node scripts/sync-version.js
 
       - name: Login to MCP Registry
+        id: mcp_login
+        continue-on-error: true
         env:
           MCP_REGISTRY_PRIVATE_KEY: ${{ secrets.MCP_REGISTRY_PRIVATE_KEY }}
         run: |
+          if [ -z "${MCP_REGISTRY_PRIVATE_KEY:-}" ]; then
+            echo "MCP_REGISTRY_PRIVATE_KEY is not configured."
+            exit 1
+          fi
           echo "$MCP_REGISTRY_PRIVATE_KEY" > /tmp/key.pem
           mcp-publisher login dns --domain "envcp.org" --private-key "$(openssl pkey -in /tmp/key.pem -noout -text | grep -A3 'priv:' | tail -n +2 | tr -d ' :\n')"
 
       - name: Publish to MCP Registry
+        id: mcp_publish
+        if: steps.mcp_login.outcome == 'success'
+        continue-on-error: true
         run: mcp-publisher publish
+
+      - name: Summarize MCP Registry publish status
+        if: always()
+        run: |
+          if [[ "${{ steps.mcp_login.outcome }}" != "success" ]]; then
+            echo "::warning::Skipping MCP Registry publish because DNS auth is not ready or MCP credentials are missing."
+          elif [[ "${{ steps.mcp_publish.outcome }}" != "success" ]]; then
+            echo "::warning::MCP Registry publish failed, but the rest of the release already completed."
+          else
+            echo "MCP Registry publish succeeded."
+          fi
