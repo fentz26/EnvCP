@@ -1,4 +1,4 @@
-"""envcp — native Python bindings to envcp-core (Rust).
+"""envcp — Python bindings backed by envcp-core (Rust).
 
 Exposes crypto primitives (Argon2id + AES-256-GCM, V1/V2 format) and a
 ``StorageManager`` class backed by the same on-disk format used by the

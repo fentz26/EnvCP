@@ -49,29 +49,22 @@
 
 ---
 
-## Why EnvCP?
+## What It Does
 
-- **Local-only storage** — Your secrets never leave your machine
-- **Encrypted at rest** — AES-256-GCM with Argon2id key derivation (64 MB memory, 3 passes)
-- **Reference-based access** — AI references variables by name, never sees the actual values
-- **Automatic .env injection** — Values can be automatically injected into your .env files
-- **AI Access Control** — Block AI from proactively listing or checking your secrets
-- **Universal Compatibility** — Works with any AI tool via MCP, OpenAI, Gemini, or REST protocols
+- Stores secrets on your machine
+- Lets AI tools reference secrets by name instead of raw values
+- Can sync values into `.env` files when you want
+- Works with MCP, REST, OpenAI-compatible, and Gemini-compatible clients
 
 ---
 
-## What's New in v1.2.0
+## In v1.2.0
 
-- **Rust Core Library**: AES-256-GCM encryption, Argon2id key derivation, and HMAC-SHA256 implemented in Rust for maximum performance and security
-- **Memory Hardening**: Zero-sensitive memory, prevent swapping, core dump protection
-- **Brute-Force Protection**: Progressive delays and permanent lockout after repeated failures
-- **Email/Webhook Notifications**: Alert on security events (lockouts, unlocks)
-- **Auto-Startup System Service**: Install as systemd/launchd/Windows service for always-on availability
-- **API Key Enforcement**: Stricter validation when AI access is enabled
-- **Config File Integrity Protection**: HMAC-SHA256 signatures detect tampering
-- **Release Channels**: Latest, Experimental, and Canary channels for different risk profiles
-- **Python Native Binding**: `pip install envcp-core` for Python applications without Node.js
-- **Security Audit Fixes**: All High and Medium severity findings addressed (CORS bypass, backup auto-restore, Windows injection, etc.)
+- Simpler first-time setup
+- Interactive `config` and `rule` menus
+- Per-variable and per-client AI rules
+- Better service/startup setup
+- General cleanup, hardening, and test coverage
 
 
 ## Quick Start
@@ -80,14 +73,14 @@ Install and initialize:
 
 ```bash
 npm install -g @fentz26/envcp
-envcp init                # project vault: ./envcp.yaml + ./.envcp/
-# or: envcp init --global # global vault:  ~/.envcp/config.yaml + ~/.envcp/
+envcp init   # choose Basic / Advanced / Manual setup for this project
 ```
 
-Add your secrets (you'll set a vault password on first use):
+Add your secrets:
 
 ```bash
-envcp add API_KEY --value "your-secret-key"
+envcp add API_KEY --from-env API_KEY
+# or: printf '%s' "$API_KEY" | envcp add API_KEY --stdin
 ```
 
 Start the MCP server for AI tools:
@@ -102,7 +95,7 @@ This means MCP clients launched from arbitrary working directories will
 still find the vault and an active session. Use `--global` to skip the
 project lookup entirely.
 
-Your AI can now **reference** secrets by name without ever seeing the values. Full guide: [SETUP.md](SETUP.md)
+For setup, rules, and integrations, see [SETUP.md](SETUP.md).
 
 ---
 
@@ -110,21 +103,13 @@ Your AI can now **reference** secrets by name without ever seeing the values. Fu
 
 | Guide | Description |
 |-------|-------------|
-| [Setup Guide](SETUP.md) | Installation, CLI reference, integrations, configuration |
-| [Verification](VERIFICATION.md) | SLSA 3 provenance verification — npm, GitHub CLI, slsa-verifier |
-| [Security Policy](SECURITY.md) | Vulnerability reporting, encryption details, best practices |
+| [Docs Site](https://envcp.org/docs) | Main documentation |
+| [Setup Guide](SETUP.md) | Install, configure, and connect tools |
+| [Security Guide](docs/SECURITY_GUIDE.md) | Safer setup and incident response |
+| [Verification](VERIFICATION.md) | Release verification steps |
+| [Security Policy](SECURITY.md) | How to report security issues |
 
 ---
-
-## Security & Supply Chain
-
-- **SLSA Level 3** — Build provenance for supply chain integrity ([verify →](VERIFICATION.md))
-- **Encrypted at rest** — AES-256-GCM with Argon2id key derivation
-- **Local-only** — Your secrets never leave your machine
-- **SHA-pinned CI** — All GitHub Actions pinned to immutable commit SHAs
-- **Signed npm releases** — `npm audit signatures` verifiable from v1.2.0+
-
-
 
 ## License
 

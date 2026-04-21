@@ -50,7 +50,7 @@ EnvCP is a secure environment variable manager designed specifically for AI-assi
 - **Brute-force protection** - Progressive delays and permanent lockout after repeated failures
 - **Config integrity protection** - HMAC-SHA256 signatures detect configuration tampering
 - **Auto-startup service** - Install as systemd/launchd/Windows service for always-on availability
-- **Python native binding** - `pip install envcp-core` for Python applications without Node.js
+- **Python package support** - use `pip install envcp` today, with Rust core work in the repository
 
 ### How It Works
 
@@ -81,7 +81,7 @@ EnvCP v1.2.0 introduces major security enhancements and new features:
 - **API Key Enforcement**: Stricter validation when AI access is enabled
 - **Config File Integrity Protection**: HMAC-SHA256 signatures detect tampering
 - **Release Channels**: Latest, Experimental, and Canary channels for different risk profiles
-- **Python Native Binding**: `pip install envcp-core` for Python applications without Node.js
+- **Python Package Work**: `pip install envcp` today, with native Rust work still in progress
 - **Security Audit Fixes**: All High and Medium severity findings addressed (CORS bypass, backup auto-restore, Windows injection, mcp-publisher pinning, npm ci, and more)
 
 See the full [changelog](https://github.com/fentz26/EnvCP/blob/main/CHANGELOG.md) for details, or read the [v1.2.0 Release Notes](Release-Notes-v1.2.0) for in-depth feature documentation.

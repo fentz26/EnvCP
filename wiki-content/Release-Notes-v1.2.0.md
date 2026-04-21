@@ -1,6 +1,6 @@
 # EnvCP v1.2.0 Release Notes
 
-EnvCP v1.2.0 is a major security-focused release featuring memory hardening, brute-force protection, Python native bindings, system service integration, and comprehensive security audit fixes.
+EnvCP v1.2.0 adds simpler setup, fine-grained AI access rules, service integration, and a broad round of security and reliability improvements.
 
 **Release Date**: April 18, 2026  
 **Previous Version**: 1.1.0  
@@ -8,13 +8,39 @@ EnvCP v1.2.0 is a major security-focused release featuring memory hardening, bru
 
 ## Overview
 
-This release addresses all High and Medium severity findings from a comprehensive security audit while introducing advanced security features for enterprise and high-security environments. Key improvements include memory protection against side-channel attacks, defense against brute-force password guessing, and hardened configuration integrity.
+This release focuses on making EnvCP easier to set up, easier to control, and safer to run. It adds interactive setup and rule management, per-variable and per-client AI access rules, stronger lockout and integrity checks, and better service support.
 
 ## Breaking Changes
 
 No breaking changes introduced in v1.2.0. All existing configurations remain compatible.
 
 ## New Features
+
+### Fine-Grained AI Access Rules
+
+EnvCP now supports AI access rules at multiple levels:
+
+- **Project or home scope**: keep rules local to one project or share them across your machine
+- **Per-variable rules**: allow or deny read, write, delete, export, or run access for one variable
+- **Per-client rules**: target one client such as `mcp`, `openai`, `gemini`, or `api`
+- **Time windows**: make variable rules active only during specific hours
+- **Interactive rule menu**: manage rules with `envcp rule`
+
+**Examples**:
+```bash
+envcp rule set-default read allow
+envcp rule set-variable OPENAI_API_KEY run deny
+envcp rule set-window OPENAI_API_KEY 09:00 18:00
+envcp rule set-default list allow --who openai
+```
+
+### Interactive Setup and Config
+
+First-time setup is now simpler:
+
+- `envcp init` uses a **Basic / Advanced / Manual** flow
+- running `envcp` with no arguments opens an interactive home menu
+- `envcp config` and `envcp rule` both support interactive menus for simpler day-to-day changes
 
 ### Rust Core Library
 
@@ -26,13 +52,11 @@ EnvCP now includes a native Rust core library (`envcp-core`) providing:
 - **Session token generation**: Cryptographically secure session tokens
 - **Comprehensive test suite**: 23 tests with 99%+ coverage
 
-**Installation**:
+**Repository layout**:
 ```bash
-# Node.js (as before)
-npm install -g @fentz26/envcp
-
-# Python native binding
-pip install envcp-core
+crates/envcp-core
+crates/envcp-python
+python/
 ```
 
 ### Memory Hardening
@@ -156,21 +180,20 @@ envcp update --experimental  # experimental
 envcp update --canary        # canary
 ```
 
-### Python Native Binding
+### Python Package and Rust Core Work
 
-Python-first workflows without Node.js dependency:
+This release also continues the Python-side packaging work around the Rust core:
 
-- **Native Python package**: `pip install envcp-core`
-- **Full compatibility**: Same CLI commands and config files
-- **Sync functions**: `encrypt`, `decrypt`, `hash_password`, `verify_password`
-- **StorageManager class**: Vault file operations
+- **Rust crate**: `crates/envcp-python` contains the PyO3 native binding work
+- **Python package**: `pip install envcp` provides the Python CLI wrapper
+- **Shared direction**: Node, Python, and Rust work continue to move toward the same core formats and behavior
 
 **Usage**:
 ```bash
 # Install
-pip install envcp-core
+pip install envcp
 
-# Use same CLI commands
+# Use the CLI from Python environments
 envcp --version
 envcp init
 envcp serve
@@ -214,7 +237,7 @@ Two low-severity alerts for `rand` crate are false positives. EnvCP uses unaffec
 
 - **New**: `docs/CRYPTO-AUDIT.md` — comprehensive crypto implementation review
 - **Updated**: `docs/THREAT_MODEL.md` — marked mitigated risks, added new controls
-- **Updated**: `python/README.md` — native binding documentation
+- **Updated**: `python/README.md` — clarified current Python package and Rust core status
 - **Enhanced**: All configuration references include v1.2.0 features
 - **Added**: Service management documentation in CLI reference
 
@@ -234,8 +257,8 @@ No migration required. Existing installations will automatically benefit from se
 # Node.js
 npm update -g @fentz26/envcp
 
-# Python
-pip install --upgrade envcp-core
+# Python package
+pip install --upgrade envcp
 
 # Verify
 envcp --version
@@ -245,7 +268,7 @@ envcp --version
 
 - **Windows service**: Requires Administrator privileges for system-wide installation
 - **Memory locking**: May fail on systems with strict memory limits (adjustable via `ulimit`)
-- **Python binding**: Requires Rust toolchain for installation from source (pre-built wheels available)
+- **Python native module work**: Native Rust/PyO3 work is in the repository, but the default Python package remains the CLI wrapper
 
 ## Deprecations
 

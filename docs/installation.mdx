@@ -46,19 +46,18 @@ npx @fentz26/envcp add API_KEY --value "your-key"
 npx @fentz26/envcp serve
 ```
 
-### Python Native Binding (v1.2.0+)
+### Python Package (v1.2.0+)
 
-For Python-first workflows, install the native Rust core:
+For Python environments, the current published package is the Python CLI wrapper:
 
 ```bash
-pip install envcp-core
+pip install envcp
 ```
 
-The Python package provides:
-- Direct Python API access
-- Faster cryptographic operations via Rust
-- Same CLI commands as Node.js version
-- Full compatibility with existing config files
+This package provides:
+- The `envcp` CLI from Python environments
+- The same project and config workflows as the Node.js package
+- A simple install path if you prefer using `pip`
 
 After installation, use the same `envcp` commands:
 
@@ -68,7 +67,7 @@ envcp init
 envcp serve
 ```
 
-**Note**: The Python package requires Rust toolchain for installation from source. Pre-built wheels are available for most platforms.
+**Note**: The repository also contains Rust/PyO3 work in `crates/envcp-python`, but that native module is not the default published Python wheel yet.
 
 ### Local Project Installation
 

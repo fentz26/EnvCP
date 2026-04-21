@@ -8,106 +8,52 @@ All notable changes to EnvCP are documented here. Format follows [Keep a Changel
 
 ### Added
 
-- **Rust Core Library** ([#136](https://github.com/fentz26/EnvCP/issues/136))
-  - New `envcp-core` Rust crate with AES-256-GCM encryption, Argon2id key derivation, HMAC-SHA256
-  - Cross-platform bindings: `envcp-node` (napi-rs) and `envcp-python` (PyO3)
-  - Same v2 format across all runtimes — byte-for-byte compatibility
-  - Recovery key support, session token generation
-  - Comprehensive test suite (23 tests, 99%+ coverage)
-
-- **Memory Hardening** ([#152](https://github.com/fentz26/EnvCP/issues/152))
-  - `sodium_memzero` for explicit memory zeroing (when `sodium-native` available)
-  - `mlock` to prevent sensitive buffers from being swapped to disk
-  - Core dump prevention via `prlimit --core=0` on Linux
-  - Fallback to `Buffer.fill(0)` when native module unavailable
-
-- **Brute-Force Protection** ([#133](https://github.com/fentz26/EnvCP/issues/133))
-  - Progressive delays: 60s → 120s → 240s → ... on repeated failures
-  - Permanent lockout threshold (default: 50 attempts)
-  - Recovery key bypass for permanent lockout
-  - API endpoint protection with separate lockout state
-  - Audit logging of all lockout events
-
-- **Email/Webhook Notifications** ([#174](https://github.com/fentz26/EnvCP/issues/174))
-  - `NotificationManager` for brute-force event alerts
-  - SMTP email support (configurable)
-  - Webhook HTTP POST support
-  - Events: `lockout_triggered`, `permanent_lockout`, `unlock`
-
-- **Auto-Startup System Service** ([#190](https://github.com/fentz26/EnvCP/issues/190))
-  - `envcp service install` — install as systemd/launchd/Windows service
-  - `envcp service start/stop/status/logs` — manage the service
-  - Config stored in `~/.envcp/service.yaml`
-  - Platform support: Linux (systemd), macOS (launchd), Windows (Scheduled Task)
-
-- **API Key Enforcement** ([#176](https://github.com/fentz26/EnvCP/issues/176))
-  - Server now blocks startup when ANY AI access flag is enabled without `api_key`
-  - Previously only blocked `allow_ai_execute`, now covers read/write/delete/export
-  - Clear error messages listing active flags
-
-- **Config File Integrity Protection** ([#178](https://github.com/fentz26/EnvCP/issues/178))
-  - HMAC-SHA256 signature on `envcp.yaml`
-  - Signature stored in `.envcp/.config_signature`
-  - Tampering detected on load, blocks server startup
-  - Key derived from system identifier (username@hostname)
-
-- **Release Channels**
-  - `release:latest` — stable releases
-  - `release:experimental` — new features for testing
-  - `release:canary` — nightly builds
-  - Automated channel detection in publish workflow
-
-- **Python Native Binding**
-  - `pip install envcp-core` — native Python binding (no Node.js dependency)
-  - Sync functions: `encrypt`, `decrypt`, `hash_password`, `verify_password`, etc.
-  - `StorageManager` class for vault file operations
-  - Python 3.9+ support
+- Interactive setup and menus for `envcp`, `envcp config`, and `envcp rule`
+- Variable-specific AI rules with optional time windows
+- Client-specific AI rules (`client_rules`) for clients like `mcp`, `openai`, `gemini`, and `api`
+- Scoped rule storage for project, home, and merged views
+- Auto-start service setup for Linux, macOS, and Windows
+- Brute-force protection with progressive delays and permanent lockout handling
+- Config file integrity checks using HMAC signatures
+- Python package updates and Rust core groundwork via `envcp-core`
+- Release channels for latest, experimental, and canary builds
 
 ### Changed
 
-- **TypeScript 6.0** — upgraded from 5.9.3
-- **GitHub Actions** — all actions updated to latest (checkout v6, setup-node v6, etc.)
-- **pyo3 0.24** — updated from 0.22 to resolve Dependabot vulnerability
-- **Coverage threshold** — lowered from 93% to 90% to accommodate new features
+- Simplified first-run project setup with Basic / Advanced / Manual flows
+- `envcp init` now guides first-time setup and points existing projects to `envcp setup`
+- `envcp setup` now handles project reconfiguration
+- Vault management now uses `envcp vault use` and `envcp vault contexts` instead of old top-level aliases
+- CLI docs, wiki pages, and setup guides were aligned with the current command surface
+- Rule listing now shows readable output, scope origin, and who-specific labels
 
 ### Fixed
 
-- **Security Audit Fixes**: Addressed all High and Medium severity findings from comprehensive security audit:
-  - **H1 (CORS bypass)**: Proper URL parsing with hostname matching already in place
-  - **H2 (Backup auto-restore)**: Fixed silent overwrite; backup restoration now preserves primary store integrity
-  - **M1 (Config umask)**: Already configured with `mode: 0o600`
-  - **M3 (Windows injection)**: Added quotes around environment variables in batch script generation
-  - **M4 (mcp-publisher pinning)**: Added SHA256 checksum verification and corrected download URL pattern
-  - **M5 (npm ci)**: Changed `npm install` to `npm ci` in CI pipeline
-  - **L1 (codeql SHA)**: Pinned GitHub Actions to specific SHA
-  - **L3 (Hardcoded versions)**: Replaced hardcoded versions with dynamic `VERSION` variable
-  - **L4 (Bearer case)**: Case-insensitive regex already present
-  - **L5 (command_blacklist)**: Already includes `dd` and `chattr`
-- **Dependabot Alerts**: Two low-severity alerts for `rand` crate are false positives (EnvCP uses unaffected version 0.8.6)
+- Backup restore no longer silently overwrites a corrupted primary store
+- API key checks now cover all AI access flags, not only execute access
+- Non-TTY prompt handling is more reliable for tests and scripted input
+- Prompt-related test cleanup removed the remaining Jest open-handle warning
+- Windows script generation and related injection edge cases were tightened
+- Build, lint, and test verification were cleaned up for release readiness
 
 ### Security
 
-- **Crypto Implementation Audit** — completed, all criteria passed ([docs/CRYPTO-AUDIT.md](docs/CRYPTO-AUDIT.md))
-- **Threat Model Updated** — mitigated risks documented ([docs/THREAT_MODEL.md](docs/THREAT_MODEL.md))
-- **OWASP Top 10 2025** — full compliance achieved
-- **SLSA Level 3** — provenance generation verified, release signing active
+- Updated crypto and threat-model documentation
+- Release verification and signed publish flow remain documented in `VERIFICATION.md`
 
 ### Documentation
 
-- Added `docs/CRYPTO-AUDIT.md` — comprehensive crypto implementation review
-- Updated `docs/THREAT_MODEL.md` — marked mitigated risks, added new controls
-- Updated `python/README.md` — native binding documentation
+- Updated README, setup docs, command reference, configuration reference, and wiki mirrors
+- Added rule system documentation for `envcp rule`, `access.variable_rules`, and `access.client_rules`
+- Cleaned outdated command examples from docs and setup guides
 
 ### Tests
 
-- **1032 tests passing** (up from 493 in v1.1.0)
-- New test files: `api-key-enforcement.test.ts`, `config-hmac.test.ts`, `service-*.test.ts`, `coverage-audit.test.ts`
-- Coverage: 99%+ lines (coverage audit adds 42 new tests)
+- Added focused tests for rules, vault CLI flows, prompt handling, config loading, and access control
+- Release verification finished with full build, lint, and test passes before tagging
 
 ### Dependencies
 
-- typescript 5.9.3 → 6.0.3
-- pyo3 0.22 → 0.24
 - actions/checkout v4 → v6
 - actions/setup-node v5 → v6
 - actions/setup-python v5 → v6
