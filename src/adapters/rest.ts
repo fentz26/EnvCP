@@ -133,25 +133,239 @@ export class RESTAdapter extends BaseAdapter {
     };
   }
 
+  private initLockoutManager(): void {
+    const bfpConfig = this.config.security?.brute_force_protection;
+    if (!bfpConfig || bfpConfig.enabled === false) {
+      this.lockoutManager = undefined;
+      return;
+    }
 
-async startServer(port: number, host: string, apiKey?: string, rateLimitConfig?: RateLimitConfig): Promise<void> {
-  await this.init();
-
-  const rateLimitEnabled = rateLimitConfig?.enabled !== false;
-  if (rateLimitEnabled) {
-    this.rateLimiter?.destroy();
-    this.rateLimiter = new RateLimiter(rateLimitConfig?.requests_per_minute ?? 60, 60000);
-  }
-  const whitelist = rateLimitConfig?.whitelist ?? [];
-
-  // Initialize lockout manager for API key authentication failures
-  const bfpConfig = this.config.security?.brute_force_protection;
-  if (bfpConfig && bfpConfig.enabled !== false) {
     const sessionDir = path.dirname(resolveSessionPath(this.projectPath, this.config));
     const lockoutPath = path.join(sessionDir, '.lockout-api');
-    
     this.lockoutManager = new LockoutManager(lockoutPath);
   }
+
+  private async rejectLockedRequest(
+    res: http.ServerResponse,
+    message: string,
+    statusCode: 403 | 429,
+    req: http.IncomingMessage,
+  ): Promise<void> {
+    if (statusCode === 429 && this.lockoutManager) {
+      const lockoutStatus = await this.lockoutManager.check();
+      res.setHeader('Retry-After', lockoutStatus.remaining_seconds.toString());
+    }
+    await this.logs.log({
+      timestamp: new Date().toISOString(),
+      operation: 'auth_failure',
+      variable: '',
+      source: 'api',
+      success: false,
+      message: `${message} from ${req.socket.remoteAddress ?? 'unknown'}`,
+    });
+    sendJson(res, statusCode, this.createResponse(false, undefined, statusCode === 403
+      ? 'Authentication permanently locked - recovery required'
+      : message));
+  }
+
+  private async enforceApiKey(
+    req: http.IncomingMessage,
+    res: http.ServerResponse,
+    apiKey?: string,
+  ): Promise<boolean> {
+    if (!apiKey) {
+      return true;
+    }
+
+    if (this.lockoutManager) {
+      const lockoutStatus = await this.lockoutManager.check();
+      if (lockoutStatus.locked) {
+        const lockoutMessage = lockoutStatus.permanent_locked
+          ? 'API authentication blocked - permanent lockout'
+          : `API authentication blocked - lockout for ${lockoutStatus.remaining_seconds}s`;
+        await this.rejectLockedRequest(
+          res,
+          lockoutMessage,
+          lockoutStatus.permanent_locked ? 403 : 429,
+          req,
+        );
+        return false;
+      }
+
+      const ip = req.socket.remoteAddress || 'unknown';
+      const userAgent = req.headers['user-agent'] || 'unknown';
+      this.lockoutManager.setNotificationSource('api', ip, userAgent);
+    }
+
+    const providedKey = (req.headers['x-api-key'] || req.headers['authorization']?.replace(/^Bearer\s+/i, '')) as string | undefined;
+    if (validateApiKey(providedKey, apiKey)) {
+      return true;
+    }
+
+    if (this.lockoutManager) {
+      const bfpConfig = this.config.security?.brute_force_protection;
+      /* c8 ignore next 5 -- Zod always provides BFP fields; fallback ?? branches unreachable */
+      const lockoutThreshold = bfpConfig?.max_attempts ?? this.config.session?.lockout_threshold ?? 5;
+      const lockoutBaseSeconds = bfpConfig?.lockout_duration ?? this.config.session?.lockout_base_seconds ?? 60;
+      const progressiveDelay = bfpConfig?.progressive_delay ?? true;
+      const maxDelay = bfpConfig?.max_delay ?? 60;
+      const permanentThreshold = bfpConfig?.permanent_lockout_threshold ?? 0;
+
+      const status = await this.lockoutManager.recordFailure(
+        lockoutThreshold,
+        lockoutBaseSeconds,
+        progressiveDelay,
+        maxDelay,
+        permanentThreshold,
+      );
+
+      if (status.locked) {
+        const lockoutMessage = status.permanent_locked
+          ? 'Invalid API key - permanent lockout'
+          : `Invalid API key - lockout for ${status.remaining_seconds}s`;
+        await this.rejectLockedRequest(res, lockoutMessage, status.permanent_locked ? 403 : 429, req);
+        return false;
+      }
+    }
+
+    await this.logs.log({
+      timestamp: new Date().toISOString(),
+      operation: 'auth_failure',
+      variable: '',
+      source: 'api',
+      success: false,
+      message: `Invalid API key from ${req.socket.remoteAddress ?? 'unknown'}`,
+    });
+    sendJson(res, 401, this.createResponse(false, undefined, 'Invalid API key'));
+    return false;
+  }
+
+  private getClientId(req: http.IncomingMessage): string {
+    const clientIdHeader = req.headers['x-envcp-client-id'];
+    /* c8 ignore next -- HTTP/1.1 joins duplicate headers; array branch unreachable in practice */
+    return (Array.isArray(clientIdHeader) ? clientIdHeader[0] : clientIdHeader) || 'api';
+  }
+
+  private getErrorStatus(message: string): number {
+    if (message.includes('locked')) return 401;
+    if (message.includes('not found')) return 404;
+    if (message.includes('disabled')) return 403;
+    return 500;
+  }
+
+  private async handleApiRoute(
+    req: http.IncomingMessage,
+    res: http.ServerResponse,
+    parsedUrl: URL,
+    segments: string[],
+    clientId: string,
+  ): Promise<boolean> {
+    const pathname = parsedUrl.pathname;
+    const resource = segments[1];
+
+    if (pathname === '/api/health' || pathname === '/api') {
+      sendJson(res, 200, this.createResponse(true, { status: 'ok', version: VERSION, mode: 'rest' }));
+      return true;
+    }
+
+    if (resource === 'tools' && !segments[2] && req.method === 'GET') {
+      const tools = this.getToolDefinitions().map((tool) => ({
+        name: tool.name,
+        description: tool.description,
+        parameters: tool.parameters,
+      }));
+      sendJson(res, 200, this.createResponse(true, { tools }));
+      return true;
+    }
+
+    if (resource === 'tools' && segments[2] && req.method === 'POST') {
+      const body = await parseBody(req);
+      const result = await this.callTool(segments[2], body, clientId);
+      sendJson(res, 200, this.createResponse(true, result));
+      return true;
+    }
+
+    if (resource === 'variables') {
+      return this.handleVariableRoute(req, res, parsedUrl, segments[2], clientId);
+    }
+
+    if (resource === 'sync' && req.method === 'POST') {
+      const result = await this.callTool('envcp_sync', {}, clientId);
+      sendJson(res, 200, this.createResponse(true, result));
+      return true;
+    }
+
+    if (resource === 'run' && req.method === 'POST') {
+      const body = await parseBody(req);
+      const result = await this.callTool('envcp_run', body, clientId);
+      sendJson(res, 200, this.createResponse(true, result));
+      return true;
+    }
+
+    if (resource === 'access' && segments[2] && req.method === 'GET') {
+      const result = await this.callTool('envcp_check_access', { name: segments[2] }, clientId);
+      sendJson(res, 200, this.createResponse(true, result));
+      return true;
+    }
+
+    return false;
+  }
+
+  private async handleVariableRoute(
+    req: http.IncomingMessage,
+    res: http.ServerResponse,
+    parsedUrl: URL,
+    variableName: string | undefined,
+    clientId: string,
+  ): Promise<boolean> {
+    if (!variableName && req.method === 'GET') {
+      const tagsParam = parsedUrl.searchParams.getAll('tags');
+      const tags = tagsParam.length > 0 ? tagsParam : undefined;
+      const result = await this.callTool('envcp_list', { tags }, clientId);
+      sendJson(res, 200, this.createResponse(true, result));
+      return true;
+    }
+
+    if (!variableName && req.method === 'POST') {
+      const body = await parseBody(req);
+      const result = await this.callTool('envcp_set', body, clientId);
+      sendJson(res, 201, this.createResponse(true, result));
+      return true;
+    }
+
+    if (variableName && req.method === 'GET') {
+      const showValue = parsedUrl.searchParams.get('show_value') === 'true';
+      const result = await this.callTool('envcp_get', { name: variableName, show_value: showValue }, clientId);
+      sendJson(res, 200, this.createResponse(true, result));
+      return true;
+    }
+
+    if (variableName && req.method === 'PUT') {
+      const body = await parseBody(req);
+      const result = await this.callTool('envcp_set', { ...body, name: variableName }, clientId);
+      sendJson(res, 200, this.createResponse(true, result));
+      return true;
+    }
+
+    if (variableName && req.method === 'DELETE') {
+      const result = await this.callTool('envcp_delete', { name: variableName }, clientId);
+      sendJson(res, 200, this.createResponse(true, result));
+      return true;
+    }
+
+    return false;
+  }
+
+  async startServer(port: number, host: string, apiKey?: string, rateLimitConfig?: RateLimitConfig): Promise<void> {
+    await this.init();
+
+    const rateLimitEnabled = rateLimitConfig?.enabled !== false;
+    if (rateLimitEnabled) {
+      this.rateLimiter?.destroy();
+      this.rateLimiter = new RateLimiter(rateLimitConfig?.requests_per_minute ?? 60, 60000);
+    }
+    const whitelist = rateLimitConfig?.whitelist ?? [];
+    this.initLockoutManager();
 
     this.server = http.createServer(async (req, res) => {
       setCorsHeaders(res, undefined, req.headers.origin);
@@ -166,200 +380,23 @@ async startServer(port: number, host: string, apiKey?: string, rateLimitConfig?:
         return;
       }
 
-      // API key validation with lockout protection
-      if (apiKey) {
-        // Check lockout first if enabled
-        if (this.lockoutManager) {
-          const lockoutStatus = await this.lockoutManager.check();
-          if (lockoutStatus.locked) {
-            if (lockoutStatus.permanent_locked) {
-              /* c8 ignore next -- remoteAddress is always defined in TCP connections */
-              await this.logs.log({ timestamp: new Date().toISOString(), operation: 'auth_failure', variable: '', source: 'api', success: false, message: `API authentication blocked - permanent lockout from ${req.socket.remoteAddress ?? 'unknown'}` });
-              sendJson(res, 403, this.createResponse(false, undefined, 'Authentication permanently locked - recovery required'));
-              return;
-            } else {
-              /* c8 ignore next -- remoteAddress is always defined in TCP connections */
-              await this.logs.log({ timestamp: new Date().toISOString(), operation: 'auth_failure', variable: '', source: 'api', success: false, message: `API authentication blocked - lockout for ${lockoutStatus.remaining_seconds}s from ${req.socket.remoteAddress ?? 'unknown'}` });
-              res.setHeader('Retry-After', lockoutStatus.remaining_seconds.toString());
-              sendJson(res, 429, this.createResponse(false, undefined, `Too many failed attempts - try again in ${lockoutStatus.remaining_seconds} seconds`));
-              return;
-            }
-          }
-          
-          // Set notification source for this request
-          const ip = req.socket.remoteAddress || 'unknown';
-          const userAgent = req.headers['user-agent'] || 'unknown';
-          this.lockoutManager.setNotificationSource('api', ip, userAgent);
-        }
-        
-        const providedKey = (req.headers['x-api-key'] || req.headers['authorization']?.replace(/^Bearer\s+/i, '')) as string | undefined;
-        if (!validateApiKey(providedKey, apiKey)) {
-          // Record failed attempt if lockout is enabled
-          if (this.lockoutManager) {
-            const bfpConfig = this.config.security?.brute_force_protection;
-            /* c8 ignore next 5 -- Zod always provides BFP fields; fallback ?? branches unreachable */
-            const lockoutThreshold = bfpConfig?.max_attempts ?? this.config.session?.lockout_threshold ?? 5;
-            const lockoutBaseSeconds = bfpConfig?.lockout_duration ?? this.config.session?.lockout_base_seconds ?? 60;
-            const progressiveDelay = bfpConfig?.progressive_delay ?? true;
-            const maxDelay = bfpConfig?.max_delay ?? 60;
-            const permanentThreshold = bfpConfig?.permanent_lockout_threshold ?? 0;
-
-            const status = await this.lockoutManager.recordFailure(
-              lockoutThreshold,
-              lockoutBaseSeconds,
-              progressiveDelay,
-              maxDelay,
-              permanentThreshold
-            );
-
-            if (status.locked) {
-              const message = status.permanent_locked
-                ? 'Authentication permanently locked - recovery required'
-                : `Too many failed attempts - try again in ${status.remaining_seconds} seconds`;
-
-              const statusCode = status.permanent_locked ? 403 : 429;
-              if (!status.permanent_locked) {
-                res.setHeader('Retry-After', status.remaining_seconds.toString());
-              }
-
-              /* c8 ignore next -- remoteAddress is always defined in TCP connections */
-              await this.logs.log({ timestamp: new Date().toISOString(), operation: 'auth_failure', variable: '', source: 'api', success: false, message: `Invalid API key - ${status.permanent_locked ? 'permanent lockout' : `lockout for ${status.remaining_seconds}s`} from ${req.socket.remoteAddress ?? 'unknown'}` });
-              sendJson(res, statusCode, this.createResponse(false, undefined, message));
-              return;
-            }
-          }
-
-          await this.logs.log({ timestamp: new Date().toISOString(), operation: 'auth_failure', variable: '', source: 'api', success: false, message: `Invalid API key from ${req.socket.remoteAddress ?? 'unknown'}` });
-          sendJson(res, 401, this.createResponse(false, undefined, 'Invalid API key'));
-          return;
-        }
+      if (!await this.enforceApiKey(req, res, apiKey)) {
+        return;
       }
 
       const parsedUrl = new URL(req.url || '/', `http://${req.headers.host ?? 'localhost'}`);
-      const pathname = parsedUrl.pathname;
-      const segments = pathname.split('/').filter(Boolean);
-
-      const clientIdHeader = req.headers['x-envcp-client-id'];
-      /* c8 ignore next -- HTTP/1.1 joins duplicate headers; array branch unreachable in practice */
-      const clientId = (Array.isArray(clientIdHeader) ? clientIdHeader[0] : clientIdHeader) || 'api';
+      const segments = parsedUrl.pathname.split('/').filter(Boolean);
+      const clientId = this.getClientId(req);
 
       try {
-        // Routes:
-        // GET  /api/variables         - List variables
-        // GET  /api/variables/:name   - Get variable
-        // POST /api/variables         - Create variable
-        // PUT  /api/variables/:name   - Update variable
-        // DELETE /api/variables/:name - Delete variable
-        // POST /api/sync              - Sync to .env
-        // POST /api/run               - Run command
-        // GET  /api/tools             - List available tools
-        // POST /api/tools/:name       - Call a tool
-
-        if (segments[0] === 'api') {
-          const resource = segments[1];
-
-          // Health check
-          if (pathname === '/api/health' || pathname === '/api') {
-            sendJson(res, 200, this.createResponse(true, {
-              status: 'ok',
-              version: VERSION,
-              mode: 'rest',
-            }));
-            return;
-          }
-
-          // List tools
-          if (resource === 'tools' && !segments[2] && req.method === 'GET') {
-            const tools = this.getToolDefinitions().map(t => ({
-              name: t.name,
-              description: t.description,
-              parameters: t.parameters,
-            }));
-            sendJson(res, 200, this.createResponse(true, { tools }));
-            return;
-          }
-
-          // Call tool
-          if (resource === 'tools' && segments[2] && req.method === 'POST') {
-            const toolName = segments[2];
-            const body = await parseBody(req);
-            const result = await this.callTool(toolName, body, clientId);
-            sendJson(res, 200, this.createResponse(true, result));
-            return;
-          }
-
-          // Variables
-          if (resource === 'variables') {
-            const varName = segments[2];
-
-            if (!varName && req.method === 'GET') {
-              const tagsParam = parsedUrl.searchParams.getAll('tags');
-              const tags = tagsParam.length > 0 ? tagsParam : undefined;
-              const result = await this.callTool('envcp_list', { tags }, clientId);
-              sendJson(res, 200, this.createResponse(true, result));
-              return;
-            }
-
-            if (!varName && req.method === 'POST') {
-              const body = await parseBody(req);
-              const result = await this.callTool('envcp_set', body, clientId);
-              sendJson(res, 201, this.createResponse(true, result));
-              return;
-            }
-
-            if (varName && req.method === 'GET') {
-              const showValue = parsedUrl.searchParams.get('show_value') === 'true';
-              const result = await this.callTool('envcp_get', { name: varName, show_value: showValue }, clientId);
-              sendJson(res, 200, this.createResponse(true, result));
-              return;
-            }
-
-            if (varName && req.method === 'PUT') {
-              const body = await parseBody(req);
-              const result = await this.callTool('envcp_set', { ...body, name: varName }, clientId);
-              sendJson(res, 200, this.createResponse(true, result));
-              return;
-            }
-
-            if (varName && req.method === 'DELETE') {
-              const result = await this.callTool('envcp_delete', { name: varName }, clientId);
-              sendJson(res, 200, this.createResponse(true, result));
-              return;
-            }
-          }
-
-          // Sync
-          if (resource === 'sync' && req.method === 'POST') {
-            const result = await this.callTool('envcp_sync', {}, clientId);
-            sendJson(res, 200, this.createResponse(true, result));
-            return;
-          }
-
-          // Run
-          if (resource === 'run' && req.method === 'POST') {
-            const body = await parseBody(req);
-            const result = await this.callTool('envcp_run', body, clientId);
-            sendJson(res, 200, this.createResponse(true, result));
-            return;
-          }
-
-          // Check access
-          if (resource === 'access' && segments[2] && req.method === 'GET') {
-            const result = await this.callTool('envcp_check_access', { name: segments[2] }, clientId);
-            sendJson(res, 200, this.createResponse(true, result));
-            return;
-          }
+        if (segments[0] === 'api' && await this.handleApiRoute(req, res, parsedUrl, segments, clientId)) {
+          return;
         }
 
-        // 404
         sendJson(res, 404, this.createResponse(false, undefined, 'Not found'));
-
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : String(error);
-        const status = message.includes('locked') ? 401 :
-                       message.includes('not found') ? 404 :
-                       message.includes('disabled') ? 403 : 500;
-        sendJson(res, status, this.createResponse(false, undefined, message));
+        sendJson(res, this.getErrorStatus(message), this.createResponse(false, undefined, message));
       }
     });
 

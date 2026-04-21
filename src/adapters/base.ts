@@ -228,18 +228,15 @@ export abstract class BaseAdapter {
       required?: string[];
     };
   }> {
-    return this.getToolDefinitions().map(tool => {
-      const parameters = tool.parameters as Record<string, unknown>;
-      return {
-        name: tool.name,
-        description: tool.description,
-        parameters: {
-          type: 'object',
-          properties: (parameters.properties as Record<string, unknown>) || {},
-          required: parameters.required as string[] | undefined,
-        },
-      };
-    });
+    return this.getToolDefinitions().map(tool => ({
+      name: tool.name,
+      description: tool.description,
+      parameters: {
+        type: 'object' as const,
+        properties: (tool.parameters['properties'] as Record<string, unknown>) ?? {},
+        required: tool.parameters['required'] as string[] | undefined,
+      },
+    }));
   }
 
   protected currentClientId = '';
@@ -484,7 +481,7 @@ export abstract class BaseAdapter {
 
       const variable: Variable = {
         name: args.name,
-        value: args.value !== undefined ? args.value : decryptedValue,
+        value: args.value ?? decryptedValue,
         encrypted: this.config.storage.encrypted,
         tags: args.tags ?? existing.tags,
         description: args.description ?? existing.description,
@@ -808,8 +805,7 @@ export abstract class BaseAdapter {
     let inSingle = false;
     let inDouble = false;
 
-    for (let i = 0; i < command.length; i++) {
-      const ch = command[i];
+    for (const ch of command) {
       if (ch === "'" && !inDouble) {
         inSingle = !inSingle;
       } else if (ch === '"' && !inSingle) {
@@ -908,7 +904,7 @@ export abstract class BaseAdapter {
 
     this.validateCommand(args.command);
 
-    const { spawn } = await import('child_process');
+    const { spawn } = await import('node:child_process');
     const { program: prog, args: cmdArgs } = this.parseCommand(args.command);
 
     // Enforce require_command_whitelist: allowed_commands must exist and contain the program

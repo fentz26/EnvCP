@@ -8,6 +8,48 @@ export class OpenAIAdapter extends BaseAdapter {
   private server: http.Server | null = null;
   private static readonly TOOLS_MESSAGE = 'EnvCP tools available. Use function calling to interact with environment variables.';
 
+  private async handleFunctionCall(req: http.IncomingMessage, res: http.ServerResponse, clientId: string): Promise<void> {
+    const body = await parseBody(req);
+    const { name, arguments: args } = body as { name: string; arguments: Record<string, unknown> };
+    if (!name) {
+      sendJson(res, 400, { error: { message: 'Function name required', type: 'invalid_request_error' } });
+      return;
+    }
+
+    const result = await this.callTool(name, args ?? {}, clientId);
+    sendJson(res, 200, { object: 'function_result', name, result });
+  }
+
+  private async handleToolCalls(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+    const body = await parseBody(req);
+    const { tool_calls } = body as { tool_calls: OpenAIToolCall[] };
+    if (!Array.isArray(tool_calls)) {
+      sendJson(res, 400, { error: { message: 'tool_calls array required', type: 'invalid_request_error' } });
+      return;
+    }
+
+    const results = await this.processToolCalls(tool_calls);
+    sendJson(res, 200, { object: 'list', data: results });
+  }
+
+  private async handleChatCompletions(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+    const body = await parseBody(req);
+    const messages = body.messages as OpenAIMessage[] | undefined;
+    if (!Array.isArray(messages)) {
+      sendJson(res, 400, { error: { message: 'messages array required', type: 'invalid_request_error' } });
+      return;
+    }
+
+    const lastMessage = messages.at(-1);
+    if (lastMessage?.tool_calls) {
+      const results = await this.processToolCalls(lastMessage.tool_calls);
+      sendJson(res, 200, this.createToolResultsCompletion(results));
+      return;
+    }
+
+    sendJson(res, 200, this.createAvailableToolsCompletion());
+  }
+
   getOpenAIFunctions(): OpenAIFunction[] {
     return this.getStructuredToolDefinitions();
   }
@@ -101,45 +143,17 @@ export class OpenAIAdapter extends BaseAdapter {
         }
 
         if (pathname === '/v1/functions/call' && req.method === 'POST') {
-          const body = await parseBody(req);
-          const { name, arguments: args } = body as { name: string; arguments: Record<string, unknown> };
-          if (!name) {
-            sendJson(res, 400, { error: { message: 'Function name required', type: 'invalid_request_error' } });
-            return;
-          }
-          const result = await this.callTool(name, args || {}, clientId);
-          sendJson(res, 200, { object: 'function_result', name, result });
+          await this.handleFunctionCall(req, res, clientId);
           return;
         }
 
         if (pathname === '/v1/tool_calls' && req.method === 'POST') {
-          const body = await parseBody(req);
-          const { tool_calls } = body as { tool_calls: OpenAIToolCall[] };
-          if (!tool_calls || !Array.isArray(tool_calls)) {
-            sendJson(res, 400, { error: { message: 'tool_calls array required', type: 'invalid_request_error' } });
-            return;
-          }
-          const results = await this.processToolCalls(tool_calls);
-          sendJson(res, 200, { object: 'list', data: results });
+          await this.handleToolCalls(req, res);
           return;
         }
 
         if (pathname === '/v1/chat/completions' && req.method === 'POST') {
-          const body = await parseBody(req);
-          const messages = body.messages as OpenAIMessage[] | undefined;
-          if (!messages || !Array.isArray(messages)) {
-            sendJson(res, 400, { error: { message: 'messages array required', type: 'invalid_request_error' } });
-            return;
-          }
-
-          const lastMessage = messages[messages.length - 1];
-          if (lastMessage?.tool_calls) {
-            const results = await this.processToolCalls(lastMessage.tool_calls);
-            sendJson(res, 200, this.createToolResultsCompletion(results));
-            return;
-          }
-
-          sendJson(res, 200, this.createAvailableToolsCompletion());
+          await this.handleChatCompletions(req, res);
           return;
         }
 

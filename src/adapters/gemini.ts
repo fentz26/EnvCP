@@ -8,6 +8,60 @@ export class GeminiAdapter extends BaseAdapter {
   private server: http.Server | null = null;
   private static readonly TOOLS_MESSAGE = 'EnvCP tools available. Use function calling to interact with environment variables.';
 
+  private async handleFunctionCall(req: http.IncomingMessage, res: http.ServerResponse, clientId: string): Promise<void> {
+    const body = await parseBody(req);
+    const { name, args } = body as { name: string; args: Record<string, unknown> };
+    if (!name) {
+      sendJson(res, 400, { error: { code: 400, message: 'Function name required', status: 'INVALID_ARGUMENT' } });
+      return;
+    }
+
+    const result = await this.callTool(name, args ?? {}, clientId);
+    sendJson(res, 200, { name, response: { result } });
+  }
+
+  private async handleFunctionCalls(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+    const body = await parseBody(req);
+    const { functionCalls } = body as { functionCalls: GeminiFunctionCall[] };
+    if (!Array.isArray(functionCalls)) {
+      sendJson(res, 400, { error: { code: 400, message: 'functionCalls array required', status: 'INVALID_ARGUMENT' } });
+      return;
+    }
+
+    const results = await this.processFunctionCalls(functionCalls);
+    sendJson(res, 200, { functionResponses: results });
+  }
+
+  private extractGenerateContentCalls(
+    contents: Array<{ parts: Array<{ functionCall?: GeminiFunctionCall }> }> | undefined,
+  ): GeminiFunctionCall[] {
+    const functionCalls: GeminiFunctionCall[] = [];
+
+    for (const content of contents ?? []) {
+      for (const part of content.parts ?? []) {
+        if (part.functionCall) {
+          functionCalls.push(part.functionCall);
+        }
+      }
+    }
+
+    return functionCalls;
+  }
+
+  private async handleGenerateContent(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+    const body = await parseBody(req);
+    const contents = body.contents as Array<{ parts: Array<{ functionCall?: GeminiFunctionCall }> }> | undefined;
+    const functionCalls = this.extractGenerateContentCalls(contents);
+
+    if (functionCalls.length > 0) {
+      const results = await this.processFunctionCalls(functionCalls);
+      sendJson(res, 200, this.createGenerateContentResponse(results));
+      return;
+    }
+
+    sendJson(res, 200, this.createAvailableToolsResponse());
+  }
+
   getGeminiFunctionDeclarations(): GeminiFunctionDeclaration[] {
     return this.getStructuredToolDefinitions();
   }
@@ -91,48 +145,17 @@ export class GeminiAdapter extends BaseAdapter {
         }
 
         if (pathname === '/v1/functions/call' && req.method === 'POST') {
-          const body = await parseBody(req);
-          const { name, args } = body as { name: string; args: Record<string, unknown> };
-          if (!name) {
-            sendJson(res, 400, { error: { code: 400, message: 'Function name required', status: 'INVALID_ARGUMENT' } });
-            return;
-          }
-          const result = await this.callTool(name, args || {}, clientId);
-          sendJson(res, 200, { name, response: { result } });
+          await this.handleFunctionCall(req, res, clientId);
           return;
         }
 
         if (pathname === '/v1/function_calls' && req.method === 'POST') {
-          const body = await parseBody(req);
-          const { functionCalls } = body as { functionCalls: GeminiFunctionCall[] };
-          if (!functionCalls || !Array.isArray(functionCalls)) {
-            sendJson(res, 400, { error: { code: 400, message: 'functionCalls array required', status: 'INVALID_ARGUMENT' } });
-            return;
-          }
-          const results = await this.processFunctionCalls(functionCalls);
-          sendJson(res, 200, { functionResponses: results });
+          await this.handleFunctionCalls(req, res);
           return;
         }
 
         if ((pathname === '/v1/models/envcp:generateContent' || pathname === '/v1beta/models/envcp:generateContent') && req.method === 'POST') {
-          const body = await parseBody(req);
-          const contents = body.contents as Array<{ parts: Array<{ functionCall?: GeminiFunctionCall }> }> | undefined;
-          const functionCalls: GeminiFunctionCall[] = [];
-          if (contents) {
-            for (const content of contents) {
-              for (const part of content.parts || []) {
-                if (part.functionCall) functionCalls.push(part.functionCall);
-              }
-            }
-          }
-
-          if (functionCalls.length > 0) {
-            const results = await this.processFunctionCalls(functionCalls);
-            sendJson(res, 200, this.createGenerateContentResponse(results));
-            return;
-          }
-
-          sendJson(res, 200, this.createAvailableToolsResponse());
+          await this.handleGenerateContent(req, res);
           return;
         }
 
