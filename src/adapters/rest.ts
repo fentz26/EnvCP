@@ -16,11 +16,15 @@ export class RESTAdapter extends BaseAdapter {
     super(config, projectPath, password, vaultPath, sessionPath);
 
     if (password) {
-      /* c8 ignore next 3 -- fire-and-forget reset path is verified by integration behavior */
-      this.clearApiKeyLockout().catch(() => {
-        // Silently ignore errors
-      });
+      this.scheduleApiKeyLockoutClear();
     }
+  }
+
+  private scheduleApiKeyLockoutClear(): void {
+    /* c8 ignore next 3 -- fire-and-forget reset path is verified by integration behavior */
+    this.clearApiKeyLockout().catch(() => {
+      // Silently ignore errors
+    });
   }
 
   private async clearApiKeyLockout(): Promise<void> {
