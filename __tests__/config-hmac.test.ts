@@ -58,6 +58,11 @@ describe('config-hmac', () => {
     expect(verifyConfigHmac('test', 'invalid-format', key)).toBe(false);
   });
 
+  it('verifyConfigHmac returns false for truncated digest without throwing', () => {
+    const key = deriveHmacKey('test-key');
+    expect(verifyConfigHmac('test', 'sha256:deadbeef', key)).toBe(false);
+  });
+
   it('deriveHmacKey produces consistent output', () => {
     expect(deriveHmacKey('same-input')).toBe(deriveHmacKey('same-input'));
   });

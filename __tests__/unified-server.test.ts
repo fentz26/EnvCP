@@ -164,6 +164,49 @@ describe('UnifiedServer', () => {
       const { status } = await fetch(authPort, 'GET', '/api/health', undefined, { 'x-api-key': '', 'Authorization': 'Bearer test-secret-key' });
       expect(status).toBe(200);
     });
+
+    it('applies lockout after repeated invalid API keys', async () => {
+      const isolatedDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-unified-lockout-'));
+      const isolatedPort = await getFreePort();
+      const isolatedServer = new UnifiedServer(
+        makeConfig(),
+        makeServerConfig({
+          mode: 'auto',
+          port: isolatedPort,
+          host: '127.0.0.1',
+          cors: true,
+          auto_detect: true,
+          api_key: 'test-secret-key',
+        }),
+        isolatedDir,
+      );
+
+      await isolatedServer.start();
+      try {
+        for (let i = 0; i < 4; i += 1) {
+          const { status } = await fetch(
+            isolatedPort,
+            'GET',
+            '/api/health',
+            undefined,
+            { 'x-api-key': 'wrong-key', Authorization: '' },
+          );
+          expect(status).toBe(401);
+        }
+
+        const { status } = await fetch(
+          isolatedPort,
+          'GET',
+          '/api/health',
+          undefined,
+          { 'x-api-key': 'wrong-key', Authorization: '' },
+        );
+        expect(status).toBe(429);
+      } finally {
+        isolatedServer.stop();
+        await fs.rm(isolatedDir, { recursive: true, force: true });
+      }
+    });
   });
 
   describe('CRUD via unified server', () => {

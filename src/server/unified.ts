@@ -7,7 +7,9 @@ import { EnvCPServer } from '../mcp/server.js';
 import { resolveVaultPath, resolveSessionPath } from '../vault/index.js';
 import { setCorsHeaders, sendJson, parseBody, validateApiKey, RateLimiter, rateLimitMiddleware } from '../utils/http.js';
 import { LogManager, resolveLogPath } from '../storage/index.js';
+import { LockoutManager } from '../utils/lockout.js';
 import * as http from 'http';
+import * as path from 'node:path';
 
 export class UnifiedServer {
   private config: EnvCPConfig;
@@ -21,6 +23,7 @@ export class UnifiedServer {
   private mcpServer: EnvCPServer | null = null;
   private httpServer: http.Server | null = null;
   private rateLimiter: RateLimiter = new RateLimiter(60, 60000);
+  private apiKeyLockoutManager?: LockoutManager;
   private logs: LogManager | null = null;
   private shutdownHandlers: { sigterm: () => void; sigint: () => void } | null = null;
 
@@ -167,6 +170,8 @@ if (rateLimitEnabled) {
   this.rateLimiter = new RateLimiter(rl?.requests_per_minute ?? 60, 60000);
 }
 const whitelist = rl?.whitelist ?? [];
+const sessionDir = path.dirname(sessionPath);
+this.apiKeyLockoutManager = api_key ? new LockoutManager(path.join(sessionDir, '.lockout-api')) : undefined;
     this.httpServer = http.createServer(async (req, res) => {
       setCorsHeaders(res, undefined, req.headers.origin);
 
@@ -182,10 +187,66 @@ const whitelist = rl?.whitelist ?? [];
 
       // API key validation
       if (api_key) {
+        if (this.apiKeyLockoutManager) {
+          const lockoutStatus = await this.apiKeyLockoutManager.check();
+          if (lockoutStatus.locked) {
+            if (lockoutStatus.permanent_locked) {
+              /* c8 ignore next -- remoteAddress is always defined in TCP connections */
+              await this.logs?.log({ timestamp: new Date().toISOString(), operation: 'auth_failure', variable: '', source: 'api', success: false, message: `Unified API authentication blocked - permanent lockout from ${req.socket.remoteAddress ?? 'unknown'}` });
+              sendJson(res, 403, { error: 'Authentication permanently locked - recovery required' });
+              return;
+            }
+
+            /* c8 ignore next -- remoteAddress is always defined in TCP connections */
+            await this.logs?.log({ timestamp: new Date().toISOString(), operation: 'auth_failure', variable: '', source: 'api', success: false, message: `Unified API authentication blocked - lockout for ${lockoutStatus.remaining_seconds}s from ${req.socket.remoteAddress ?? 'unknown'}` });
+            res.setHeader('Retry-After', lockoutStatus.remaining_seconds.toString());
+            sendJson(res, 429, { error: `Too many failed attempts - try again in ${lockoutStatus.remaining_seconds} seconds` });
+            return;
+          }
+
+          const ip = req.socket.remoteAddress || 'unknown';
+          const userAgent = req.headers['user-agent'] || 'unknown';
+          this.apiKeyLockoutManager.setNotificationSource('api', ip, userAgent);
+        }
+
         const providedKey = (req.headers['x-api-key'] ||
                            req.headers['x-goog-api-key'] ||
                            req.headers['authorization']?.replace(/^Bearer\s+/i, '')) as string | undefined;
         if (!validateApiKey(providedKey, api_key)) {
+          if (this.apiKeyLockoutManager) {
+            const bfpConfig = this.config.security?.brute_force_protection;
+            /* c8 ignore next 5 -- Zod always provides BFP fields; fallback ?? branches unreachable */
+            const lockoutThreshold = bfpConfig?.max_attempts ?? this.config.session?.lockout_threshold ?? 5;
+            const lockoutBaseSeconds = bfpConfig?.lockout_duration ?? this.config.session?.lockout_base_seconds ?? 60;
+            const progressiveDelay = bfpConfig?.progressive_delay ?? true;
+            const maxDelay = bfpConfig?.max_delay ?? 60;
+            const permanentThreshold = bfpConfig?.permanent_lockout_threshold ?? 0;
+
+            const status = await this.apiKeyLockoutManager.recordFailure(
+              lockoutThreshold,
+              lockoutBaseSeconds,
+              progressiveDelay,
+              maxDelay,
+              permanentThreshold,
+            );
+
+            if (status.locked) {
+              const message = status.permanent_locked
+                ? 'Authentication permanently locked - recovery required'
+                : `Too many failed attempts - try again in ${status.remaining_seconds} seconds`;
+
+              const statusCode = status.permanent_locked ? 403 : 429;
+              if (!status.permanent_locked) {
+                res.setHeader('Retry-After', status.remaining_seconds.toString());
+              }
+
+              /* c8 ignore next -- remoteAddress is always defined in TCP connections */
+              await this.logs?.log({ timestamp: new Date().toISOString(), operation: 'auth_failure', variable: '', source: 'api', success: false, message: `Invalid API key - ${status.permanent_locked ? 'permanent lockout' : `lockout for ${status.remaining_seconds}s`} from ${req.socket.remoteAddress ?? 'unknown'}` });
+              sendJson(res, statusCode, { error: message });
+              return;
+            }
+          }
+
           /* c8 ignore next -- logs is always initialized in start(); the undefined branch is unreachable in practice */
           await this.logs?.log({ timestamp: new Date().toISOString(), operation: 'auth_failure', variable: '', source: 'api', success: false, message: `Invalid API key from ${req.socket.remoteAddress ?? 'unknown'}` });
           sendJson(res, 401, { error: 'Invalid API key' });

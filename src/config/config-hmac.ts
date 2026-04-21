@@ -16,7 +16,10 @@ export function generateConfigHmac(configContent: string, key: string): string {
 export function verifyConfigHmac(configContent: string, hmac: string, key: string): boolean {
   if (!hmac.startsWith('sha256:')) return false;
   const expected = generateConfigHmac(configContent, key);
-  return crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(hmac));
+  const expectedBuffer = Buffer.from(expected);
+  const providedBuffer = Buffer.from(hmac);
+  if (expectedBuffer.length !== providedBuffer.length) return false;
+  return crypto.timingSafeEqual(expectedBuffer, providedBuffer);
 }
 
 export function deriveHmacKey(password: string): string {
