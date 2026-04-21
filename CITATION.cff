@@ -1,0 +1,20 @@
+cff-version: 1.2.0
+message: "If you use EnvCP, please cite it using the metadata below."
+type: software
+title: "EnvCP"
+version: "1.2.0"
+abstract: "Secure environment variable management for AI-assisted coding with local, encrypted, reference-only secret access."
+authors:
+  - family-names: "fentz26"
+email: "contact@envcp.org"
+url: "https://envcp.org"
+repository-code: "https://github.com/fentz26/EnvCP"
+repository-artifact: "https://www.npmjs.com/package/@fentz26/envcp"
+license: "SAL-1.0"
+keywords:
+  - "mcp"
+  - "environment variables"
+  - "secrets"
+  - "security"
+  - "ai"
+  - "model context protocol"
