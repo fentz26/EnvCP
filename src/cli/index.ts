@@ -2702,7 +2702,6 @@ program
     });
   });
 
-program
 interface ServeContext {
   projectPath: string;
   forceGlobalMode: boolean;
@@ -3133,7 +3132,6 @@ const confirm = await promptConfirm(options.merge ? 'Merge backup into current s
     });
   });
 
-program
 type DoctorCheck = { name: string; status: 'pass' | 'fail' | 'warn'; detail: string };
 
 async function collectStoreFileCheck(projectPath: string, config: EnvCPConfig): Promise<DoctorCheck> {
