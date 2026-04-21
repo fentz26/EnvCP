@@ -397,7 +397,14 @@ async function withSession(fn: (storage: StorageManager, password: string, confi
 
   let password = '';
 
-  if (config.session?.enabled !== false) {
+  if (config.session?.enabled === false) {
+    const authPassword = await getAuthPassword(projectPath, config);
+    if (!authPassword) {
+      return;
+    }
+    password = authPassword;
+    await sessionManager.destroy();
+  } else {
     const session = await sessionManager.load();
     if (!session) {
       const authPassword = await getAuthPassword(projectPath, config);
@@ -408,13 +415,6 @@ async function withSession(fn: (storage: StorageManager, password: string, confi
       await sessionManager.create(password);
     }
     password = sessionManager.getPassword() || password;
-  } else {
-    const authPassword = await getAuthPassword(projectPath, config);
-    if (!authPassword) {
-      return;
-    }
-    password = authPassword;
-    await sessionManager.destroy();
   }
 
   const storage = new StorageManager(vaultPath, config.storage.encrypted);
@@ -761,44 +761,52 @@ async function handleConfigMenuChoice(
   return false;
 }
 
+function buildConfigMenuTabs(config: EnvCPConfig, serviceConfig: ServiceConfig): MenuTab[] {
+  return [
+    {
+      label: 'General',
+      items: [
+        { label: 'Toggle session', value: 'general.session', hint: config.session.enabled ? '(on)' : '(off)' },
+        { label: 'Toggle sync to .env', value: 'general.sync', hint: config.sync.enabled ? '(on)' : '(off)' },
+        { label: 'Toggle startup service', value: 'general.startup', hint: serviceConfig.autostart ? '(on)' : '(off)' },
+        { label: 'Toggle masked values', value: 'general.mask', hint: config.access.mask_values ? '(on)' : '(off)' },
+        { label: 'Back', value: 'general.back' },
+      ],
+    },
+    {
+      label: 'Advanced',
+      items: [
+        { label: 'Toggle audit logging', value: 'advanced.audit', hint: config.audit.enabled ? '(on)' : '(off)' },
+        { label: 'Toggle AI confirmation', value: 'advanced.confirm', hint: config.access.require_confirmation ? '(on)' : '(off)' },
+        { label: 'Show startup status', value: 'advanced.startup-status', hint: '(service)' },
+        { label: 'Show config path', value: 'advanced.path', hint: '(envcp.yaml)' },
+        { label: 'Reload config guard', value: 'advanced.reload', hint: '(password required)' },
+        { label: 'Back', value: 'advanced.back' },
+      ],
+    },
+  ];
+}
+
+async function printNonInteractiveConfigSummary(config: EnvCPConfig): Promise<void> {
+  console.log(chalk.blue('EnvCP config'));
+  console.log(chalk.gray(`  Session: ${config.session.enabled ? 'on' : 'off'}`));
+  console.log(chalk.gray(`  Sync: ${config.sync.enabled ? 'on' : 'off'}`));
+  console.log(chalk.gray(`  Audit: ${config.audit.enabled ? 'on' : 'off'}`));
+  console.log(chalk.gray(`  Startup: ${await summarizeServiceStatus()}`));
+}
+
 async function runConfigMenu(): Promise<void> {
   const projectPath = process.cwd();
   const config = await loadConfig(projectPath);
   const serviceConfig = await loadServiceConfig();
 
   if (!isInteractiveCli()) {
-    console.log(chalk.blue('EnvCP config'));
-    console.log(chalk.gray(`  Session: ${config.session.enabled ? 'on' : 'off'}`));
-    console.log(chalk.gray(`  Sync: ${config.sync.enabled ? 'on' : 'off'}`));
-    console.log(chalk.gray(`  Audit: ${config.audit.enabled ? 'on' : 'off'}`));
-    console.log(chalk.gray(`  Startup: ${await summarizeServiceStatus()}`));
+    await printNonInteractiveConfigSummary(config);
     return;
   }
 
   while (true) {
-    const choice = await promptTabbedMenu('EnvCP config', [
-      {
-        label: 'General',
-        items: [
-          { label: 'Toggle session', value: 'general.session', hint: config.session.enabled ? '(on)' : '(off)' },
-          { label: 'Toggle sync to .env', value: 'general.sync', hint: config.sync.enabled ? '(on)' : '(off)' },
-          { label: 'Toggle startup service', value: 'general.startup', hint: serviceConfig.autostart ? '(on)' : '(off)' },
-          { label: 'Toggle masked values', value: 'general.mask', hint: config.access.mask_values ? '(on)' : '(off)' },
-          { label: 'Back', value: 'general.back' },
-        ],
-      },
-      {
-        label: 'Advanced',
-        items: [
-          { label: 'Toggle audit logging', value: 'advanced.audit', hint: config.audit.enabled ? '(on)' : '(off)' },
-          { label: 'Toggle AI confirmation', value: 'advanced.confirm', hint: config.access.require_confirmation ? '(on)' : '(off)' },
-          { label: 'Show startup status', value: 'advanced.startup-status', hint: '(service)' },
-          { label: 'Show config path', value: 'advanced.path', hint: '(envcp.yaml)' },
-          { label: 'Reload config guard', value: 'advanced.reload', hint: '(password required)' },
-          { label: 'Back', value: 'advanced.back' },
-        ],
-      },
-    ]);
+    const choice = await promptTabbedMenu('EnvCP config', buildConfigMenuTabs(config, serviceConfig));
 
     if (choice.endsWith('.back')) {
       return;
@@ -1696,17 +1704,58 @@ async function setupHsmIfRequested(
   }
 }
 
+function validateUnlockPassword(password: string, config: EnvCPConfig): boolean {
+  const { valid: passwordValid, warning: passwordWarning } = validatePassword(password, config.password || {});
+  if (!passwordValid) {
+    console.log(chalk.red('Invalid password'));
+    return false;
+  }
+  if (passwordWarning) {
+    console.log(chalk.yellow('⚠ Weak password detected'));
+  }
+  return true;
+}
+
+async function confirmNewVaultPassword(
+  projectPath: string,
+  config: EnvCPConfig,
+  password: string,
+): Promise<boolean> {
+  const confirmPasswordValue = await promptPassword('Confirm password:');
+  if (!secureCompare(Buffer.from(confirmPasswordValue, 'utf8'), Buffer.from(password, 'utf8'))) {
+    console.log(chalk.red('Passwords do not match'));
+    return false;
+  }
+  await maybeCreateRecoveryData(projectPath, config, password);
+  return true;
+}
+
+async function attemptStorageLoad(
+  storage: StorageManager,
+  storeExists: boolean,
+  lockoutManager: LockoutManager,
+  logManager: LogManager,
+  bfp: BfpSettings,
+): Promise<boolean> {
+  try {
+    await storage.load();
+    return true;
+  } catch {
+    if (storeExists) {
+      await recordUnlockFailure(lockoutManager, logManager, bfp);
+    } else {
+      console.log(chalk.red('Invalid password'));
+    }
+    return false;
+  }
+}
+
 async function runUnlockFlow(options: UnlockOptions = {}): Promise<void> {
   const { projectPath, config } = await resolveCliContext(options.global ? 'global' : undefined);
 
   const password = await promptPassword('Enter password:');
-  const { valid: passwordValid, warning: passwordWarning } = validatePassword(password, config.password || {});
-  if (!passwordValid) {
-    console.log(chalk.red('Invalid password'));
+  if (!validateUnlockPassword(password, config)) {
     return;
-  }
-  if (passwordWarning) {
-    console.log(chalk.yellow('⚠ Weak password detected'));
   }
 
   const sessionDir = path.dirname(resolveSessionPath(projectPath, config));
@@ -1747,23 +1796,11 @@ async function runUnlockFlow(options: UnlockOptions = {}): Promise<void> {
     return;
   }
 
-  if (!storeExists) {
-    const confirmPasswordValue = await promptPassword('Confirm password:');
-    if (!secureCompare(Buffer.from(confirmPasswordValue, 'utf8'), Buffer.from(password, 'utf8'))) {
-      console.log(chalk.red('Passwords do not match'));
-      return;
-    }
-    await maybeCreateRecoveryData(projectPath, config, password);
+  if (!storeExists && !await confirmNewVaultPassword(projectPath, config, password)) {
+    return;
   }
 
-  try {
-    await storage.load();
-  } catch {
-    if (storeExists) {
-      await recordUnlockFailure(lockoutManager, logManager, bfp);
-    } else {
-      console.log(chalk.red('Invalid password'));
-    }
+  if (!await attemptStorageLoad(storage, storeExists, lockoutManager, logManager, bfp)) {
     return;
   }
 
@@ -1813,6 +1850,15 @@ async function describeHomeState(): Promise<{ title: string; locked: boolean; se
   };
 }
 
+const HOME_MENU_ACTIONS: Record<string, () => Promise<void>> = {
+  unlock: () => runUnlockFlow(),
+  lock: () => runLockFlow(),
+  add: () => runAddSecretFlow(),
+  setup: () => runConfigMenu(),
+  config: () => runConfigMenu(),
+  rules: () => runRuleMenu(),
+};
+
 async function runInteractiveHome(): Promise<void> {
   if (!await isProjectInitialized()) {
     console.log(chalk.yellow('EnvCP is not set up yet in this folder.'));
@@ -1834,32 +1880,13 @@ async function runInteractiveHome(): Promise<void> {
     ];
     const choice = await promptMenu(homeState.title, choices, choices[0].value);
 
-    if (choice === 'unlock') {
-      await runUnlockFlow();
-      continue;
-    }
-    if (choice === 'lock') {
-      await runLockFlow();
-      continue;
-    }
-    if (choice === 'add') {
-      await runAddSecretFlow();
-      continue;
-    }
-    if (choice === 'setup') {
-      await runConfigMenu();
-      continue;
-    }
-    if (choice === 'config') {
-      await runConfigMenu();
-      continue;
-    }
-    if (choice === 'rules') {
-      await runRuleMenu();
-      continue;
-    }
     if (choice === 'exit') {
       return;
+    }
+
+    const action = HOME_MENU_ACTIONS[choice];
+    if (action) {
+      await action();
     }
   }
 }
@@ -2001,92 +2028,126 @@ const ruleCommand = program
     await runRuleMenu();
   });
 
+interface RuleScopeConfigs {
+  scope: 'merged' | 'project' | 'home';
+  config: EnvCPConfig;
+  projectConfig: EnvCPConfig | null;
+  homeConfig: EnvCPConfig | null;
+}
+
+function buildMergedOriginFn(scope: RuleScopeConfigs['scope']): (val: boolean, proj: boolean, home: boolean) => string {
+  const formatOrigin = (origin: string) => scope === 'merged' ? ` (${origin})` : '';
+  return (val, proj, home) =>
+    formatOrigin(scope === 'merged' ? describeMergedDefaultOrigin(val, proj, home) : scope);
+}
+
+function printDefaultRuleLines(scopes: RuleScopeConfigs): void {
+  const { config, projectConfig, homeConfig } = scopes;
+  const mergedOrigin = buildMergedOriginFn(scopes.scope);
+  const access = config.access;
+  const projAccess = projectConfig?.access;
+  const homeAccess = homeConfig?.access;
+
+  const fields: Array<{ label: string; value: boolean; proj: boolean; home: boolean; on: string; off: string }> = [
+    { label: 'read',           value: access.allow_ai_read,         proj: projAccess?.allow_ai_read ?? access.allow_ai_read,         home: homeAccess?.allow_ai_read ?? access.allow_ai_read,         on: 'allow', off: 'deny' },
+    { label: 'write',          value: access.allow_ai_write,        proj: projAccess?.allow_ai_write ?? access.allow_ai_write,        home: homeAccess?.allow_ai_write ?? access.allow_ai_write,        on: 'allow', off: 'deny' },
+    { label: 'delete',         value: access.allow_ai_delete,       proj: projAccess?.allow_ai_delete ?? access.allow_ai_delete,       home: homeAccess?.allow_ai_delete ?? access.allow_ai_delete,       on: 'allow', off: 'deny' },
+    { label: 'export',         value: access.allow_ai_export,       proj: projAccess?.allow_ai_export ?? access.allow_ai_export,       home: homeAccess?.allow_ai_export ?? access.allow_ai_export,       on: 'allow', off: 'deny' },
+    { label: 'run',            value: access.allow_ai_execute,      proj: projAccess?.allow_ai_execute ?? access.allow_ai_execute,      home: homeAccess?.allow_ai_execute ?? access.allow_ai_execute,      on: 'allow', off: 'deny' },
+    { label: 'list names',     value: access.allow_ai_active_check, proj: projAccess?.allow_ai_active_check ?? access.allow_ai_active_check, home: homeAccess?.allow_ai_active_check ?? access.allow_ai_active_check, on: 'allow', off: 'deny' },
+    { label: 'confirmation',   value: access.require_confirmation,  proj: projAccess?.require_confirmation ?? access.require_confirmation,   home: homeAccess?.require_confirmation ?? access.require_confirmation,   on: 'on', off: 'off' },
+  ];
+
+  for (const field of fields) {
+    const label = field.value ? field.on : field.off;
+    console.log(chalk.gray(`  Default ${field.label}: ${label}${mergedOrigin(field.value, field.proj, field.home)}`));
+  }
+}
+
+function printVariableRulesSection(scopes: RuleScopeConfigs): void {
+  const { scope, config, projectConfig, homeConfig } = scopes;
+  const variableRules = Object.entries(config.access.variable_rules || {});
+  if (variableRules.length === 0) {
+    console.log(chalk.gray('  Variable rules: none'));
+    return;
+  }
+  console.log(chalk.gray('  Variable rules:'));
+  for (const [name, rule] of variableRules) {
+    const origin = scope === 'merged'
+      ? describeMergedVariableRuleOrigin(
+        name,
+        rule,
+        projectConfig!.access.variable_rules || {},
+        homeConfig!.access.variable_rules || {},
+      )
+      : scope;
+    console.log(chalk.gray(`    ${name} [${origin}]`));
+    for (const line of formatVariableRuleLines(rule)) {
+      console.log(chalk.gray(`      ${line}`));
+    }
+  }
+}
+
+function printClientRulesSection(scopes: RuleScopeConfigs): void {
+  const { scope, config, projectConfig, homeConfig } = scopes;
+  const clientRules = Object.entries(config.access.client_rules || {});
+  if (clientRules.length === 0) {
+    console.log(chalk.gray('  Who rules: none'));
+    return;
+  }
+
+  console.log(chalk.gray('  Who rules:'));
+  for (const [clientId, rule] of clientRules) {
+    const origin = scope === 'merged'
+      ? describeMergedClientRuleOrigin(
+        clientId,
+        rule,
+        projectConfig!.access.client_rules || {},
+        homeConfig!.access.client_rules || {},
+      )
+      : scope;
+    console.log(chalk.gray(`    ${formatClientLabel(clientId)} [${origin}]`));
+    for (const line of formatClientRuleLines(rule)) {
+      console.log(chalk.gray(`      ${line}`));
+    }
+
+    const variableRules = Object.entries(rule.variable_rules || {});
+    if (variableRules.length === 0) continue;
+    console.log(chalk.gray('      variable rules:'));
+    for (const [name, variableRule] of variableRules) {
+      console.log(chalk.gray(`        ${name}`));
+      for (const line of formatVariableRuleLines(variableRule)) {
+        console.log(chalk.gray(`          ${line}`));
+      }
+    }
+  }
+}
+
+async function runRuleListCommand(options: { scope?: string }): Promise<void> {
+  const scope = parseRuleScope(options.scope, 'merged');
+  const config = await loadScopedConfig(process.cwd(), scope);
+  const projectConfig = scope === 'merged' ? await loadScopedConfig(process.cwd(), 'project') : null;
+  const homeConfig = scope === 'merged' ? await loadScopedConfig(process.cwd(), 'home') : null;
+
+  console.log(chalk.blue('EnvCP rules'));
+  console.log(chalk.gray(`  Scope: ${scope}`));
+
+  const scopes: RuleScopeConfigs = { scope, config, projectConfig, homeConfig };
+  printDefaultRuleLines(scopes);
+  printVariableRulesSection(scopes);
+  printClientRulesSection(scopes);
+
+  if (scope === 'merged') {
+    console.log(chalk.gray('  Tip: use `envcp rule set-default ... --who <id>` or `envcp rule set-variable ... --who <id>` to edit one client.'));
+  }
+}
+
 ruleCommand
   .command('list')
   .description('List default, variable-specific, and who-specific AI rules')
   .option('--scope <scope>', 'Rule scope: merged | project | home', 'merged')
   .action(async (options) => {
-    const scope = parseRuleScope(options.scope, 'merged');
-    const config = await loadScopedConfig(process.cwd(), scope);
-    const projectConfig = scope === 'merged' ? await loadScopedConfig(process.cwd(), 'project') : null;
-    const homeConfig = scope === 'merged' ? await loadScopedConfig(process.cwd(), 'home') : null;
-    console.log(chalk.blue('EnvCP rules'));
-    console.log(chalk.gray(`  Scope: ${scope}`));
-    const formatOrigin = (origin: string) => scope === 'merged' ? ` (${origin})` : '';
-    const mergedOrigin = (val: boolean, proj: boolean, home: boolean) =>
-      formatOrigin(scope === 'merged' ? describeMergedDefaultOrigin(val, proj, home) : scope);
-    const readLabel = config.access.allow_ai_read ? 'allow' : 'deny';
-    const writeLabel = config.access.allow_ai_write ? 'allow' : 'deny';
-    const deleteLabel = config.access.allow_ai_delete ? 'allow' : 'deny';
-    const exportLabel = config.access.allow_ai_export ? 'allow' : 'deny';
-    const runLabel = config.access.allow_ai_execute ? 'allow' : 'deny';
-    const listLabel = config.access.allow_ai_active_check ? 'allow' : 'deny';
-    const confirmLabel = config.access.require_confirmation ? 'on' : 'off';
-    console.log(chalk.gray(`  Default read: ${readLabel}${mergedOrigin(config.access.allow_ai_read, projectConfig!.access.allow_ai_read, homeConfig!.access.allow_ai_read)}`));
-    console.log(chalk.gray(`  Default write: ${writeLabel}${mergedOrigin(config.access.allow_ai_write, projectConfig!.access.allow_ai_write, homeConfig!.access.allow_ai_write)}`));
-    console.log(chalk.gray(`  Default delete: ${deleteLabel}${mergedOrigin(config.access.allow_ai_delete, projectConfig!.access.allow_ai_delete, homeConfig!.access.allow_ai_delete)}`));
-    console.log(chalk.gray(`  Default export: ${exportLabel}${mergedOrigin(config.access.allow_ai_export, projectConfig!.access.allow_ai_export, homeConfig!.access.allow_ai_export)}`));
-    console.log(chalk.gray(`  Default run: ${runLabel}${mergedOrigin(config.access.allow_ai_execute, projectConfig!.access.allow_ai_execute, homeConfig!.access.allow_ai_execute)}`));
-    console.log(chalk.gray(`  Default list names: ${listLabel}${mergedOrigin(config.access.allow_ai_active_check, projectConfig!.access.allow_ai_active_check, homeConfig!.access.allow_ai_active_check)}`));
-    console.log(chalk.gray(`  Default confirmation: ${confirmLabel}${mergedOrigin(config.access.require_confirmation, projectConfig!.access.require_confirmation, homeConfig!.access.require_confirmation)}`));
-
-    const variableRules = Object.entries(config.access.variable_rules || {});
-    if (variableRules.length === 0) {
-      console.log(chalk.gray('  Variable rules: none'));
-    } else {
-      console.log(chalk.gray('  Variable rules:'));
-      for (const [name, rule] of variableRules) {
-        const origin = scope === 'merged'
-          ? describeMergedVariableRuleOrigin(
-            name,
-            rule,
-            projectConfig!.access.variable_rules || {},
-            homeConfig!.access.variable_rules || {},
-          )
-          : scope;
-        console.log(chalk.gray(`    ${name} [${origin}]`));
-        for (const line of formatVariableRuleLines(rule)) {
-          console.log(chalk.gray(`      ${line}`));
-        }
-      }
-    }
-
-    const clientRules = Object.entries(config.access.client_rules || {});
-    if (clientRules.length === 0) {
-      console.log(chalk.gray('  Who rules: none'));
-      return;
-    }
-
-    console.log(chalk.gray('  Who rules:'));
-    for (const [clientId, rule] of clientRules) {
-      const origin = scope === 'merged'
-        ? describeMergedClientRuleOrigin(
-          clientId,
-          rule,
-          projectConfig!.access.client_rules || {},
-          homeConfig!.access.client_rules || {},
-        )
-        : scope;
-      console.log(chalk.gray(`    ${formatClientLabel(clientId)} [${origin}]`));
-      for (const line of formatClientRuleLines(rule)) {
-        console.log(chalk.gray(`      ${line}`));
-      }
-
-      const variableRules = Object.entries(rule.variable_rules || {});
-      if (variableRules.length > 0) {
-        console.log(chalk.gray('      variable rules:'));
-        for (const [name, variableRule] of variableRules) {
-          console.log(chalk.gray(`        ${name}`));
-          for (const line of formatVariableRuleLines(variableRule)) {
-            console.log(chalk.gray(`          ${line}`));
-          }
-        }
-      }
-    }
-
-    if (scope === 'merged') {
-      console.log(chalk.gray('  Tip: use `envcp rule set-default ... --who <id>` or `envcp rule set-variable ... --who <id>` to edit one client.'));
-    }
+    await runRuleListCommand(options);
   });
 
 ruleCommand
@@ -2356,6 +2417,75 @@ program
     });
   });
 
+interface AddSourceOptions {
+  value?: string;
+  fromEnv?: string;
+  fromFile?: string;
+  stdin?: boolean;
+}
+
+interface ResolvedAddSource {
+  value?: string;
+  sourced: boolean;
+}
+
+function readSourceFlags(options: AddSourceOptions): string[] {
+  const sourceFlags: string[] = [];
+  if (options.value !== undefined) sourceFlags.push('--value');
+  if (options.fromEnv !== undefined) sourceFlags.push('--from-env');
+  if (options.fromFile !== undefined) sourceFlags.push('--from-file');
+  if (options.stdin) sourceFlags.push('--stdin');
+  return sourceFlags;
+}
+
+async function readStdinValue(): Promise<string> {
+  return new Promise<string>((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    process.stdin.on('data', (c) => chunks.push(typeof c === 'string' ? Buffer.from(c) : c));
+    process.stdin.on('end', () => resolve(Buffer.concat(chunks).toString('utf-8').replace(/\r?\n$/, '')));
+    process.stdin.on('error', reject);
+  });
+}
+
+async function resolveAddValueSource(options: AddSourceOptions): Promise<ResolvedAddSource> {
+  if (options.value !== undefined) {
+    if (process.stdout.isTTY) {
+      console.warn(chalk.yellow('⚠  --value is visible in shell history and process list. Use --from-env, --from-file, or --stdin for secrets.'));
+    }
+    return { value: options.value, sourced: true };
+  }
+
+  if (options.fromEnv) {
+    const envValue = process.env[options.fromEnv];
+    if (envValue === undefined) {
+      console.error(chalk.red(`Error: environment variable '${options.fromEnv}' is not set`));
+      process.exit(1);
+    }
+    return { value: envValue, sourced: true };
+  }
+
+  if (options.fromFile) {
+    try {
+      const raw = await fs.readFile(options.fromFile, 'utf-8');
+      return { value: raw.replace(/\r?\n$/, ''), sourced: true };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(chalk.red(`Error: cannot read '${options.fromFile}': ${msg}`));
+      process.exit(1);
+    }
+  }
+
+  if (options.stdin) {
+    if (process.stdin.isTTY) {
+      console.error(chalk.red('Error: --stdin requires piped input (e.g., `echo "$SECRET" | envcp add NAME --stdin`)'));
+      process.exit(1);
+    }
+    return { value: await readStdinValue(), sourced: true };
+  }
+
+  return { value: undefined, sourced: false };
+}
+
 program
   .command('add <name>')
   .description('Add a new environment variable')
@@ -2366,58 +2496,16 @@ program
   .option('-t, --tags <tags>', 'Tags (comma-separated)')
   .option('-d, --description <desc>', 'Description')
   .action(async (name, options) => {
-    const sourceFlags = [
-      options.value !== undefined ? '--value' : null,
-      options.fromEnv !== undefined ? '--from-env' : null,
-      options.fromFile !== undefined ? '--from-file' : null,
-      options.stdin ? '--stdin' : null,
-    ].filter(Boolean) as string[];
+    const sourceFlags = readSourceFlags(options);
 
     if (sourceFlags.length > 1) {
       console.error(chalk.red(`Error: ${sourceFlags.join(', ')} are mutually exclusive — pick one`));
       process.exit(1);
     }
 
-    let value: string | undefined;
-    let sourced = false;
-
-    if (options.value !== undefined) {
-      value = options.value;
-      sourced = true;
-      if (process.stdout.isTTY) {
-        console.warn(chalk.yellow('⚠  --value is visible in shell history and process list. Use --from-env, --from-file, or --stdin for secrets.'));
-      }
-    } else if (options.fromEnv) {
-      const envValue = process.env[options.fromEnv];
-      if (envValue === undefined) {
-        console.error(chalk.red(`Error: environment variable '${options.fromEnv}' is not set`));
-        process.exit(1);
-      }
-      value = envValue;
-      sourced = true;
-    } else if (options.fromFile) {
-      try {
-        const raw = await fs.readFile(options.fromFile, 'utf-8');
-        value = raw.replace(/\r?\n$/, '');
-        sourced = true;
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        console.error(chalk.red(`Error: cannot read '${options.fromFile}': ${msg}`));
-        process.exit(1);
-      }
-    } else if (options.stdin) {
-      if (process.stdin.isTTY) {
-        console.error(chalk.red('Error: --stdin requires piped input (e.g., `echo "$SECRET" | envcp add NAME --stdin`)'));
-        process.exit(1);
-      }
-      value = await new Promise<string>((resolve, reject) => {
-        const chunks: Buffer[] = [];
-        process.stdin.on('data', (c) => chunks.push(typeof c === 'string' ? Buffer.from(c) : c));
-        process.stdin.on('end', () => resolve(Buffer.concat(chunks).toString('utf-8').replace(/\r?\n$/, '')));
-        process.stdin.on('error', reject);
-      });
-      sourced = true;
-    }
+    const resolved = await resolveAddValueSource(options);
+    let value = resolved.value;
+    const sourced = resolved.sourced;
 
     await withSession(async (storage, _password, config) => {
       let tags: string[] = [];
@@ -2615,39 +2703,127 @@ program
   });
 
 program
-  .command('serve')
-  .description('Start EnvCP server')
-  .option('-m, --mode <mode>', 'Server mode: mcp, rest, openai, gemini, all, auto', 'auto')
-  .option('--port <port>', 'HTTP port (for non-MCP modes)', '3456')
-  .option('--host <host>', 'HTTP host', '127.0.0.1')
-  .option('-k, --api-key <key>', 'API key for HTTP authentication')
-  .option('--global', 'Force the global vault at ~/.envcp (skip project lookup)')
-.action(async (options) => {
-  const home = process.env.HOME || process.env.USERPROFILE || os.homedir();
-  const globalConfigPath = path.join(home, '.envcp', 'config.yaml');
+interface ServeContext {
+  projectPath: string;
+  forceGlobalMode: boolean;
+}
 
-  // Resolve where the vault lives: --global forces home; otherwise walk up
-  // from cwd looking for envcp.yaml; otherwise fall back to a global install.
-  let projectPath: string;
-  let forceGlobalMode = false;
-  if (options.global) {
-    projectPath = home;
-    forceGlobalMode = true;
-  } else {
-    const found = await findProjectRoot(process.cwd());
-    if (found) {
-      projectPath = found;
-    } else if (await pathExists(globalConfigPath)) {
-      projectPath = home;
-      forceGlobalMode = true;
-    } else {
-      process.stderr.write(
-        'Error: No envcp.yaml found in cwd or any ancestor, and no global config at ~/.envcp/config.yaml.\n' +
-        'Run `envcp init` (project) or `envcp init --global` first.\n'
-      );
+async function resolveServeProjectPath(home: string, forceGlobal: boolean): Promise<ServeContext> {
+  if (forceGlobal) {
+    return { projectPath: home, forceGlobalMode: true };
+  }
+  const found = await findProjectRoot(process.cwd());
+  if (found) {
+    return { projectPath: found, forceGlobalMode: false };
+  }
+  const globalConfigPath = path.join(home, '.envcp', 'config.yaml');
+  if (await pathExists(globalConfigPath)) {
+    return { projectPath: home, forceGlobalMode: true };
+  }
+  process.stderr.write(
+    'Error: No envcp.yaml found in cwd or any ancestor, and no global config at ~/.envcp/config.yaml.\n' +
+    'Run `envcp init` (project) or `envcp init --global` first.\n'
+  );
+  process.exit(1);
+}
+
+async function ensureServePassword(
+  config: EnvCPConfig,
+  sessionPath: string,
+  mode: string,
+  forceGlobalMode: boolean,
+): Promise<string | null> {
+  const sessionManager = new SessionManager(
+    sessionPath,
+    config.session?.timeout_minutes || 30,
+    config.session?.max_extensions || 5,
+  );
+  await sessionManager.init();
+
+  const session = await sessionManager.load();
+  if (!session) {
+    if (mode === 'mcp') {
+      process.stderr.write(`Error: No active session at ${sessionPath}. Run \`envcp unlock${forceGlobalMode ? ' --global' : ''}\` first.\n`);
       process.exit(1);
     }
+
+    const password = await promptPassword('Enter password:');
+    const { valid: passwordValid, warning: passwordWarning } = validatePassword(password, config.password || {});
+    if (!passwordValid) {
+      console.log(chalk.red('Invalid password'));
+      return null;
+    }
+    if (passwordWarning) {
+      console.log(chalk.yellow('⚠ Weak password detected'));
+    }
+
+    await sessionManager.create(password);
+    return sessionManager.getPassword() || password;
   }
+
+  return sessionManager.getPassword() || '';
+}
+
+async function maybeStartMcpServer(
+  config: EnvCPConfig,
+  projectPath: string,
+  vaultPath: string,
+  sessionPath: string,
+  password: string | undefined,
+): Promise<void> {
+  const { EnvCPServer } = await import('../mcp/server.js');
+  const server = new EnvCPServer(config, projectPath, password, vaultPath, sessionPath);
+  await server.start();
+}
+
+function printServeEndpoints(mode: string): void {
+  if (mode === 'auto' || mode === 'all') {
+    console.log(chalk.gray('  REST API:     /api/*'));
+    console.log(chalk.gray('  OpenAI:       /v1/chat/completions, /v1/functions/*'));
+    console.log(chalk.gray('  Gemini:       /v1/models/envcp:generateContent'));
+    console.log('');
+    console.log(chalk.yellow('Auto-detection enabled: Server will detect client type from request headers'));
+    return;
+  }
+  if (mode === 'rest') {
+    console.log(chalk.gray('  GET    /api/variables       - List variables'));
+    console.log(chalk.gray('  GET    /api/variables/:name - Get variable'));
+    console.log(chalk.gray('  POST   /api/variables       - Create variable'));
+    console.log(chalk.gray('  PUT    /api/variables/:name - Update variable'));
+    console.log(chalk.gray('  DELETE /api/variables/:name - Delete variable'));
+    console.log(chalk.gray('  POST   /api/sync            - Sync to .env'));
+    console.log(chalk.gray('  POST   /api/tools/:name     - Call tool'));
+    return;
+  }
+  if (mode === 'openai') {
+    console.log(chalk.gray('  GET    /v1/models           - List models'));
+    console.log(chalk.gray('  GET    /v1/functions        - List functions'));
+    console.log(chalk.gray('  POST   /v1/functions/call   - Call function'));
+    console.log(chalk.gray('  POST   /v1/tool_calls       - Process tool calls'));
+    console.log(chalk.gray('  POST   /v1/chat/completions - Chat completions'));
+    return;
+  }
+  if (mode === 'gemini') {
+    console.log(chalk.gray('  GET    /v1/models           - List models'));
+    console.log(chalk.gray('  GET    /v1/tools            - List tools'));
+    console.log(chalk.gray('  POST   /v1/functions/call   - Call function'));
+    console.log(chalk.gray('  POST   /v1/function_calls   - Process function calls'));
+    console.log(chalk.gray('  POST   /v1/models/envcp:generateContent'));
+  }
+}
+
+interface ServeOptions {
+  mode: string;
+  port: string;
+  host: string;
+  apiKey?: string;
+  global?: boolean;
+}
+
+async function runServeCommand(options: ServeOptions): Promise<void> {
+  const home = process.env.HOME || process.env.USERPROFILE || os.homedir();
+  const ctx = await resolveServeProjectPath(home, !!options.global);
+  const { projectPath, forceGlobalMode } = ctx;
 
   const configGuard = new ConfigGuard(projectPath);
   const config = await configGuard.loadAndLock();
@@ -2658,124 +2834,69 @@ program
   const vaultPath = await resolveVaultPath(projectPath, config);
   const sessionPath = resolveSessionPath(projectPath, config);
 
-  const mode = options.mode as string;
-    const port = Number.parseInt(options.port, 10);
-    const host = options.host;
-    const apiKey = options.apiKey;
+  const mode = options.mode;
+  const port = Number.parseInt(options.port, 10);
+  const host = options.host;
+  const apiKey = options.apiKey;
 
-    let password = '';
+  let password = '';
 
-    // Passwordless mode: skip all session/password logic
-    if (config.encryption?.enabled === false) {
-      if (mode === 'mcp') {
-        const { EnvCPServer } = await import('../mcp/server.js');
-        const server = new EnvCPServer(config, projectPath, undefined, vaultPath, sessionPath);
-        await server.start();
-        return;
-      }
-    } else {
-      // Encrypted mode: need password
-      const sessionManager = new SessionManager(
-        sessionPath,
-        config.session?.timeout_minutes || 30,
-        config.session?.max_extensions || 5
-      );
-      await sessionManager.init();
-
-      const session = await sessionManager.load();
-
-      if (!session && !password) {
-        // MCP mode uses stdio — can't prompt interactively
-        if (mode === 'mcp') {
-          process.stderr.write(`Error: No active session at ${sessionPath}. Run \`envcp unlock${forceGlobalMode ? ' --global' : ''}\` first.\n`);
-          process.exit(1);
-        }
-
-password = await promptPassword('Enter password:');
-
-        const { valid: passwordValid, warning: passwordWarning } = validatePassword(password, config.password || {});
-        if (!passwordValid) {
-          // nosem: no tainted data flows to log
-          console.log(chalk.red("Invalid password"));
-          return;
-        }
-        if (passwordValid && passwordWarning) {
-          console.log(chalk.yellow('⚠ Weak password detected'));
-        }
-
-        await sessionManager.create(password);
-      }
-
-      password = sessionManager.getPassword() || password;
-
-      // MCP mode uses stdio
-      if (mode === 'mcp') {
-        const { EnvCPServer } = await import('../mcp/server.js');
-        const server = new EnvCPServer(config, projectPath, password, vaultPath, sessionPath);
-        await server.start();
-        return;
-      }
+  if (config.encryption?.enabled === false) {
+    if (mode === 'mcp') {
+      await maybeStartMcpServer(config, projectPath, vaultPath, sessionPath, undefined);
+      return;
     }
+  } else {
+    const resolvedPassword = await ensureServePassword(config, sessionPath, mode, forceGlobalMode);
+    if (resolvedPassword === null) return;
+    password = resolvedPassword;
 
-// HTTP-based modes
-const { UnifiedServer } = await import('../server/unified.js');
-
-const serverConfig = {
-  mode: mode as 'mcp' | 'rest' | 'openai' | 'gemini' | 'all' | 'auto',
-  port,
-  host,
-  api_key: apiKey,
-  cors: true,
-  auto_detect: mode === 'auto',
-  rate_limit: config.server?.rate_limit,
-};
-
-    const server = new UnifiedServer(config, serverConfig, projectPath, password);
-    
-    console.log(chalk.blue('Starting EnvCP server...'));
-    console.log(chalk.gray(`  Mode: ${mode}`));
-    console.log(chalk.gray(`  Host: ${host}`));
-    console.log(chalk.gray(`  Port: ${port}`));
-    if (apiKey) console.log(chalk.gray(`  API Key: ${'*'.repeat(apiKey.length)}`));
-    console.log('');
-    
-    await server.start();
-    
-    console.log(chalk.green(`EnvCP server running at http://${host}:${port}`));
-    console.log('');
-    console.log(chalk.blue('Available endpoints:'));
-    
-    if (mode === 'auto' || mode === 'all') {
-      console.log(chalk.gray('  REST API:     /api/*'));
-      console.log(chalk.gray('  OpenAI:       /v1/chat/completions, /v1/functions/*'));
-      console.log(chalk.gray('  Gemini:       /v1/models/envcp:generateContent'));
-      console.log('');
-      console.log(chalk.yellow('Auto-detection enabled: Server will detect client type from request headers'));
-    } else if (mode === 'rest') {
-      console.log(chalk.gray('  GET    /api/variables       - List variables'));
-      console.log(chalk.gray('  GET    /api/variables/:name - Get variable'));
-      console.log(chalk.gray('  POST   /api/variables       - Create variable'));
-      console.log(chalk.gray('  PUT    /api/variables/:name - Update variable'));
-      console.log(chalk.gray('  DELETE /api/variables/:name - Delete variable'));
-      console.log(chalk.gray('  POST   /api/sync            - Sync to .env'));
-      console.log(chalk.gray('  POST   /api/tools/:name     - Call tool'));
-    } else if (mode === 'openai') {
-      console.log(chalk.gray('  GET    /v1/models           - List models'));
-      console.log(chalk.gray('  GET    /v1/functions        - List functions'));
-      console.log(chalk.gray('  POST   /v1/functions/call   - Call function'));
-      console.log(chalk.gray('  POST   /v1/tool_calls       - Process tool calls'));
-      console.log(chalk.gray('  POST   /v1/chat/completions - Chat completions'));
-    } else if (mode === 'gemini') {
-      console.log(chalk.gray('  GET    /v1/models           - List models'));
-      console.log(chalk.gray('  GET    /v1/tools            - List tools'));
-      console.log(chalk.gray('  POST   /v1/functions/call   - Call function'));
-      console.log(chalk.gray('  POST   /v1/function_calls   - Process function calls'));
-      console.log(chalk.gray('  POST   /v1/models/envcp:generateContent'));
+    if (mode === 'mcp') {
+      await maybeStartMcpServer(config, projectPath, vaultPath, sessionPath, password);
+      return;
     }
-    
-    console.log('');
-    console.log(chalk.gray('Press Ctrl+C to stop'));
-  });
+  }
+
+  const { UnifiedServer } = await import('../server/unified.js');
+  const serverConfig = {
+    mode: mode as 'mcp' | 'rest' | 'openai' | 'gemini' | 'all' | 'auto',
+    port,
+    host,
+    api_key: apiKey,
+    cors: true,
+    auto_detect: mode === 'auto',
+    rate_limit: config.server?.rate_limit,
+  };
+
+  const server = new UnifiedServer(config, serverConfig, projectPath, password);
+
+  console.log(chalk.blue('Starting EnvCP server...'));
+  console.log(chalk.gray(`  Mode: ${mode}`));
+  console.log(chalk.gray(`  Host: ${host}`));
+  console.log(chalk.gray(`  Port: ${port}`));
+  if (apiKey) console.log(chalk.gray(`  API Key: ${'*'.repeat(apiKey.length)}`));
+  console.log('');
+
+  await server.start();
+
+  console.log(chalk.green(`EnvCP server running at http://${host}:${port}`));
+  console.log('');
+  console.log(chalk.blue('Available endpoints:'));
+  printServeEndpoints(mode);
+
+  console.log('');
+  console.log(chalk.gray('Press Ctrl+C to stop'));
+}
+
+program
+  .command('serve')
+  .description('Start EnvCP server')
+  .option('-m, --mode <mode>', 'Server mode: mcp, rest, openai, gemini, all, auto', 'auto')
+  .option('--port <port>', 'HTTP port (for non-MCP modes)', '3456')
+  .option('--host <host>', 'HTTP host', '127.0.0.1')
+  .option('-k, --api-key <key>', 'API key for HTTP authentication')
+  .option('--global', 'Force the global vault at ~/.envcp (skip project lookup)')
+  .action(runServeCommand);
 
 program
   .command('export')
@@ -3013,122 +3134,139 @@ const confirm = await promptConfirm(options.merge ? 'Merge backup into current s
   });
 
 program
+type DoctorCheck = { name: string; status: 'pass' | 'fail' | 'warn'; detail: string };
+
+async function collectStoreFileCheck(projectPath: string, config: EnvCPConfig): Promise<DoctorCheck> {
+  const storePath = path.join(projectPath, config.storage.path);
+  if (!await pathExists(storePath)) {
+    return { name: 'Store file', status: 'warn', detail: 'Not found (no variables stored yet)' };
+  }
+  const stat = await fs.stat(storePath);
+  return { name: 'Store file', status: 'pass', detail: `Exists (${stat.size} bytes)` };
+}
+
+async function collectSessionCheck(projectPath: string, config: EnvCPConfig, encrypted: boolean): Promise<DoctorCheck> {
+  if (!encrypted) {
+    return { name: 'Session', status: 'pass', detail: 'Not needed (passwordless mode)' };
+  }
+  const sessionManager = new SessionManager(
+    resolveSessionPath(projectPath, config),
+    config.session?.timeout_minutes || 30,
+    config.session?.max_extensions || 5,
+  );
+  await sessionManager.init();
+  const session = await sessionManager.load();
+  if (session) {
+    const remaining = sessionManager.getRemainingTime();
+    return { name: 'Session', status: 'pass', detail: `Active (${remaining}min remaining)` };
+  }
+  return { name: 'Session', status: 'warn', detail: 'No active session — run `envcp unlock`' };
+}
+
+async function collectRecoveryCheck(projectPath: string, config: EnvCPConfig): Promise<DoctorCheck | null> {
+  if (config.security?.mode === 'recoverable') {
+    const recoveryPath = path.join(projectPath, config.security.recovery_file || '.envcp/.recovery');
+    if (await pathExists(recoveryPath)) {
+      return { name: 'Recovery file', status: 'pass', detail: 'Present' };
+    }
+    return { name: 'Recovery file', status: 'warn', detail: 'Missing — password recovery will not work' };
+  }
+  if (config.security?.mode === 'hard-lock') {
+    return { name: 'Recovery file', status: 'pass', detail: 'N/A (hard-lock mode)' };
+  }
+  return null;
+}
+
+async function collectEnvcpDirCheck(projectPath: string): Promise<DoctorCheck> {
+  const envcpDir = path.join(projectPath, '.envcp');
+  if (await pathExists(envcpDir)) {
+    return { name: '.envcp directory', status: 'pass', detail: 'Exists' };
+  }
+  return { name: '.envcp directory', status: 'fail', detail: 'Missing — run `envcp init`' };
+}
+
+async function collectGitignoreCheck(projectPath: string): Promise<DoctorCheck> {
+  const gitignorePath = path.join(projectPath, '.gitignore');
+  if (!await pathExists(gitignorePath)) {
+    return { name: '.gitignore', status: 'warn', detail: 'No .gitignore found' };
+  }
+  const gitignore = await fs.readFile(gitignorePath, 'utf8');
+  if (gitignore.includes('.envcp/')) {
+    return { name: '.gitignore', status: 'pass', detail: '.envcp/ is ignored' };
+  }
+  return { name: '.gitignore', status: 'warn', detail: '.envcp/ not in .gitignore — secrets may be committed' };
+}
+
+async function collectMcpCheck(projectPath: string): Promise<DoctorCheck> {
+  const mcpResult = await registerMcpConfig(projectPath);
+  const totalMcp = mcpResult.registered.length + mcpResult.alreadyConfigured.length;
+  if (totalMcp > 0) {
+    return { name: 'MCP registration', status: 'pass', detail: `${mcpResult.alreadyConfigured.length} tool(s) configured` };
+  }
+  return { name: 'MCP registration', status: 'warn', detail: 'No AI tools detected' };
+}
+
+async function runDoctorChecks(projectPath: string): Promise<DoctorCheck[]> {
+  const checks: DoctorCheck[] = [];
+  try {
+    const config = await loadConfig(projectPath);
+    const encrypted = config.encryption?.enabled !== false;
+
+    checks.push(
+      { name: 'Config', status: 'pass', detail: `Loaded (project: ${config.project || 'unnamed'})` },
+      { name: 'Encryption', status: 'pass', detail: encrypted ? 'Enabled (AES-256-GCM)' : 'Disabled (passwordless)' },
+      { name: 'Security mode', status: 'pass', detail: config.security?.mode ?? 'recoverable' },
+      await collectStoreFileCheck(projectPath, config),
+      await collectSessionCheck(projectPath, config, encrypted),
+    );
+
+    const recovery = await collectRecoveryCheck(projectPath, config);
+    if (recovery) checks.push(recovery);
+
+    checks.push(
+      await collectEnvcpDirCheck(projectPath),
+      await collectGitignoreCheck(projectPath),
+      await collectMcpCheck(projectPath),
+    );
+  } catch (error) {
+    checks.push({ name: 'Config', status: 'fail', detail: `Failed to load: ${(error as Error).message}` });
+  }
+  return checks;
+}
+
+function printDoctorSummary(checks: DoctorCheck[]): void {
+  console.log(chalk.blue('\nEnvCP Doctor\n'));
+  for (const check of checks) {
+    let icon: string;
+    if (check.status === 'pass') {
+      icon = chalk.green('PASS');
+    } else if (check.status === 'warn') {
+      icon = chalk.yellow('WARN');
+    } else {
+      icon = chalk.red('FAIL');
+    }
+    console.log(`  [${icon}] ${check.name}: ${chalk.gray(check.detail)}`);
+  }
+
+  const fails = checks.filter(c => c.status === 'fail').length;
+  const warns = checks.filter(c => c.status === 'warn').length;
+  console.log('');
+  if (fails > 0) {
+    console.log(chalk.red(`${fails} issue(s) need attention.`));
+  } else if (warns > 0) {
+    console.log(chalk.yellow(`All checks passed with ${warns} warning(s).`));
+  } else {
+    console.log(chalk.green('All checks passed.'));
+  }
+}
+
+program
   .command('doctor')
   .description('Diagnose common issues and check system health')
   .action(async () => {
     const projectPath = process.cwd();
-    const checks: { name: string; status: 'pass' | 'fail' | 'warn'; detail: string }[] = [];
-
-    // 1. Config check
-    try {
-      const config = await loadConfig(projectPath);
-      checks.push({ name: 'Config', status: 'pass', detail: `Loaded (project: ${config.project || 'unnamed'})` });
-
-      // 2. Encryption mode
-      const encrypted = config.encryption?.enabled !== false;
-      checks.push({ name: 'Encryption', status: 'pass', detail: encrypted ? 'Enabled (AES-256-GCM)' : 'Disabled (passwordless)' });
-
-      // 3. Security mode
-      checks.push({ name: 'Security mode', status: 'pass', detail: config.security?.mode ?? 'recoverable' });
-
-      // 4. Store file
-      const storePath = path.join(projectPath, config.storage.path);
-      if (await pathExists(storePath)) {
-        const stat = await fs.stat(storePath);
-        checks.push({ name: 'Store file', status: 'pass', detail: `Exists (${stat.size} bytes)` });
-      } else {
-        checks.push({ name: 'Store file', status: 'warn', detail: 'Not found (no variables stored yet)' });
-      }
-
-      // 5. Session status
-      if (encrypted) {
-        const sessionManager = new SessionManager(
-          resolveSessionPath(projectPath, config),
-          config.session?.timeout_minutes || 30,
-          config.session?.max_extensions || 5
-        );
-        await sessionManager.init();
-        const session = await sessionManager.load();
-        if (session) {
-          const remaining = sessionManager.getRemainingTime();
-          checks.push({ name: 'Session', status: 'pass', detail: `Active (${remaining}min remaining)` });
-        } else {
-          checks.push({ name: 'Session', status: 'warn', detail: 'No active session — run `envcp unlock`' });
-        }
-      } else {
-        checks.push({ name: 'Session', status: 'pass', detail: 'Not needed (passwordless mode)' });
-      }
-
-      // 6. Recovery file
-      if (config.security?.mode === 'recoverable') {
-        const recoveryPath = path.join(projectPath, config.security.recovery_file || '.envcp/.recovery');
-        if (await pathExists(recoveryPath)) {
-          checks.push({ name: 'Recovery file', status: 'pass', detail: 'Present' });
-        } else {
-          checks.push({ name: 'Recovery file', status: 'warn', detail: 'Missing — password recovery will not work' });
-        }
-      } else if (config.security?.mode === 'hard-lock') {
-        checks.push({ name: 'Recovery file', status: 'pass', detail: 'N/A (hard-lock mode)' });
-      }
-
-      // 7. .envcp directory
-      const envcpDir = path.join(projectPath, '.envcp');
-      if (await pathExists(envcpDir)) {
-        checks.push({ name: '.envcp directory', status: 'pass', detail: 'Exists' });
-      } else {
-        checks.push({ name: '.envcp directory', status: 'fail', detail: 'Missing — run `envcp init`' });
-      }
-
-      // 8. .gitignore check
-      const gitignorePath = path.join(projectPath, '.gitignore');
-      if (await pathExists(gitignorePath)) {
-        const gitignore = await fs.readFile(gitignorePath, 'utf8');
-        if (gitignore.includes('.envcp/')) {
-          checks.push({ name: '.gitignore', status: 'pass', detail: '.envcp/ is ignored' });
-        } else {
-          checks.push({ name: '.gitignore', status: 'warn', detail: '.envcp/ not in .gitignore — secrets may be committed' });
-        }
-      } else {
-        checks.push({ name: '.gitignore', status: 'warn', detail: 'No .gitignore found' });
-      }
-
-      // 9. MCP registration
-      const mcpResult = await registerMcpConfig(projectPath);
-      const totalMcp = mcpResult.registered.length + mcpResult.alreadyConfigured.length;
-      if (totalMcp > 0) {
-        checks.push({ name: 'MCP registration', status: 'pass', detail: `${mcpResult.alreadyConfigured.length} tool(s) configured` });
-      } else {
-        checks.push({ name: 'MCP registration', status: 'warn', detail: 'No AI tools detected' });
-      }
-
-    } catch (error) {
-      checks.push({ name: 'Config', status: 'fail', detail: `Failed to load: ${(error as Error).message}` });
-    }
-
-    // Print results
-    console.log(chalk.blue('\nEnvCP Doctor\n'));
-    for (const check of checks) {
-      let icon: string;
-      if (check.status === 'pass') {
-        icon = chalk.green('PASS');
-      } else if (check.status === 'warn') {
-        icon = chalk.yellow('WARN');
-      } else {
-        icon = chalk.red('FAIL');
-      }
-      console.log(`  [${icon}] ${check.name}: ${chalk.gray(check.detail)}`);
-    }
-
-    const fails = checks.filter(c => c.status === 'fail').length;
-    const warns = checks.filter(c => c.status === 'warn').length;
-    console.log('');
-    if (fails > 0) {
-      console.log(chalk.red(`${fails} issue(s) need attention.`));
-    } else if (warns > 0) {
-      console.log(chalk.yellow(`All checks passed with ${warns} warning(s).`));
-    } else {
-      console.log(chalk.green('All checks passed.'));
-    }
+    const checks = await runDoctorChecks(projectPath);
+    printDoctorSummary(checks);
   });
 
 program

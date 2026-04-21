@@ -595,6 +595,20 @@ export class UnifiedServer {
     sendJson(res, 200, openaiAdapter.createAvailableToolsCompletion());
   }
 
+  private async handleOpenAIFunctionCall(res: http.ServerResponse, body: Record<string, unknown>): Promise<void> {
+    const b = body as { name?: unknown; arguments?: unknown };
+    const name = typeof b.name === 'string' ? b.name : '';
+    const args = (b.arguments && typeof b.arguments === 'object') ? b.arguments as Record<string, unknown> : {};
+    const result = await this.openaiAdapter!.callTool(name, args);
+    sendJson(res, 200, { object: 'function_result', name, result });
+  }
+
+  private async handleOpenAIToolCalls(res: http.ServerResponse, body: Record<string, unknown>): Promise<void> {
+    const { tool_calls } = body as { tool_calls?: unknown };
+    const results = await this.openaiAdapter!.processToolCalls(Array.isArray(tool_calls) ? tool_calls : []);
+    sendJson(res, 200, { object: 'list', data: results });
+  }
+
   private async handleOpenAIRequest(req: http.IncomingMessage, res: http.ServerResponse, parsedUrl?: URL): Promise<void> {
     if (!this.openaiAdapter) {
       sendJson(res, 503, { error: { message: 'OpenAI adapter not initialized', type: 'service_unavailable' } });
@@ -623,18 +637,12 @@ export class UnifiedServer {
       }
 
       if (pathname === '/v1/functions/call' && method === 'POST') {
-        const b = body as { name?: unknown; arguments?: unknown };
-        const name = typeof b.name === 'string' ? b.name : '';
-        const args = (b.arguments && typeof b.arguments === 'object') ? b.arguments as Record<string, unknown> : {};
-        const result = await this.openaiAdapter.callTool(name, args);
-        sendJson(res, 200, { object: 'function_result', name, result });
+        await this.handleOpenAIFunctionCall(res, body);
         return;
       }
 
       if (pathname === '/v1/tool_calls' && method === 'POST') {
-        const { tool_calls } = body as { tool_calls?: unknown };
-        const results = await this.openaiAdapter.processToolCalls(Array.isArray(tool_calls) ? tool_calls : []);
-        sendJson(res, 200, { object: 'list', data: results });
+        await this.handleOpenAIToolCalls(res, body);
         return;
       }
 
@@ -683,6 +691,21 @@ export class UnifiedServer {
     sendJson(res, 200, geminiAdapter.createAvailableToolsResponse());
   }
 
+  private async handleGeminiFunctionCall(res: http.ServerResponse, body: Record<string, unknown>): Promise<void> {
+    const bg = body as { name?: unknown; args?: unknown };
+    /* c8 ignore next -- function name validation always returns string for valid requests; the else branch is unreachable in practice */
+    const name = typeof bg.name === 'string' ? bg.name : '';
+    const args = (bg.args && typeof bg.args === 'object') ? bg.args as Record<string, unknown> : {};
+    const result = await this.geminiAdapter!.callTool(name, args);
+    sendJson(res, 200, { name, response: { result } });
+  }
+
+  private async handleGeminiFunctionCalls(res: http.ServerResponse, body: Record<string, unknown>): Promise<void> {
+    const { functionCalls: rawFunctionCalls } = body as { functionCalls?: unknown };
+    const results = await this.geminiAdapter!.processFunctionCalls(Array.isArray(rawFunctionCalls) ? rawFunctionCalls : []);
+    sendJson(res, 200, { functionResponses: results });
+  }
+
   private async handleGeminiRequest(req: http.IncomingMessage, res: http.ServerResponse, parsedUrl?: URL): Promise<void> {
     if (!this.geminiAdapter) {
       sendJson(res, 503, { error: { code: 503, message: 'Gemini adapter not initialized', status: 'UNAVAILABLE' } });
@@ -703,19 +726,12 @@ export class UnifiedServer {
       }
 
       if (pathname === '/v1/functions/call' && method === 'POST') {
-        const bg = body as { name?: unknown; args?: unknown };
-        /* c8 ignore next -- function name validation always returns string for valid requests; the else branch is unreachable in practice */
-        const name = typeof bg.name === 'string' ? bg.name : '';
-        const args = (bg.args && typeof bg.args === 'object') ? bg.args as Record<string, unknown> : {};
-        const result = await this.geminiAdapter.callTool(name, args);
-        sendJson(res, 200, { name, response: { result } });
+        await this.handleGeminiFunctionCall(res, body);
         return;
       }
 
       if (pathname === '/v1/function_calls' && method === 'POST') {
-        const { functionCalls: rawFunctionCalls } = body as { functionCalls?: unknown };
-        const results = await this.geminiAdapter.processFunctionCalls(Array.isArray(rawFunctionCalls) ? rawFunctionCalls : []);
-        sendJson(res, 200, { functionResponses: results });
+        await this.handleGeminiFunctionCalls(res, body);
         return;
       }
 
