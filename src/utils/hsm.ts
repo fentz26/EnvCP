@@ -1,8 +1,8 @@
-import * as crypto from 'crypto';
-import * as fs from 'fs/promises';
-import * as path from 'path';
-import { execFile } from 'child_process';
-import { promisify } from 'util';
+import * as crypto from 'node:crypto';
+import * as fs from 'node:fs/promises';
+import * as path from 'node:path';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { ensureDir } from './fs.js';
 import { EnvCPConfig } from '../types.js';
 import { secureZero } from './secure-memory.js';
@@ -32,7 +32,7 @@ export interface HsmBackend {
 
 export class GpgBackend implements HsmBackend {
   readonly name = 'GPG';
-  private keyId: string | undefined;
+  private readonly keyId: string | undefined;
 
   constructor(keyId?: string) {
     this.keyId = keyId;
@@ -100,8 +100,8 @@ const YUBIKEY_PIV_SLOT = '9d';
 
 export class YubiKeyPivBackend implements HsmBackend {
   readonly name = 'YubiKey PIV';
-  private serial: string | undefined;
-  private requireTouch: boolean;
+  private readonly serial: string | undefined;
+  private readonly requireTouch: boolean;
 
   constructor(serial?: string, requireTouch = true) {
     this.serial = serial;
@@ -115,7 +115,7 @@ export class YubiKeyPivBackend implements HsmBackend {
   async isAvailable(): Promise<boolean> {
     try {
       const { stdout } = await execFileAsync('ykman', this.ykmanArgs(['list']));
-      return (stdout as string).trim().length > 0;
+      return stdout.trim().length > 0;
     } catch {
       return false;
     }
@@ -177,7 +177,7 @@ export class YubiKeyPivBackend implements HsmBackend {
   private async _exportCert(): Promise<string> {
     const args = this.ykmanArgs(['piv', 'certificates', 'export', YUBIKEY_PIV_SLOT, '-']);
     const { stdout } = await execFileAsync('ykman', args);
-    return stdout as string;
+    return stdout;
   }
 
   private async _pivDecrypt(encryptedKey: Buffer): Promise<Buffer> {
@@ -198,7 +198,7 @@ export class YubiKeyPivBackend implements HsmBackend {
     if (available) {
       try {
         const { stdout } = await execFileAsync('ykman', this.ykmanArgs(['list']));
-        device = (stdout as string).trim().split('\n')[0];
+        device = stdout.trim().split('\n')[0];
       } catch { /* ignore */ }
     }
     return { available, type: 'yubikey-piv', device };
@@ -213,9 +213,9 @@ type Pkcs11Lib = typeof import('pkcs11js');
 
 export class Pkcs11Backend implements HsmBackend {
   readonly name = 'PKCS#11';
-  private libPath: string;
-  private slotIndex: number;
-  private keyLabel: string | undefined;
+  private readonly libPath: string;
+  private readonly slotIndex: number;
+  private readonly keyLabel: string | undefined;
 
   constructor(libPath: string, slotIndex = 0, keyLabel?: string) {
     this.libPath = libPath;
@@ -258,7 +258,7 @@ export class Pkcs11Backend implements HsmBackend {
       const encrypted = pkcs11.C_Encrypt(session, plaintext, Buffer.alloc(512));
 
       pkcs11.C_CloseSession(session);
-      return (encrypted as Buffer).toString('base64');
+      return encrypted.toString('base64');
     } finally {
       pkcs11.C_Finalize();
     }
@@ -282,7 +282,7 @@ export class Pkcs11Backend implements HsmBackend {
       const decrypted = pkcs11.C_Decrypt(session, ciphertext, Buffer.alloc(512));
 
       pkcs11.C_CloseSession(session);
-      return decrypted as Buffer;
+      return decrypted;
     } finally {
       pkcs11.C_Finalize();
     }
@@ -323,8 +323,8 @@ export class Pkcs11Backend implements HsmBackend {
 export type HsmConfig = NonNullable<EnvCPConfig['hsm']>;
 
 export class HsmManager {
-  private backend: HsmBackend;
-  private protectedKeyPath: string;
+  private readonly backend: HsmBackend;
+  private readonly protectedKeyPath: string;
 
   constructor(backend: HsmBackend, protectedKeyPath: string) {
     this.backend = backend;

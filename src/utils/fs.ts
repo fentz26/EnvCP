@@ -1,5 +1,5 @@
-import * as fs from 'fs/promises';
-import * as path from 'path';
+import * as fs from 'node:fs/promises';
+import * as path from 'node:path';
 
 export async function pathExists(p: string): Promise<boolean> {
   try {
@@ -45,10 +45,10 @@ export function parseEnv(content: string): Record<string, string> {
     }
 
     // Handle basic escape sequences
-    value = value.replace(/\\n/g, '\n')
-                 .replace(/\\t/g, '\t')
-                 .replace(/\\r/g, '\r')
-                 .replace(/\\\\/g, '\\');
+    value = value.replaceAll('\\n', '\n')
+                 .replaceAll('\\t', '\t')
+                 .replaceAll('\\r', '\r')
+                 .replaceAll('\\\\', '\\');
 
     result[key] = value;
   }

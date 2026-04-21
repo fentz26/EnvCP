@@ -1,5 +1,5 @@
-import * as fs from 'fs/promises';
-import * as path from 'path';
+import * as fs from 'node:fs/promises';
+import * as path from 'node:path';
 import * as yaml from 'js-yaml';
 import { ensureDir, pathExists } from '../utils/fs.js';
 import { EnvCPConfig, EnvCPConfigSchema } from '../types.js';
@@ -422,7 +422,7 @@ export function parseEnvFile(content: string): Record<string, string> {
 
     // Strip quotes and unescape
     if (value.startsWith('"') && value.endsWith('"')) {
-      value = value.slice(1, -1).replace(/\\"/g, '"').replace(/\\\\/g, '\\');
+      value = value.slice(1, -1).replaceAll('\\"', '"').replaceAll('\\\\', '\\');
     } else if (value.startsWith("'") && value.endsWith("'")) {
       value = value.slice(1, -1);
     }
@@ -444,9 +444,9 @@ const _patternCache = new Map<string, RegExp>();
 export function matchesPattern(name: string, pattern: string): boolean {
   let regex = _patternCache.get(pattern);
   if (!regex) {
-    const escaped = pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&');
+    const escaped = pattern.replaceAll(/[.+?^${}()|[\]\\]/g, '\\$&');
     // eslint-disable-next-line security/detect-non-literal-regexp -- glob pattern from config; metacharacters escaped above
-    regex = new RegExp('^' + escaped.replace(/\*/g, '.*') + '$');
+    regex = new RegExp('^' + escaped.replaceAll('*', '.*') + '$');
     _patternCache.set(pattern, regex);
   }
   return regex.test(name);

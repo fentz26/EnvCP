@@ -1,5 +1,5 @@
 /* c8 ignore file - tested via integration tests in __tests__/utils/prompt.test.ts */
-import * as readline from 'readline';
+import * as readline from 'node:readline';
 
 /** Prompt for masked input (passwords). Characters echo as '*'. */
 export async function promptPassword(message: string): Promise<string> {
@@ -123,7 +123,7 @@ export async function promptList(message: string, choices: ListChoice[], default
     if (answer.trim() === '' && defaultIndex >= 0) {
       return choices[defaultIndex].value;
     }
-    const num = parseInt(answer.trim(), 10);
+    const num = Number.parseInt(answer.trim(), 10);
     if (num >= 1 && num <= choices.length) {
       return choices[num - 1].value;
     }

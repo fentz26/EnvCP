@@ -4,9 +4,9 @@ import { maskValue, hashVariablePassword, verifyVariablePassword, encryptVariabl
 import { canAccess, isBlacklisted, canAIActiveCheck, validateVariableName, matchesPattern } from '../config/manager.js';
 import { SessionManager } from '../utils/session.js';
 import { resolveSessionPath } from '../vault/index.js';
-import * as fs from 'fs/promises';
+import * as fs from 'node:fs/promises';
 import { pathExists, parseEnv } from '../utils/fs.js';
-import * as path from 'path';
+import * as path from 'node:path';
 
 export abstract class BaseAdapter {
   protected storage: StorageManager;
@@ -236,7 +236,7 @@ export abstract class BaseAdapter {
     /* c8 ignore next -- Zod always provides logs_roles default; || fallback unreachable */
     const roles = this.config.access.logs_roles || {};
     /* c8 ignore next */
-    if (clientId && Object.prototype.hasOwnProperty.call(roles, clientId)) {
+    if (clientId && Object.hasOwn(roles, clientId)) {
       return roles[clientId];
     }
     /* c8 ignore next -- Zod always provides logs_default_role; ?? fallback unreachable */
@@ -632,7 +632,7 @@ export abstract class BaseAdapter {
       }
 
       const needsQuoting = /[\s#"'\\]/.test(variable.value);
-      const val = needsQuoting ? `"${variable.value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"` : variable.value;
+      const val = needsQuoting ? `"${variable.value.replaceAll('\\', '\\\\').replaceAll('"', '\\"')}"` : variable.value;
       lines.push(`${name}=${val}`);
     }
 
@@ -682,7 +682,7 @@ export abstract class BaseAdapter {
     const envVars = parseEnv(content);
 
     const needsQuoting = /[\s#"'\\]/.test(variable.value);
-    const quotedValue = needsQuoting ? `"${variable.value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"` : variable.value;
+    const quotedValue = needsQuoting ? `"${variable.value.replaceAll('\\', '\\\\').replaceAll('"', '\\"')}"` : variable.value;
 
     if (envVars[args.name]) {
       const lines = content.split('\n');
@@ -851,7 +851,7 @@ export abstract class BaseAdapter {
 
     // Enforce require_command_whitelist: allowed_commands must exist and contain the program
     if (this.config.access.run_safety?.require_command_whitelist) {
-      if (!this.config.access.allowed_commands || !this.config.access.allowed_commands.includes(prog)) {
+      if (!this.config.access.allowed_commands?.includes(prog)) {
         throw new Error(`Command '${prog}' is not in the allowed commands list (require_command_whitelist is enabled)`);
       }
     } else if (this.config.access.allowed_commands && this.config.access.allowed_commands.length > 0) {

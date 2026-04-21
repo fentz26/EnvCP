@@ -1,6 +1,6 @@
-import * as fs from 'fs';
-import * as nodefs from 'fs/promises';
-import * as path from 'path';
+import * as fs from 'node:fs';
+import * as nodefs from 'node:fs/promises';
+import * as path from 'node:path';
 import { withLock } from './lock.js';
 import { ensureDir } from './fs.js';
 import { Session, SessionSchema } from '../types.js';

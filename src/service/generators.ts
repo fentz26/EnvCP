@@ -11,9 +11,7 @@ export interface GeneratorContext {
 
 export function buildServeArgs(config: ServiceConfig): string[] {
   const args = ['serve'];
-  args.push('--mode', config.server.mode);
-  args.push('--port', String(config.server.port));
-  args.push('--host', config.server.host);
+  args.push('--mode', config.server.mode, '--port', String(config.server.port), '--host', config.server.host);
   if (config.server.api_key) {
     args.push('--api-key', config.server.api_key);
   }
@@ -99,9 +97,9 @@ cd /d "${ctx.workingDirectory}"
 
 function escapeXml(s: string): string {
   return s
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&apos;');
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&apos;');
 }

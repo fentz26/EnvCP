@@ -1,6 +1,6 @@
-import { execFile } from 'child_process';
-import { promisify } from 'util';
-import * as os from 'os';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+import * as os from 'node:os';
 
 const execFileAsync = promisify(execFile);
 
@@ -165,7 +165,7 @@ class WindowsKeychain implements KeychainBackend {
       const target = `${service}:${account}`;
       const { stdout } = await execFileAsync('powershell', [
         '-NoProfile', '-Command',
-        `$cred = Get-StoredCredential -Target '${target.replace(/'/g, "''")}'; if ($cred) { $cred.GetNetworkCredential().Password } else { '' }`,
+        `$cred = Get-StoredCredential -Target '${target.replaceAll("'", "''")}'; if ($cred) { $cred.GetNetworkCredential().Password } else { '' }`,
       ]);
       return stdout.trim() || null;
     } catch {

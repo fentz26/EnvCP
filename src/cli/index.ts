@@ -1177,13 +1177,13 @@ program
 
         const excluded = config.sync.exclude?.some((pattern: string) => {
           // eslint-disable-next-line security/detect-non-literal-regexp -- glob pattern from config; metacharacters escaped above
-          const regex = new RegExp('^' + pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*') + '$');
+          const regex = new RegExp('^' + pattern.replaceAll(/[.+?^${}()|[\]\\]/g, '\\$&').replaceAll('*', '.*') + '$');
           return regex.test(name);
         });
         if (excluded) continue;
 
         const needsQuoting = /[\s#"'\\]/.test(variable.value);
-        const val = needsQuoting ? `"${variable.value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"` : variable.value;
+        const val = needsQuoting ? `"${variable.value.replaceAll('\\', '\\\\').replaceAll('"', '\\"')}"` : variable.value;
         lines.push(`${name}=${val}`);
       }
 
@@ -1205,7 +1205,7 @@ program
 
           const excluded = config.sync.exclude?.some((pattern: string) => {
             // eslint-disable-next-line security/detect-non-literal-regexp -- glob pattern from config; metacharacters escaped above
-            const regex = new RegExp('^' + pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*') + '$');
+            const regex = new RegExp('^' + pattern.replaceAll(/[.+?^${}()|[\]\\]/g, '\\$&').replaceAll('*', '.*') + '$');
             return regex.test(name);
           });
           if (excluded) continue;
@@ -1458,7 +1458,7 @@ const exportPassword = await promptPassword('Set export password:');
         default: {
           const lines = Object.entries(variables).map(([k, v]) => {
             const needsQuoting = /[\s#"'\\]/.test(v.value);
-            const val = needsQuoting ? `"${v.value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"` : v.value;
+            const val = needsQuoting ? `"${v.value.replaceAll('\\', '\\\\').replaceAll('"', '\\"')}"` : v.value;
             return `${k}=${val}`;
           });
           output = lines.join('\n');
@@ -1578,7 +1578,7 @@ program
         return;
       }
 
-      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+      const timestamp = new Date().toISOString().replaceAll(/[:.]/g, '-');
       const defaultPath = path.join(projectPath, `.envcp/backup-${timestamp}.enc`);
       const outputPath = options.output || defaultPath;
 

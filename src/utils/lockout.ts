@@ -1,5 +1,5 @@
-import * as fs from 'fs/promises';
-import * as path from 'path';
+import * as fs from 'node:fs/promises';
+import * as path from 'node:path';
 import { ensureDir } from './fs.js';
 
 interface LockoutData {
@@ -35,8 +35,8 @@ export type LockoutNotificationCallback = (event: {
 }) => void;
 
 export class LockoutManager {
-  private lockoutPath: string;
-  private notificationCallback?: LockoutNotificationCallback;
+  private readonly lockoutPath: string;
+  private readonly notificationCallback?: LockoutNotificationCallback;
   private notificationSource: 'cli' | 'api' | 'unknown' = 'unknown';
   private notificationIp?: string;
   private notificationUserAgent?: string;

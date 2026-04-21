@@ -1,5 +1,5 @@
-import * as crypto from 'crypto';
-import * as os from 'os';
+import * as crypto from 'node:crypto';
+import * as os from 'node:os';
 
 const HMAC_ALGORITHM = 'sha256';
 const PBKDF2_ITERATIONS = 100000;

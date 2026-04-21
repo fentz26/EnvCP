@@ -49,7 +49,7 @@ export class EnvCPServer {
       const clientId = clientInfo?.name || 'mcp';
 
       try {
-        const result = await this.adapter.callTool(name, (args || {}) as Record<string, unknown>, clientId);
+        const result = await this.adapter.callTool(name, args || {}, clientId);
         return {
           content: [
             {

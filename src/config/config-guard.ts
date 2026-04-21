@@ -1,7 +1,7 @@
-import * as crypto from 'crypto';
-import * as fs from 'fs';
-import * as path from 'path';
-import { watch, type FSWatcher } from 'fs';
+import * as crypto from 'node:crypto';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import { watch, type FSWatcher } from 'node:fs';
 import { EnvCPConfig } from '../types.js';
 import { loadConfig } from './manager.js';
 import { getGlobalVaultPath } from '../vault/index.js';

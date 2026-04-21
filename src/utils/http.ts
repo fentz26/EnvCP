@@ -1,5 +1,5 @@
-import * as crypto from 'crypto';
-import * as http from 'http';
+import * as crypto from 'node:crypto';
+import * as http from 'node:http';
 
 const MAX_BODY_SIZE = 1024 * 1024; // 1MB
 

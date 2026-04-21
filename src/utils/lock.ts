@@ -1,4 +1,4 @@
-import * as fs from 'fs/promises';
+import * as fs from 'node:fs/promises';
 
 const MAX_RETRIES = 5;
 const BASE_DELAY_MS = 50;

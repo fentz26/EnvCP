@@ -1,6 +1,6 @@
-import * as fs from 'fs/promises';
-import * as path from 'path';
-import { spawn, spawnSync, SpawnSyncReturns } from 'child_process';
+import * as fs from 'node:fs/promises';
+import * as path from 'node:path';
+import { spawn, spawnSync, SpawnSyncReturns } from 'node:child_process';
 import { ensureDir, pathExists } from '../utils/fs.js';
 import {
   ServiceConfig,

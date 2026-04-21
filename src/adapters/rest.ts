@@ -4,8 +4,8 @@ import { VERSION } from '../version.js';
 import { setCorsHeaders, sendJson, parseBody, validateApiKey, RateLimiter, rateLimitMiddleware } from '../utils/http.js';
 import { LockoutManager } from '../utils/lockout.js';
 import { resolveSessionPath } from '../vault/index.js';
-import * as http from 'http';
-import * as path from 'path';
+import * as http from 'node:http';
+import * as path from 'node:path';
 
 export class RESTAdapter extends BaseAdapter {
   private server: http.Server | null = null;
@@ -14,8 +14,7 @@ export class RESTAdapter extends BaseAdapter {
 
   constructor(config: EnvCPConfig, projectPath: string, password?: string, vaultPath?: string, sessionPath?: string) {
     super(config, projectPath, password, vaultPath, sessionPath);
-    
-    // If password is provided (vault already unlocked), clear any API key lockout
+
     if (password) {
       this.clearApiKeyLockout().catch(() => {
         // Silently ignore errors

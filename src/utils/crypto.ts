@@ -1,4 +1,4 @@
-import * as crypto from 'crypto';
+import * as crypto from 'node:crypto';
 import argon2 from 'argon2';
 import { secureZero } from './secure-memory.js';
 
@@ -258,7 +258,7 @@ export function scrubOutput(output: string, secrets: string[], extraPatterns: st
   const sorted = [...secrets].sort((a, b) => b.length - a.length);
   for (const secret of sorted) {
     if (secret.length < 4) continue; // too short — would redact noise
-    const escaped = secret.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const escaped = secret.replaceAll(/[.*+?^${}()|[\]\\]/g, '\\$&');
     // eslint-disable-next-line security/detect-non-literal-regexp -- input is fully escaped above
     result = result.replace(new RegExp(escaped, 'g'), '[REDACTED]');
   }

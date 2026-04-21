@@ -1,6 +1,6 @@
-import * as fs from 'fs/promises';
-import * as path from 'path';
-import * as os from 'os';
+import * as fs from 'node:fs/promises';
+import * as path from 'node:path';
+import * as os from 'node:os';
 import * as yaml from 'js-yaml';
 import { pathExists, ensureDir } from '../utils/fs.js';
 
@@ -63,7 +63,7 @@ export async function loadServiceConfig(configPath?: string): Promise<ServiceCon
 // SECURITY: Service unit/script generators interpolate these values into
 // systemd ExecStart, launchd plist, and Windows .bat. Reject characters that
 // could break out of those formats (newlines, quotes, shell metas).
-const SAFE_API_KEY = /^[A-Za-z0-9_\-]+$/;
+const SAFE_API_KEY = /^[A-Za-z0-9_-]+$/;
 const UNSAFE_PATH_CHARS = /[\r\n"`$|&;<>]/;
 
 function assertSafe(field: string, value: string | undefined, pattern?: RegExp): void {

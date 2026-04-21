@@ -1,13 +1,13 @@
-import * as fs from 'fs';
-import * as nodefs from 'fs/promises';
-import * as path from 'path';
+import * as fs from 'node:fs';
+import * as nodefs from 'node:fs/promises';
+import * as path from 'node:path';
 import { withLock } from '../utils/lock.js';
 import { ensureDir, pathExists } from '../utils/fs.js';
 import { Variable, OperationLog, AuditConfig, AuditConfigSchema } from '../types.js';
-import * as crypto from 'crypto';
+import * as crypto from 'node:crypto';
 import { encrypt, decrypt } from '../utils/crypto.js';
-import { execFile as execFileCallback } from 'child_process';
-import { promisify } from 'util';
+import { execFile as execFileCallback } from 'node:child_process';
+import { promisify } from 'node:util';
 import { secureZero } from '../utils/secure-memory.js';
 
 const execFile = promisify(execFileCallback);
@@ -293,7 +293,7 @@ export function resolveLogPath(audit: AuditConfig | undefined, projectPath: stri
 
 export class LogManager {
   private logDir: string;
-  private auditConfig: AuditConfig;
+  private readonly auditConfig: AuditConfig;
   private hmacKey: Buffer | null = null;
   private lastHmac: string | null = null;
   private chainIndex: number = 0;
@@ -328,12 +328,14 @@ export class LogManager {
     for (const date of dates.slice().reverse()) {
       const entries = await this.getLogs({ date });
       if (entries.length > 0) {
-        const lastEntry = entries[entries.length - 1];
-        if (lastEntry.hmac) {
-          this.lastHmac = lastEntry.hmac;
-        }
-        if (lastEntry.chain_index !== undefined) {
-          this.chainIndex = lastEntry.chain_index + 1;
+        const lastEntry = entries.at(-1);
+        if (lastEntry) {
+          if (lastEntry.hmac) {
+            this.lastHmac = lastEntry.hmac;
+          }
+          if (lastEntry.chain_index !== undefined) {
+            this.chainIndex = lastEntry.chain_index + 1;
+          }
         }
         break;
       }
@@ -390,11 +392,10 @@ export class LogManager {
 
     for (const d of dates) {
       const entries = await this.getLogs({ date: d });
-      
-      for (let i = 0; i < entries.length; i++) {
-        const entry = entries[i];
+
+      for (const entry of entries) {
         totalEntries++;
-        
+
         if (!this.verifyEntry(entry)) {
           tampered.push(entry.chain_index ?? totalEntries - 1);
           continue;
@@ -511,7 +512,7 @@ return false;
 
 // Validate flags - only allow +a, +i, -a, -i
 const validFlags = ['+a', '+i', '-a', '-i'];
-const attr = remove ? flags.replace(/\+/g, '-') : flags;
+  const attr = remove ? flags.replaceAll('+', '-') : flags;
 /* c8 ignore next 2 -- invalid input path; callers always pass valid flags */
 if (!validFlags.includes(attr)) {
 return false;
@@ -589,7 +590,7 @@ if (success) {
     return entries
       .filter(e => e.startsWith('operations-') && e.endsWith('.log'))
       .map(e => e.replace('operations-', '').replace('.log', ''))
-      .sort();
+      .sort((a, b) => a.localeCompare(b));
   }
 
   destroy(): void {

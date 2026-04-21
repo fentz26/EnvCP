@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import * as path from 'path';
+import * as path from 'node:path';
 
 export const ServerModeSchema = z.enum(['mcp', 'rest', 'openai', 'gemini', 'all', 'auto']);
 export type ServerMode = z.infer<typeof ServerModeSchema>;

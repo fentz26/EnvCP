@@ -1,6 +1,6 @@
-import * as fs from 'fs/promises';
-import * as path from 'path';
-import * as os from 'os';
+import * as fs from 'node:fs/promises';
+import * as path from 'node:path';
+import * as os from 'node:os';
 import { ensureDir, pathExists } from '../utils/fs.js';
 import { EnvCPConfig } from '../types.js';
 

@@ -1,6 +1,6 @@
 import * as sodium from 'sodium-native';
-import * as nodeCrypto from 'crypto';
-import * as childProcess from 'child_process';
+import * as nodeCrypto from 'node:crypto';
+import * as childProcess from 'node:child_process';
 
 const HAS_SODIUM = typeof sodium.sodium_malloc === 'function';
 
@@ -85,7 +85,7 @@ export function isDebuggerAttached(): boolean {
   if (process.platform !== 'linux') return false;
   try {
     /* c8 ignore next 3 */
-    const fs = require('fs') as typeof import('fs');
+    const fs = require('node:fs') as typeof import('node:fs');
     const status = fs.readFileSync('/proc/self/status', 'utf8');
     const match = status.match(/TracerPid:\s*(\d+)/);
     /* c8 ignore next */
