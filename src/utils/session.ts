@@ -8,11 +8,11 @@ import { generateId, encrypt, decrypt } from './crypto.js';
 import { passwordToBuffer, bufferToString, secureZero, SecureBuffer } from './secure-memory.js';
 
 export class SessionManager {
-  private sessionPath: string;
+  private readonly sessionPath: string;
   private session: Session | null = null;
   private passwordBuf: SecureBuffer | null = null;
-  private timeoutMinutes: number;
-  private maxExtensions: number;
+  private readonly timeoutMinutes: number;
+  private readonly maxExtensions: number;
 
   constructor(sessionPath: string, timeoutMinutes: number = 30, maxExtensions: number = 5) {
     this.sessionPath = sessionPath;
@@ -72,9 +72,10 @@ export class SessionManager {
     }
 
     let transientPasswordInput: SecureBuffer | null = null;
-    const passwordInput = password
-      ? (transientPasswordInput = passwordToBuffer(password))
-      : this.passwordBuf;
+    if (password) {
+      transientPasswordInput = passwordToBuffer(password);
+    }
+    const passwordInput = transientPasswordInput ?? this.passwordBuf;
     if (!passwordInput) {
       return null;
     }
@@ -94,7 +95,7 @@ export class SessionManager {
       } else {
         result = this.session;
       }
-    } catch (error) {
+    } catch {
       result = null;
     }
 

@@ -35,7 +35,28 @@ export interface ParseEnvOptions {
   escapeStyle?: 'standard' | 'dotenv';
 }
 
-const ENV_NAME_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
+const ENV_NAME_RE = /^[A-Za-z_]\w*$/;
+const STANDARD_ESCAPES: Array<[string, string]> = [
+  [String.raw`\n`, '\n'],
+  [String.raw`\t`, '\t'],
+  [String.raw`\r`, '\r'],
+  [String.raw`\\`, '\\'],
+];
+
+function unescapeValue(value: string, escapeStyle: ParseEnvOptions['escapeStyle'], isDoubleQuoted: boolean): string {
+  if (escapeStyle === 'dotenv') {
+    if (!isDoubleQuoted) {
+      return value;
+    }
+    return value.replaceAll(String.raw`\"`, '"').replaceAll(String.raw`\\`, '\\');
+  }
+
+  let unescaped = value;
+  for (const [from, to] of STANDARD_ESCAPES) {
+    unescaped = unescaped.replaceAll(from, to);
+  }
+  return unescaped;
+}
 
 export function parseEnv(content: string, opts: ParseEnvOptions = {}): Record<string, string> {
   const { validateNames = false, escapeStyle = 'standard' } = opts;
@@ -60,16 +81,7 @@ export function parseEnv(content: string, opts: ParseEnvOptions = {}): Record<st
       value = value.slice(1, -1);
     }
 
-    if (escapeStyle === 'dotenv') {
-      if (isDoubleQuoted) {
-        value = value.replaceAll('\\"', '"').replaceAll('\\\\', '\\');
-      }
-    } else {
-      value = value.replaceAll('\\n', '\n')
-                   .replaceAll('\\t', '\t')
-                   .replaceAll('\\r', '\r')
-                   .replaceAll('\\\\', '\\');
-    }
+    value = unescapeValue(value, escapeStyle, isDoubleQuoted);
 
     result[key] = value;
   }

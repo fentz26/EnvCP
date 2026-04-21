@@ -1,4 +1,5 @@
 import * as fs from 'node:fs';
+import * as https from 'node:https';
 import * as path from 'node:path';
 
 const GITHUB_REPO = 'fentz26/EnvCP';
@@ -68,9 +69,11 @@ export function parseRelease(data: unknown): ReleaseInfo {
 }
 
 export function extractAdvisory(body: string, url: string): { id: string; summary: string; severity: string; url: string } | undefined {
-  const advMatch = body.match(/advisory[_\s-]?id:\s*(\S+)/i) ||
-                   body.match(/(ENVCP-\d{4}-\d+)/i);
-  const sevMatch = body.match(/severity:\s*(critical|high|medium|low)/i);
+  const advisoryIdPattern = /advisory[_\s-]?id:\s*(\S+)/i;
+  const envcpIdPattern = /(ENVCP-\d{4}-\d+)/i;
+  const severityPattern = /severity:\s*(critical|high|medium|low)/i;
+  const advMatch = advisoryIdPattern.exec(body) ?? envcpIdPattern.exec(body);
+  const sevMatch = severityPattern.exec(body);
 
   if (!advMatch && !sevMatch) return undefined;
 
@@ -110,8 +113,6 @@ export function writeCache(projectPath: string, data: CachedCheck): void {
 }
 
 export async function fetchReleases(perPage = 50): Promise<ReleaseInfo[]> {
-  const https = await import('https');
-
   return new Promise((resolve, reject) => {
     const options = {
       hostname: 'api.github.com',
@@ -156,8 +157,6 @@ export function filterByChannel(releases: ReleaseInfo[], channel: ReleaseChannel
 }
 
 export async function fetchLatestRelease(): Promise<ReleaseInfo> {
-  const https = await import('https');
-
   return new Promise((resolve, reject) => {
     const options = {
       hostname: 'api.github.com',
@@ -269,8 +268,7 @@ export function formatUpdateMessage(info: VersionInfo): string {
     }
   }
 
-  lines.push('');
-  lines.push('  Run: npm update -g @fentz26/envcp');
+  lines.push('', '  Run: npm update -g @fentz26/envcp');
 
   return lines.join('\n');
 }

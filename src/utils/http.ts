@@ -109,10 +109,10 @@ export function validateApiKey(provided: string | undefined, expected: string): 
 }
 
 export class RateLimiter {
-  private requests: Map<string, number[]> = new Map();
-  private maxRequests: number;
-  private windowMs: number;
-  private cleanupTimer: ReturnType<typeof setInterval>;
+  private readonly requests: Map<string, number[]> = new Map();
+  private readonly maxRequests: number;
+  private readonly windowMs: number;
+  private readonly cleanupTimer: ReturnType<typeof setInterval>;
 
   constructor(maxRequests: number = 60, windowMs: number = 60000) {
     this.maxRequests = maxRequests;

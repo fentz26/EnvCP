@@ -26,6 +26,11 @@ const ARGON2_OPTS = {
 
 type SecretInput = string | Buffer;
 
+async function deriveArgon2Key(password: SecretInput, salt: Buffer): Promise<Buffer> {
+  const hash = await argon2.hash(password, { ...ARGON2_OPTS, salt });
+  return Buffer.from(hash);
+}
+
 /**
  * Derives a 256-bit key from a password and salt using PBKDF2-SHA512.
  * Used only for decrypting legacy v1: data.
@@ -40,7 +45,7 @@ export function deriveKey(password: SecretInput, salt: Buffer): Buffer {
  */
 export async function encrypt(text: string, password: SecretInput): Promise<string> {
   const salt = crypto.randomBytes(V2_SALT_LENGTH);
-  const key = await argon2.hash(password, { ...ARGON2_OPTS, salt }) as Buffer;
+  const key = await deriveArgon2Key(password, salt);
   const iv = crypto.randomBytes(IV_LENGTH);
 
   try {
@@ -100,7 +105,7 @@ async function decryptV2(data: string, password: SecretInput): Promise<string> {
   const authTag = Buffer.from(data.slice(V2_SALT_LENGTH * 2 + IV_LENGTH * 2, V2_SALT_LENGTH * 2 + IV_LENGTH * 2 + AUTH_TAG_LENGTH * 2), 'hex');
   const encryptedHex = data.slice(V2_SALT_LENGTH * 2 + IV_LENGTH * 2 + AUTH_TAG_LENGTH * 2);
 
-  const key = await argon2.hash(password, { ...ARGON2_OPTS, salt }) as Buffer;
+  const key = await deriveArgon2Key(password, salt);
   try {
     const decipher = crypto.createDecipheriv(ALGORITHM, key, iv, { authTagLength: AUTH_TAG_LENGTH });
     decipher.setAuthTag(authTag);
@@ -179,7 +184,7 @@ export function validatePassword(password: string, config: {
   if (requireComplexity) {
     const hasLower = /[a-z]/.test(password);
     const hasUpper = /[A-Z]/.test(password);
-    const hasNumber = /[0-9]/.test(password);
+    const hasNumber = /\d/.test(password);
     const hasSpecial = /[!@#$%^&*(),.?":{}|<>]/.test(password);
 
     const complexityCount = [hasLower, hasUpper, hasNumber, hasSpecial].filter(Boolean).length;
@@ -260,7 +265,7 @@ export function scrubOutput(output: string, secrets: string[], extraPatterns: st
   const sorted = [...secrets].sort((a, b) => b.length - a.length);
   for (const secret of sorted) {
     if (secret.length < 4) continue; // too short — would redact noise
-    const escaped = secret.replaceAll(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const escaped = secret.replaceAll(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`);
     // eslint-disable-next-line security/detect-non-literal-regexp -- input is fully escaped above
     result = result.replaceAll(new RegExp(escaped, 'g'), '[REDACTED]');
   }

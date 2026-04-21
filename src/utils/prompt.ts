@@ -5,23 +5,21 @@ let nonTtyLinesPromise: Promise<string[]> | null = null;
 let nonTtyLineIndex = 0;
 
 async function consumeNonTtyLine(): Promise<string | null> {
-  if (!nonTtyLinesPromise) {
-    nonTtyLinesPromise = (async () => {
-      const chunks: Buffer[] = [];
-      for await (const chunk of process.stdin) {
-        chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk);
-      }
-      const content = Buffer.concat(chunks).toString('utf8');
-      if (content === '') {
-        return [];
-      }
-      const lines = content.split(/\r?\n/);
-      if (content.endsWith('\n')) {
-        lines.pop();
-      }
-      return lines;
-    })();
-  }
+  nonTtyLinesPromise ??= (async () => {
+    const chunks: Buffer[] = [];
+    for await (const chunk of process.stdin) {
+      chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk);
+    }
+    const content = Buffer.concat(chunks).toString('utf8');
+    if (content === '') {
+      return [];
+    }
+    const lines = content.split(/\r?\n/);
+    if (content.endsWith('\n')) {
+      lines.pop();
+    }
+    return lines;
+  })();
 
   const lines = await nonTtyLinesPromise;
   if (nonTtyLineIndex >= lines.length) {
@@ -165,8 +163,9 @@ function clearScreen(output: NodeJS.WriteStream): void {
 }
 
 function formatMenuLine(choice: MenuChoice, isSelected: boolean): string {
-  const prefix = isSelected ? `${chalkPointer()} ` : '  ';
-  return `${prefix}${choice.label}${choice.hint ? ` ${choice.hint}` : ''}`;
+  const prefix = isSelected ? chalkPointer() + ' ' : '  ';
+  const hint = choice.hint ? ` ${choice.hint}` : '';
+  return `${prefix}${choice.label}${hint}`;
 }
 
 function renderMenuItems(output: NodeJS.WriteStream, choices: MenuChoice[], selectedIndex: number): void {

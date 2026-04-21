@@ -87,7 +87,7 @@ export function isDebuggerAttached(): boolean {
     /* c8 ignore next 3 */
     const fs = require('node:fs') as typeof import('node:fs');
     const status = fs.readFileSync('/proc/self/status', 'utf8');
-    const match = status.match(/TracerPid:\s*(\d+)/);
+    const match = /TracerPid:\s*(\d+)/.exec(status);
     /* c8 ignore next */
     return match != null && match[1] !== '0';
   } catch {

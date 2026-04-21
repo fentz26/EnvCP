@@ -205,8 +205,8 @@ class WindowsKeychain implements KeychainBackend {
 // --- Keychain manager ---
 
 export class KeychainManager {
-  private backend: KeychainBackend;
-  private service: string;
+  private readonly backend: KeychainBackend;
+  private readonly service: string;
 
   constructor(service: string = SERVICE_NAME) {
     this.service = service;

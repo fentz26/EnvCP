@@ -418,7 +418,7 @@ export class HsmManager {
       Buffer.from(userPassword, 'utf8'),
     ]);
     try {
-      const hmacKey = crypto.createHash('sha256').update(combined.slice(0, 32)).digest();
+      const hmacKey = crypto.createHash('sha256').update(combined.subarray(0, 32)).digest();
       return crypto
         .createHmac('sha256', hmacKey)
         .update(combined)
