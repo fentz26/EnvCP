@@ -13,10 +13,22 @@ All notable changes to EnvCP are documented here. Format follows [Keep a Changel
 - Client-specific AI rules (`client_rules`) for clients like `mcp`, `openai`, `gemini`, and `api`
 - Scoped rule storage for project, home, and merged views
 - Auto-start service setup for Linux, macOS, and Windows
-- Brute-force protection with progressive delays and permanent lockout handling
+- Brute-force protection with progressive delays, permanent lockout, and recovery-key flow
+- Webhook and email notifications for lockout events
 - Config file integrity checks using HMAC signatures
-- Python package updates and Rust core groundwork via `envcp-core`
+- HMAC-chained audit log with tamper detection ([#177](https://github.com/fentz26/EnvCP/issues/177), [#179](https://github.com/fentz26/EnvCP/issues/179))
+- Enhanced audit trail with selectable log fields and new `envcp logs` CLI command ([#153](https://github.com/fentz26/EnvCP/issues/153), [#162](https://github.com/fentz26/EnvCP/pull/162))
+- Configurable log storage and a new MCP tool for log access ([#204](https://github.com/fentz26/EnvCP/issues/204))
+- Secure input methods for `envcp add` ([#201](https://github.com/fentz26/EnvCP/issues/201))
+- Destructive-command protection for `envcp_run` ([#138](https://github.com/fentz26/EnvCP/issues/138))
+- Memory hardening for sensitive values ([#152](https://github.com/fentz26/EnvCP/issues/152))
+- API key enforcement across all HTTP modes ([#176](https://github.com/fentz26/EnvCP/issues/176))
 - Release channels for latest, experimental, and canary builds
+- Python package updates and Rust core groundwork via `envcp-core` ([#136](https://github.com/fentz26/EnvCP/pull/136))
+- Claude Code plugin marketplace manifest and graceful MCP server wrapper for optional auto-start
+- VS Code and VS Code Insiders one-click MCP install badges plus a `VERSION` file as the single source of truth
+- CIS-hardened Docker sandbox for E2E testing with REST and MCP stdio scenarios
+- Migrated primary domain from `envcp.fentz.dev` to `envcp.org`
 
 ### Changed
 
@@ -26,6 +38,9 @@ All notable changes to EnvCP are documented here. Format follows [Keep a Changel
 - Vault management now uses `envcp vault use` and `envcp vault contexts` instead of old top-level aliases
 - CLI docs, wiki pages, and setup guides were aligned with the current command surface
 - Rule listing now shows readable output, scope origin, and who-specific labels
+- Replaced `inquirer` with native `readline` — CLI startup time dropped from ~3s to ~150ms
+- Removed the `--password` CLI flag and added channel selection to `envcp update`
+- Dropped support for the 1.0.x line; upgrade path and EOL reasons are documented
 
 ### Fixed
 
@@ -35,10 +50,24 @@ All notable changes to EnvCP are documented here. Format follows [Keep a Changel
 - Prompt-related test cleanup removed the remaining Jest open-handle warning
 - Windows script generation and related injection edge cases were tightened
 - Build, lint, and test verification were cleaned up for release readiness
+- Prevent accidental data loss when re-running `envcp init` ([#202](https://github.com/fentz26/EnvCP/issues/202))
+- Resolve global vs project vault detection and session path mismatch ([#203](https://github.com/fentz26/EnvCP/issues/203))
+- Align `addToEnv` path validation with `syncToEnv` ([#164](https://github.com/fentz26/EnvCP/pull/164))
+- REST lockout reset moved out of the constructor to avoid side effects on load
 
 ### Security
 
-- Updated crypto and threat-model documentation
+- Closed OWASP Top 10 2025 gaps across A01–A09
+- Added output scrubbing and the ESLint `security` plugin ([#135](https://github.com/fentz26/EnvCP/issues/135), [#139](https://github.com/fentz26/EnvCP/issues/139))
+- Prevent shell injection in `execChattr`
+- Replaced hardcoded HMAC key with a derived key in `HsmManager.combineSecrets`
+- Switched `js-yaml` to `JSON_SCHEMA` to block `!!js/` tag injection ([#151](https://github.com/fentz26/EnvCP/issues/151))
+- Warn on startup when AI access is enabled with no API key configured ([#157](https://github.com/fentz26/EnvCP/issues/157))
+- Added `npm audit` as a required CI gate ([#156](https://github.com/fentz26/EnvCP/issues/156))
+- Hardened sandbox workflow shell interpolation
+- Hardened session secrets and related handling
+- Updated crypto and threat-model documentation (crypto implementation audit, [#140](https://github.com/fentz26/EnvCP/issues/140))
+- SLSA 3 provenance — pinned all actions and fixed tarball hashing
 - Release verification and signed publish flow remain documented in `VERIFICATION.md`
 
 ### Documentation
@@ -46,20 +75,41 @@ All notable changes to EnvCP are documented here. Format follows [Keep a Changel
 - Updated README, setup docs, command reference, configuration reference, and wiki mirrors
 - Added rule system documentation for `envcp rule`, `access.variable_rules`, and `access.client_rules`
 - Cleaned outdated command examples from docs and setup guides
+- Added STRIDE threat model and attack trees ([#141](https://github.com/fentz26/EnvCP/issues/141))
+- Added security guide and incident response runbooks ([#144](https://github.com/fentz26/EnvCP/issues/144))
+- Added Code of Conduct, issue templates, and PR template
+- Added `CITATION.cff` metadata
 
 ### Tests
 
 - Added focused tests for rules, vault CLI flows, prompt handling, config loading, and access control
+- Reached 100% line coverage and 100% branch coverage (1117 tests passing)
+- Added Codecov components and aligned thresholds with the Jest config
 - Release verification finished with full build, lint, and test passes before tagging
+
+### CI
+
+- Added SonarCloud analysis workflow and cleared Quality Gate findings
+- Added Semgrep security scanning workflow
+- Cleaned up CodeQL configuration and added `workflow_dispatch` triggers
+- Sandbox E2E workflow with Docker-hardened runner
 
 ### Dependencies
 
-- actions/checkout v4 → v6
-- actions/setup-node v5 → v6
-- actions/setup-python v5 → v6
-- actions/upload-artifact v4 → v7
-- actions/download-artifact v4 → v8
-- docker/setup-buildx-action v3 → v4
+- `typescript` 5.9.3 → 6.0.3
+- `hono` 4.12.12 → 4.12.14
+- `@types/node` 20.19.39 → 25.6.0
+- `@types/argon2` — minor / patch bump
+- `pyo3` → 0.24 (resolves Dependabot advisory)
+- `actions/checkout` v4 → v6
+- `actions/setup-node` v5 → v6
+- `actions/setup-python` v5 → v6
+- `actions/upload-artifact` v4 → v7
+- `actions/download-artifact` v4 → v8
+- `docker/setup-buildx-action` v3 → v4
+- `docker/build-push-action` v5.4.0 → v7.1.0
+- `docker/login-action` v3.7.0 → v4.1.0
+- `codecov/codecov-action` v5.5.4 → v6.0.0
 
 ---
 

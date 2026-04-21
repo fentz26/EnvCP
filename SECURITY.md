@@ -8,16 +8,36 @@ We release patches for security vulnerabilities for the latest minor version onl
 
 | Version | Supported | Notes |
 | ------- | --------- | ----- |
-| 1.1.x   | ✓         | Current — active security patches |
+| 1.2.x   | ✓         | Current — active security patches |
+| 1.1.x   | ✗         | End of life — upgrade required |
 | 1.0.x   | ✗         | End of life — upgrade required |
+
+### Why 1.1.x is no longer supported
+
+- **No scoped AI access rules**: 1.1.x cannot express per-variable, per-client, or time-windowed access policies
+- **No brute-force lockout**: No progressive delays, permanent lockout, or recovery-key flow on repeated unlock failures
+- **No memory hardening**: Sensitive values are not protected against swap or core-dump exposure
+- **No config file integrity checks**: `envcp.yaml` changes are not HMAC-verified, so silent tampering is not detected
+- **No audit log tamper detection**: Logs are not HMAC-chained, so deletions and edits are not detectable
+- **Weaker HTTP auth posture**: API key enforcement does not uniformly cover every AI access flag
+- **No destructive-command protection**: `envcp_run` does not guard against `rm -rf /` style destructive patterns
 
 ### Why 1.0.x is not supported
 
 - **Weaker encryption**: v1.0.x uses PBKDF2-SHA512 (100k iterations) for key derivation — vulnerable to GPU-based brute force
 - **No run safety**: Missing command blacklist, root delete prevention, path manipulation guards
 - **No brute-force lockout**: No rate limiting on failed unlock attempts
-- **No HSM support**: No hardware security module integration
 - **No memory hardening**: Vault password stored in plaintext in memory
+- **No scoped AI access rules**: No variable-level, client-level, or time-window access policy
+
+### Upgrading from 1.1.x
+
+No vault migration is required — 1.2.x reads existing v2 (Argon2id) stores directly. Config changes are additive; existing `envcp.yaml` files keep working without edits.
+
+```bash
+npm update -g @fentz26/envcp
+envcp unlock
+```
 
 ### Upgrading from 1.0.x
 
@@ -131,10 +151,10 @@ When using EnvCP:
 ## Security Updates
 
 Security updates will be released as:
-- Patch versions (1.1.x) for minor security issues
+- Patch versions (1.2.x) for minor security issues
 - Minor versions (1.x.0) for significant security improvements
 - Documented in GitHub Security Advisories
-- **No backports to 1.0.x** — upgrade to latest required for security fixes
+- **No backports to 1.1.x or 1.0.x** — upgrade to latest required for security fixes
 
 ## Compliance
 
