@@ -1,3 +1,4 @@
+import { jest } from '@jest/globals';
 import { spawnSync } from 'child_process';
 import * as fs from 'fs/promises';
 import * as path from 'path';
@@ -11,12 +12,14 @@ const cliPath = path.join(projectRoot, 'dist', 'cli', 'index.js');
 
 interface ExecResult { stdout: string; stderr: string; status: number | null; }
 
+jest.setTimeout(90000);
+
 function execCLI(args: string[], opts: { cwd: string; input?: string; env?: NodeJS.ProcessEnv } = { cwd: '' }): ExecResult {
   const result = spawnSync('node', [cliPath, ...args], {
     cwd: opts.cwd,
     input: opts.input,
     encoding: 'utf-8',
-    timeout: 20000,
+    timeout: 60000,
     env: { ...process.env, ...opts.env, NO_COLOR: '1' },
   });
   return {

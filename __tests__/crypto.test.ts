@@ -21,6 +21,12 @@ describe('encrypt/decrypt', () => {
     const b = await encrypt(text, password);
     expect(a).not.toBe(b);
   });
+
+  it('accepts Buffer passwords without converting them first', async () => {
+    const password = Buffer.from('buffer-password-123');
+    const encrypted = await encrypt('hello', password);
+    expect(await decrypt(encrypted, password)).toBe('hello');
+  });
 });
 
 describe('maskValue', () => {

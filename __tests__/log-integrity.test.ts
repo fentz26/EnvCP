@@ -1,3 +1,4 @@
+import { jest } from '@jest/globals';
 import * as path from 'path';
 import * as fs from 'fs/promises';
 import * as os from 'os';
@@ -254,13 +255,11 @@ describe('protectLogFiles', () => {
     await fs.mkdir(logDir, { recursive: true });
     await fs.writeFile(path.join(logDir, 'operations-2026-01-01.log'), '{}\n');
 
+    const spy = jest.spyOn(logs, 'setAppendOnly').mockResolvedValue(true);
     const result = await logs.protectLogFiles();
-    // On non-Linux, chattr fails so we expect failed entries
-    if (process.platform !== 'linux') {
-      expect(result.failed.length).toBeGreaterThanOrEqual(0);
-    } else {
-      expect(result.protected.length).toBeGreaterThanOrEqual(0);
-    }
+    expect(spy).toHaveBeenCalled();
+    expect(result.protected).toHaveLength(1);
+    expect(result.failed).toHaveLength(0);
   });
 
   it('protects log files when protection is immutable', async () => {
@@ -272,13 +271,11 @@ describe('protectLogFiles', () => {
     await fs.mkdir(logDir, { recursive: true });
     await fs.writeFile(path.join(logDir, 'operations-2026-01-01.log'), '{}\n');
 
+    const spy = jest.spyOn(logs as any, 'execChattr').mockResolvedValue(true);
     const result = await logs.protectLogFiles();
-    // On non-Linux, chattr fails so we expect failed entries
-    if (process.platform !== 'linux') {
-      expect(result.failed.length).toBeGreaterThanOrEqual(0);
-    } else {
-      expect(result.protected.length).toBeGreaterThanOrEqual(0);
-    }
+    expect(spy).toHaveBeenCalledWith(path.join(logDir, 'operations-2026-01-01.log'), '+i');
+    expect(result.protected).toHaveLength(1);
+    expect(result.failed).toHaveLength(0);
   });
 });
 

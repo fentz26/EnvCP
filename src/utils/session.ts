@@ -5,11 +5,12 @@ import { withLock } from './lock.js';
 import { ensureDir } from './fs.js';
 import { Session, SessionSchema } from '../types.js';
 import { generateId, encrypt, decrypt } from './crypto.js';
+import { passwordToBuffer, bufferToString, secureZero, SecureBuffer } from './secure-memory.js';
 
 export class SessionManager {
   private sessionPath: string;
   private session: Session | null = null;
-  private password: string | null = null;
+  private passwordBuf: SecureBuffer | null = null;
   private timeoutMinutes: number;
   private maxExtensions: number;
 
@@ -35,13 +36,13 @@ export class SessionManager {
       last_access: now.toISOString(),
     };
 
-  this.password = password;
+    this.setPasswordBuf(password);
 
   const sessionData = JSON.stringify({
     session: this.session,
   });
 
-  const encrypted = await encrypt(sessionData, password);
+  const encrypted = await encrypt(sessionData, this.passwordBuf!);
   await withLock(this.sessionPath, async () => {
     const wh = await nodefs.open(this.sessionPath,
       fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_TRUNC | fs.constants.O_NOFOLLOW,
@@ -70,28 +71,38 @@ export class SessionManager {
       return null;
     }
 
-    try {
-      
-      const pwd = password || this.password;
-      if (!pwd) {
-        return null;
-      }
+    let transientPasswordInput: SecureBuffer | null = null;
+    const passwordInput = password
+      ? (transientPasswordInput = passwordToBuffer(password))
+      : this.passwordBuf;
+    if (!passwordInput) {
+      return null;
+    }
 
-      const decrypted = await decrypt(encrypted, pwd);
+    let result: Session | null = null;
+    try {
+      const decrypted = await decrypt(encrypted, passwordInput);
       const data = JSON.parse(decrypted);
       this.session = SessionSchema.parse(data.session);
       // Password is verified by successful decryption — no longer stored in file
-      this.password = pwd;
-      
+      if (password) {
+        this.setPasswordBuf(password);
+      }
+
       if (new Date() > new Date(this.session.expires)) {
         await this.destroy();
-        return null;
+      } else {
+        result = this.session;
       }
-      
-      return this.session;
     } catch (error) {
-      return null;
+      result = null;
     }
+
+    if (transientPasswordInput) {
+      secureZero(transientPasswordInput);
+    }
+
+    return result;
   }
 
   async isValid(): Promise<boolean> {
@@ -103,7 +114,7 @@ export class SessionManager {
   }
 
   async extend(): Promise<Session | null> {
-    if (!this.session || !this.password) {
+    if (!this.session || !this.passwordBuf) {
       return null;
     }
 
@@ -117,16 +128,16 @@ export class SessionManager {
 
     const now = new Date();
     const expires = new Date(now.getTime() + this.timeoutMinutes * 60 * 1000);
-    
-  this.session.expires = expires.toISOString();
-  this.session.extensions += 1;
-  this.session.last_access = now.toISOString();
 
-  const sessionData = JSON.stringify({
-    session: this.session,
-  });
+    this.session.expires = expires.toISOString();
+    this.session.extensions += 1;
+    this.session.last_access = now.toISOString();
 
-  const encrypted = await encrypt(sessionData, this.password);
+    const sessionData = JSON.stringify({
+      session: this.session,
+    });
+
+    const encrypted = await encrypt(sessionData, this.passwordBuf);
   await withLock(this.sessionPath, async () => {
     const wh = await nodefs.open(this.sessionPath,
       fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_TRUNC | fs.constants.O_NOFOLLOW,
@@ -139,7 +150,7 @@ export class SessionManager {
 
   async destroy(): Promise<void> {
     this.session = null;
-    this.password = null;
+    this.clearPasswordBuf();
 
     try {
       await nodefs.unlink(this.sessionPath);
@@ -149,7 +160,19 @@ export class SessionManager {
   }
 
   getPassword(): string | null {
-    return this.password;
+    return this.passwordBuf ? bufferToString(this.passwordBuf) : null;
+  }
+
+  private setPasswordBuf(password: string): void {
+    this.clearPasswordBuf();
+    this.passwordBuf = passwordToBuffer(password);
+  }
+
+  private clearPasswordBuf(): void {
+    if (this.passwordBuf) {
+      secureZero(this.passwordBuf);
+      this.passwordBuf = null;
+    }
   }
 
   getSession(): Session | null {

@@ -207,6 +207,149 @@ describe('UnifiedServer', () => {
         await fs.rm(isolatedDir, { recursive: true, force: true });
       }
     });
+
+    it('returns 429 when API auth is already temporarily locked', async () => {
+      const isolatedDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-unified-prelock-'));
+      const isolatedPort = await getFreePort();
+      const isolatedServer = new UnifiedServer(
+        makeConfig(),
+        makeServerConfig({
+          mode: 'auto',
+          port: isolatedPort,
+          host: '127.0.0.1',
+          cors: true,
+          auto_detect: true,
+          api_key: 'test-secret-key',
+        }),
+        isolatedDir,
+      );
+
+      await ensureDir(path.join(isolatedDir, '.envcp'));
+      await fs.writeFile(
+        path.join(isolatedDir, '.envcp', '.lockout-api'),
+        JSON.stringify({
+          attempts: 5,
+          locked_until: new Date(Date.now() + 60_000).toISOString(),
+          permanent_locked: false,
+          permanent_lockout_count: 0,
+        }),
+        'utf8',
+      );
+
+      await isolatedServer.start();
+      try {
+        const { status, data } = await fetch(
+          isolatedPort,
+          'GET',
+          '/api/health',
+          undefined,
+          { 'x-api-key': 'wrong-key', Authorization: '' },
+        );
+        expect(status).toBe(429);
+        expect((data as any).error).toContain('Too many failed attempts');
+      } finally {
+        isolatedServer.stop();
+        await fs.rm(isolatedDir, { recursive: true, force: true });
+      }
+    });
+
+    it('returns 403 when API auth is permanently locked', async () => {
+      const isolatedDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-unified-permalock-'));
+      const isolatedPort = await getFreePort();
+      const isolatedServer = new UnifiedServer(
+        makeConfig(),
+        makeServerConfig({
+          mode: 'auto',
+          port: isolatedPort,
+          host: '127.0.0.1',
+          cors: true,
+          auto_detect: true,
+          api_key: 'test-secret-key',
+        }),
+        isolatedDir,
+      );
+
+      await ensureDir(path.join(isolatedDir, '.envcp'));
+      await fs.writeFile(
+        path.join(isolatedDir, '.envcp', '.lockout-api'),
+        JSON.stringify({
+          attempts: 5,
+          locked_until: null,
+          permanent_locked: true,
+          permanent_lockout_count: 1,
+        }),
+        'utf8',
+      );
+
+      await isolatedServer.start();
+      try {
+        const { status, data } = await fetch(
+          isolatedPort,
+          'GET',
+          '/api/health',
+          undefined,
+          { 'x-api-key': 'wrong-key', Authorization: '' },
+        );
+        expect(status).toBe(403);
+        expect((data as any).error).toContain('permanently locked');
+      } finally {
+        isolatedServer.stop();
+        await fs.rm(isolatedDir, { recursive: true, force: true });
+      }
+    });
+
+    it('returns 403 when a failure escalates into permanent lockout', async () => {
+      const isolatedDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-unified-perma-trigger-'));
+      const isolatedPort = await getFreePort();
+      const config = makeConfig();
+      config.security.brute_force_protection.max_attempts = 5;
+      config.security.brute_force_protection.lockout_duration = 60;
+      config.security.brute_force_protection.progressive_delay = false;
+      config.security.brute_force_protection.max_delay = 0;
+      config.security.brute_force_protection.permanent_lockout_threshold = 1;
+
+      const isolatedServer = new UnifiedServer(
+        config,
+        makeServerConfig({
+          mode: 'auto',
+          port: isolatedPort,
+          host: '127.0.0.1',
+          cors: true,
+          auto_detect: true,
+          api_key: 'test-secret-key',
+        }),
+        isolatedDir,
+      );
+
+      await ensureDir(path.join(isolatedDir, '.envcp'));
+      await fs.writeFile(
+        path.join(isolatedDir, '.envcp', '.lockout-api'),
+        JSON.stringify({
+          attempts: 4,
+          lockout_count: 1,
+          permanent_lockout_count: 1,
+          locked_until: null,
+          permanent_locked: false,
+        }),
+        'utf8',
+      );
+
+      await isolatedServer.start();
+      try {
+        const { status, data } = await fetch(
+          isolatedPort,
+          'GET',
+          '/api/health',
+          undefined,
+          { 'x-api-key': 'wrong-key', Authorization: '' },
+        );
+        expect(status).toBe(403);
+        expect((data as any).error).toContain('permanently locked');
+      } finally {
+        isolatedServer.stop();
+        await fs.rm(isolatedDir, { recursive: true, force: true });
+      }
+    });
   });
 
   describe('CRUD via unified server', () => {

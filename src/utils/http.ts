@@ -98,8 +98,14 @@ export function parseBody(req: http.IncomingMessage): Promise<Record<string, unk
 
 export function validateApiKey(provided: string | undefined, expected: string): boolean {
   if (!provided) return false;
-  if (provided.length !== expected.length) return false;
-  return crypto.timingSafeEqual(Buffer.from(provided), Buffer.from(expected));
+  const providedBuf = Buffer.from(provided);
+  const expectedBuf = Buffer.from(expected);
+  const lengthEqual = providedBuf.length === expectedBuf.length;
+  // Always compare against a buffer of expected length to keep timing constant
+  // regardless of the provided key's length.
+  const cmpBuf = lengthEqual ? providedBuf : Buffer.alloc(expectedBuf.length);
+  const bytesEqual = crypto.timingSafeEqual(cmpBuf, expectedBuf);
+  return lengthEqual && bytesEqual;
 }
 
 export class RateLimiter {

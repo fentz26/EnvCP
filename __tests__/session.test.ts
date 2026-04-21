@@ -125,6 +125,13 @@ describe('SessionManager', () => {
     expect(loaded).toBeNull();
   });
 
+  it('load reuses cached password when one is already stored in memory', async () => {
+    await manager.create('password123');
+    const loaded = await manager.load();
+    expect(loaded).toBeTruthy();
+    expect(loaded!.extensions).toBe(0);
+  });
+
   it('load returns null for expired session', async () => {
     // Create session with 0 minute timeout (immediately expired)
     const m = new SessionManager(sessionPath, 0, 5);

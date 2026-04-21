@@ -1,7 +1,7 @@
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as yaml from 'js-yaml';
-import { ensureDir, pathExists } from '../utils/fs.js';
+import { ensureDir, pathExists, parseEnv } from '../utils/fs.js';
 import { EnvCPConfig, EnvCPConfigSchema } from '../types.js';
 import { generateConfigHmac, verifyConfigHmac, deriveHmacKey, getSystemIdentifier } from './config-hmac.js';
 
@@ -383,37 +383,14 @@ if (result.alreadyExists) {
 }
 
 /**
- * Parses a `.env` file into a key/value map.
+ * Parses a `.env` file into a key/value map with strict dotenv semantics.
  * Handles double-quoted values with backslash escape sequences (`\"`, `\\`).
  * Single-quoted values are taken literally. Lines starting with `#` are ignored.
+ * Keys that are not valid POSIX identifiers are dropped.
  * @param content - Raw text content of a `.env` file
  */
 export function parseEnvFile(content: string): Record<string, string> {
-  const vars: Record<string, string> = {};
-
-  for (const line of content.split('\n')) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith('#')) continue;
-
-    const eqIndex = trimmed.indexOf('=');
-    if (eqIndex === -1) continue;
-
-    const key = trimmed.substring(0, eqIndex).trim();
-    let value = trimmed.substring(eqIndex + 1).trim();
-
-    // Strip quotes and unescape
-    if (value.startsWith('"') && value.endsWith('"')) {
-      value = value.slice(1, -1).replaceAll('\\"', '"').replaceAll('\\\\', '\\');
-    } else if (value.startsWith("'") && value.endsWith("'")) {
-      value = value.slice(1, -1);
-    }
-
-    if (validateVariableName(key)) {
-      vars[key] = value;
-    }
-  }
-
-  return vars;
+  return parseEnv(content, { validateNames: true, escapeStyle: 'dotenv' });
 }
 
 export function validateVariableName(name: string): boolean {

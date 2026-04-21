@@ -16,11 +16,13 @@ fn set_private(p: &Path) -> std::io::Result<()> {
     {
         fs::set_permissions(p, fs::Permissions::from_mode(0o600))
     }
+    // On Windows, applying readonly here breaks subsequent rename/write of
+    // the file (and its backups) during normal save cycles. We rely on the
+    // user profile directory's default ACLs for privacy instead.
     #[cfg(not(unix))]
     {
-        let mut perms = fs::metadata(p)?.permissions();
-        perms.set_readonly(true);
-        fs::set_permissions(p, perms)
+        let _ = p;
+        Ok(())
     }
 }
 

@@ -24,11 +24,24 @@ export async function findProjectRoot(startDir: string): Promise<string | null> 
   }
 }
 
-export function parseEnv(content: string): Record<string, string> {
-  const result: Record<string, string> = {};
-  const lines = content.split('\n');
+export interface ParseEnvOptions {
+  /** When true, lines whose key fails the POSIX identifier regex are dropped. */
+  validateNames?: boolean;
+  /**
+   * Escape handling:
+   * - 'standard' (default): unconditionally unescape `\n`, `\t`, `\r`, `\\` (dev-convenience).
+   * - 'dotenv': only unescape `\"` and `\\` inside double-quoted values (strict .env semantics).
+   */
+  escapeStyle?: 'standard' | 'dotenv';
+}
 
-  for (const line of lines) {
+const ENV_NAME_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
+export function parseEnv(content: string, opts: ParseEnvOptions = {}): Record<string, string> {
+  const { validateNames = false, escapeStyle = 'standard' } = opts;
+  const result: Record<string, string> = {};
+
+  for (const line of content.split('\n')) {
     const trimmed = line.trim();
     if (!trimmed || trimmed.startsWith('#')) continue;
 
@@ -38,17 +51,25 @@ export function parseEnv(content: string): Record<string, string> {
     const key = trimmed.slice(0, eqIndex).trim();
     let value = trimmed.slice(eqIndex + 1).trim();
 
-    // Remove surrounding quotes
-    if ((value.startsWith('"') && value.endsWith('"')) ||
-        (value.startsWith("'") && value.endsWith("'"))) {
+    if (validateNames && !ENV_NAME_RE.test(key)) continue;
+
+    const isDoubleQuoted = value.length >= 2 && value.startsWith('"') && value.endsWith('"');
+    const isSingleQuoted = value.length >= 2 && value.startsWith("'") && value.endsWith("'");
+
+    if (isDoubleQuoted || isSingleQuoted) {
       value = value.slice(1, -1);
     }
 
-    // Handle basic escape sequences
-    value = value.replaceAll('\\n', '\n')
-                 .replaceAll('\\t', '\t')
-                 .replaceAll('\\r', '\r')
-                 .replaceAll('\\\\', '\\');
+    if (escapeStyle === 'dotenv') {
+      if (isDoubleQuoted) {
+        value = value.replaceAll('\\"', '"').replaceAll('\\\\', '\\');
+      }
+    } else {
+      value = value.replaceAll('\\n', '\n')
+                   .replaceAll('\\t', '\t')
+                   .replaceAll('\\r', '\r')
+                   .replaceAll('\\\\', '\\');
+    }
 
     result[key] = value;
   }

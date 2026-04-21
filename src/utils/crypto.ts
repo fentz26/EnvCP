@@ -24,11 +24,13 @@ const ARGON2_OPTS = {
   raw: true,
 } as const;
 
+type SecretInput = string | Buffer;
+
 /**
  * Derives a 256-bit key from a password and salt using PBKDF2-SHA512.
  * Used only for decrypting legacy v1: data.
  */
-export function deriveKey(password: string, salt: Buffer): Buffer {
+export function deriveKey(password: SecretInput, salt: Buffer): Buffer {
   return crypto.pbkdf2Sync(password, salt, ITERATIONS, 32, 'sha512');
 }
 
@@ -36,7 +38,7 @@ export function deriveKey(password: string, salt: Buffer): Buffer {
  * Encrypts plaintext using AES-256-GCM with an Argon2id-derived key.
  * Output format: `v2:<salt_hex><iv_hex><authTag_hex><ciphertext_hex>`
  */
-export async function encrypt(text: string, password: string): Promise<string> {
+export async function encrypt(text: string, password: SecretInput): Promise<string> {
   const salt = crypto.randomBytes(V2_SALT_LENGTH);
   const key = await argon2.hash(password, { ...ARGON2_OPTS, salt }) as Buffer;
   const iv = crypto.randomBytes(IV_LENGTH);
@@ -59,7 +61,7 @@ export async function encrypt(text: string, password: string): Promise<string> {
  * Decrypts data produced by `encrypt`.
  * Handles v2: (Argon2id), v1: (PBKDF2), and legacy unprefixed (PBKDF2) data.
  */
-export async function decrypt(encryptedData: string, password: string): Promise<string> {
+export async function decrypt(encryptedData: string, password: SecretInput): Promise<string> {
   if (encryptedData.startsWith(VERSION_PREFIX_V2)) {
     return decryptV2(encryptedData.slice(VERSION_PREFIX_V2.length), password);
   }
@@ -70,7 +72,7 @@ export async function decrypt(encryptedData: string, password: string): Promise<
   return decryptV1(data, password);
 }
 
-function decryptV1(data: string, password: string): string {
+function decryptV1(data: string, password: SecretInput): string {
   const salt = Buffer.from(data.slice(0, SALT_LENGTH * 2), 'hex');
   const iv = Buffer.from(data.slice(SALT_LENGTH * 2, SALT_LENGTH * 2 + IV_LENGTH * 2), 'hex');
   const authTag = Buffer.from(data.slice(SALT_LENGTH * 2 + IV_LENGTH * 2, SALT_LENGTH * 2 + IV_LENGTH * 2 + AUTH_TAG_LENGTH * 2), 'hex');
@@ -92,7 +94,7 @@ function decryptV1(data: string, password: string): string {
   }
 }
 
-async function decryptV2(data: string, password: string): Promise<string> {
+async function decryptV2(data: string, password: SecretInput): Promise<string> {
   const salt = Buffer.from(data.slice(0, V2_SALT_LENGTH * 2), 'hex');
   const iv = Buffer.from(data.slice(V2_SALT_LENGTH * 2, V2_SALT_LENGTH * 2 + IV_LENGTH * 2), 'hex');
   const authTag = Buffer.from(data.slice(V2_SALT_LENGTH * 2 + IV_LENGTH * 2, V2_SALT_LENGTH * 2 + IV_LENGTH * 2 + AUTH_TAG_LENGTH * 2), 'hex');
@@ -265,8 +267,7 @@ export function scrubOutput(output: string, secrets: string[], extraPatterns: st
 
   // Apply built-in patterns
   for (const pattern of BUILTIN_SECRET_PATTERNS) {
-    pattern.lastIndex = 0; // reset global regex state
-    result = result.replace(pattern, '[REDACTED]');
+    result = result.replaceAll(pattern, '[REDACTED]');
   }
 
   // Apply caller-supplied patterns from config
