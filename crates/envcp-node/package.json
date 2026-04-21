@@ -1,6 +1,6 @@
 {
   "name": "@fentz26/envcp-core",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Native Node.js binding for envcp-core (Rust)",
   "main": "index.js",
   "napi": {
