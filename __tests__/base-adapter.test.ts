@@ -236,6 +236,14 @@ describe('BaseAdapter tool operations', () => {
       await expect(a.runSetVariable({ name: 'SECRET_KEY', value: 'v' })).rejects.toThrow('blacklisted');
     });
 
+    it('denies writes when a variable-specific rule disables them', async () => {
+      const a = new TestAdapter(makeConfig({
+        variable_rules: { LOCKED_KEY: { allow_ai_write: false } },
+      }), tmpDir);
+      await a.init();
+      await expect(a.runSetVariable({ name: 'LOCKED_KEY', value: 'v' })).rejects.toThrow('AI write access is denied');
+    });
+
     it('creates a new variable', async () => {
       const result = await adapter.runSetVariable({ name: 'NEW_VAR', value: 'hello', tags: ['test'] });
       expect(result.success).toBe(true);
@@ -327,6 +335,22 @@ describe('BaseAdapter tool operations', () => {
       await a.init();
       await a.seedVariable({ name: 'SECRET_KEY', value: 'x', encrypted: false, created: now, updated: now, sync_to_env: true });
       await expect(a.runAddToEnv({ name: 'SECRET_KEY' })).rejects.toThrow('blacklisted');
+    });
+
+    it('throws when AI export is disabled for addToEnv', async () => {
+      const a = new TestAdapter(makeConfig({ allow_ai_export: false }), tmpDir);
+      await a.init();
+      await a.seedVariable({ name: 'MY_VAR', value: 'x', encrypted: false, created: now, updated: now, sync_to_env: true });
+      await expect(a.runAddToEnv({ name: 'MY_VAR' })).rejects.toThrow('AI export access is disabled');
+    });
+
+    it('denies addToEnv when a variable-specific export rule disables it', async () => {
+      const a = new TestAdapter(makeConfig({
+        variable_rules: { MY_VAR: { allow_ai_export: false } },
+      }), tmpDir);
+      await a.init();
+      await a.seedVariable({ name: 'MY_VAR', value: 'x', encrypted: false, created: now, updated: now, sync_to_env: true });
+      await expect(a.runAddToEnv({ name: 'MY_VAR' })).rejects.toThrow('AI export access is denied');
     });
 
     it('blocks path traversal in env_file', async () => {

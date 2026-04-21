@@ -160,6 +160,76 @@ export interface MenuTab {
   items: MenuChoice[];
 }
 
+function clearScreen(output: NodeJS.WriteStream): void {
+  output.write('\x1Bc');
+}
+
+function formatMenuLine(choice: MenuChoice, isSelected: boolean): string {
+  const prefix = isSelected ? `${chalkPointer()} ` : '  ';
+  return `${prefix}${choice.label}${choice.hint ? ` ${choice.hint}` : ''}`;
+}
+
+function renderMenuItems(output: NodeJS.WriteStream, choices: MenuChoice[], selectedIndex: number): void {
+  for (let i = 0; i < choices.length; i += 1) {
+    output.write(`${formatMenuLine(choices[i], i === selectedIndex)}\n`);
+  }
+}
+
+function createRawMenuSession<T>(
+  input: NodeJS.ReadStream,
+  output: NodeJS.WriteStream,
+  resolve: (value: T) => void,
+  reject: (error: Error) => void,
+): {
+  bind: (onData: (chunk: Buffer | string) => void) => void;
+  finish: (value: T) => void;
+  cancel: () => never;
+} {
+  let settled = false;
+
+  const cleanup = () => {
+    input.removeListener('data', onData);
+    input.removeListener('error', onError);
+    input.pause();
+    input.setRawMode(false);
+  };
+
+  const finish = (value: T) => {
+    settled = true;
+    cleanup();
+    clearScreen(output);
+    resolve(value);
+  };
+
+  const cancel = (): never => {
+    settled = true;
+    cleanup();
+    output.write('\n');
+    process.exit(1);
+  };
+
+  const onError = (err: Error) => {
+    if (!settled) {
+      cleanup();
+      reject(err);
+    }
+  };
+
+  let onData = (_chunk: Buffer | string) => {};
+
+  return {
+    bind: (handler) => {
+      onData = handler;
+      input.setRawMode(true);
+      input.resume();
+      input.on('data', onData);
+      input.once('error', onError);
+    },
+    finish,
+    cancel,
+  };
+}
+
 /** Prompt to select from a list of choices (numbered menu). */
 export async function promptList(message: string, choices: ListChoice[], defaultValue?: string): Promise<string> {
   if (choices.length === 0) {
@@ -218,46 +288,23 @@ export async function promptMenu(message: string, choices: MenuChoice[], initial
   let selectedIndex = Math.max(0, choices.findIndex((choice) => choice.value === initialValue));
 
   return new Promise((resolve, reject) => {
-    let settled = false;
-
     const render = () => {
-      output.write('\x1Bc');
+      clearScreen(output);
       output.write(`${message}\n\n`);
-      for (let i = 0; i < choices.length; i += 1) {
-        const choice = choices[i];
-        const cursor = i === selectedIndex ? chalkPointer() : ' ';
-        const line = i === selectedIndex
-          ? `${cursor} ${choice.label}${choice.hint ? ` ${choice.hint}` : ''}`
-          : `  ${choice.label}${choice.hint ? ` ${choice.hint}` : ''}`;
-        output.write(`${line}\n`);
-      }
+      renderMenuItems(output, choices, selectedIndex);
       output.write('\nUse arrow keys and press Enter.\n');
     };
 
-    const cleanup = () => {
-      input.removeListener('data', onData);
-      input.pause();
-      input.setRawMode(false);
-    };
-
-    const finish = (value: string) => {
-      settled = true;
-      cleanup();
-      output.write('\x1Bc');
-      resolve(value);
-    };
+    const session = createRawMenuSession(input, output, resolve, reject);
 
     const onData = (chunk: Buffer | string) => {
       const data = chunk.toString();
       if (data === '\u0003') {
-        settled = true;
-        cleanup();
-        output.write('\n');
-        process.exit(1);
+        session.cancel();
       }
 
       if (data === '\r' || data === '\n') {
-        finish(choices[selectedIndex].value);
+        session.finish(choices[selectedIndex].value);
         return;
       }
 
@@ -273,15 +320,7 @@ export async function promptMenu(message: string, choices: MenuChoice[], initial
       }
     };
 
-    input.setRawMode(true);
-    input.resume();
-    input.on('data', onData);
-    input.once('error', (err) => {
-      if (!settled) {
-        cleanup();
-        reject(err);
-      }
-    });
+    session.bind(onData);
     render();
   });
 }
@@ -327,10 +366,8 @@ export async function promptTabbedMenu(message: string, tabs: MenuTab[], initial
   normalizeItemIndex();
 
   return new Promise((resolve, reject) => {
-    let settled = false;
-
     const render = () => {
-      output.write('\x1Bc');
+      clearScreen(output);
       output.write(`${message}\n\n`);
       output.write(
         tabs
@@ -338,43 +375,20 @@ export async function promptTabbedMenu(message: string, tabs: MenuTab[], initial
           .join('    '),
       );
       output.write('\n\n');
-
-      const items = tabs[tabIndex].items;
-      for (let i = 0; i < items.length; i += 1) {
-        const item = items[i];
-        const cursor = i === itemIndex ? chalkPointer() : ' ';
-        const line = i === itemIndex
-          ? `${cursor} ${item.label}${item.hint ? ` ${item.hint}` : ''}`
-          : `  ${item.label}${item.hint ? ` ${item.hint}` : ''}`;
-        output.write(`${line}\n`);
-      }
+      renderMenuItems(output, tabs[tabIndex].items, itemIndex);
       output.write('\nUse left/right to change tabs, up/down to move, Enter to select.\n');
     };
 
-    const cleanup = () => {
-      input.removeListener('data', onData);
-      input.pause();
-      input.setRawMode(false);
-    };
-
-    const finish = (value: string) => {
-      settled = true;
-      cleanup();
-      output.write('\x1Bc');
-      resolve(value);
-    };
+    const session = createRawMenuSession(input, output, resolve, reject);
 
     const onData = (chunk: Buffer | string) => {
       const data = chunk.toString();
       if (data === '\u0003') {
-        settled = true;
-        cleanup();
-        output.write('\n');
-        process.exit(1);
+        session.cancel();
       }
 
       if (data === '\r' || data === '\n') {
-        finish(tabs[tabIndex].items[itemIndex].value);
+        session.finish(tabs[tabIndex].items[itemIndex].value);
         return;
       }
 
@@ -410,15 +424,7 @@ export async function promptTabbedMenu(message: string, tabs: MenuTab[], initial
       }
     };
 
-    input.setRawMode(true);
-    input.resume();
-    input.on('data', onData);
-    input.once('error', (err) => {
-      if (!settled) {
-        cleanup();
-        reject(err);
-      }
-    });
+    session.bind(onData);
     render();
   });
 }

@@ -445,18 +445,16 @@ export abstract class BaseAdapter {
       throw new Error(`Invalid variable name '${args.name}'. Must match [A-Za-z_][A-Za-z0-9_]*`);
     }
 
-    if (!getDefaultAccessFlag(this.config, 'write', this.currentClientId)
-      && !resolveAccessRuleFlag(args.name, this.config, 'write', this.currentClientId)) {
-      throw new Error('AI write access is disabled');
-    }
-
     if (isBlacklisted(args.name, this.config)) {
       throw new Error(`Variable '${args.name}' is blacklisted`);
     }
 
-    if (!canAccessVariable(args.name, this.config, 'write', this.currentClientId)) {
-      throw new Error(`AI write access is denied for variable '${args.name}'`);
-    }
+    this.ensureVariableOperationAllowed(
+      args.name,
+      'write',
+      'AI write access is disabled',
+      `AI write access is denied for variable '${args.name}'`,
+    );
 
     // Enforce require_variable_password config
     if (this.config.access.require_variable_password && !args.protect && !args.unprotect) {
@@ -593,14 +591,12 @@ export abstract class BaseAdapter {
       throw new Error(`Invalid variable name '${args.name}'. Must match [A-Za-z_][A-Za-z0-9_]*`);
     }
 
-    if (!getDefaultAccessFlag(this.config, 'delete', this.currentClientId)
-      && !resolveAccessRuleFlag(args.name, this.config, 'delete', this.currentClientId)) {
-      throw new Error('AI delete access is disabled');
-    }
-
-    if (!canAccessVariable(args.name, this.config, 'delete', this.currentClientId)) {
-      throw new Error(`AI delete access is denied for variable '${args.name}'`);
-    }
+    this.ensureVariableOperationAllowed(
+      args.name,
+      'delete',
+      'AI delete access is disabled',
+      `AI delete access is denied for variable '${args.name}'`,
+    );
 
     const deleted = await this.storage.delete(args.name);
 
@@ -705,18 +701,16 @@ export abstract class BaseAdapter {
       throw new Error(`Variable '${args.name}' not found`);
     }
 
-    if (!getDefaultAccessFlag(this.config, 'export', this.currentClientId)
-      && !resolveAccessRuleFlag(args.name, this.config, 'export', this.currentClientId)) {
-      throw new Error('AI export access is disabled');
-    }
-
     if (isBlacklisted(args.name, this.config)) {
       throw new Error(`Variable '${args.name}' is blacklisted`);
     }
 
-    if (!canAccessVariable(args.name, this.config, 'export', this.currentClientId)) {
-      throw new Error(`AI export access is denied for variable '${args.name}'`);
-    }
+    this.ensureVariableOperationAllowed(
+      args.name,
+      'export',
+      'AI export access is disabled',
+      `AI export access is denied for variable '${args.name}'`,
+    );
 
     const envPath = path.resolve(this.projectPath, args.env_file || '.env');
     const { envPathReal, projectRootReal } = await this.canonicalizeEnvPath(envPath);
@@ -790,6 +784,22 @@ export abstract class BaseAdapter {
       accessible,
       message: accessible ? 'Variable exists and can be accessed' : 'Variable cannot be accessed',
     };
+  }
+
+  private ensureVariableOperationAllowed(
+    name: string,
+    operation: 'read' | 'write' | 'delete' | 'export',
+    disabledMessage: string,
+    deniedMessage: string,
+  ): void {
+    if (!getDefaultAccessFlag(this.config, operation, this.currentClientId)
+      && !resolveAccessRuleFlag(name, this.config, operation, this.currentClientId)) {
+      throw new Error(disabledMessage);
+    }
+
+    if (!canAccessVariable(name, this.config, operation, this.currentClientId)) {
+      throw new Error(deniedMessage);
+    }
   }
 
   private parseCommand(command: string): { program: string; args: string[] } {

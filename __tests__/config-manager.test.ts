@@ -2,7 +2,7 @@ import * as fs from 'fs/promises';
 import { ensureDir, pathExists } from '../src/utils/fs.js';
 import * as os from 'os';
 import * as path from 'path';
-import { loadConfig, loadScopedConfig, saveScopedConfig, saveConfig, initConfig, canAIActiveCheck, requiresUserReference, registerMcpConfig, canAccessVariable, requiresConfirmationForVariable, isVariableRuleActive } from '../src/config/manager';
+import { loadConfig, loadScopedConfig, saveScopedConfig, saveConfig, initConfig, canAIActiveCheck, requiresUserReference, registerMcpConfig, canAccessVariable, requiresConfirmationForVariable, isVariableRuleActive, canAccess } from '../src/config/manager';
 import { EnvCPConfigSchema } from '../src/types';
 
 describe('loadConfig', () => {
@@ -92,6 +92,28 @@ describe('scoped config load/save', () => {
     expect(projectConfig.access.variable_rules.HOME_KEY).toBeUndefined();
   });
 
+  it('loads merged scope by combining home and project config', async () => {
+    const projectDir = path.join(tmpDir, 'project');
+    await ensureDir(projectDir);
+    await ensureDir(path.join(tmpDir, '.envcp'));
+    await fs.writeFile(path.join(tmpDir, '.envcp', 'config.yaml'), 'access:\n  allow_ai_read: true\n');
+    await fs.writeFile(path.join(projectDir, 'envcp.yaml'), 'access:\n  mask_values: false\n');
+
+    const mergedConfig = await loadScopedConfig(projectDir, 'merged');
+    expect(mergedConfig.access.allow_ai_read).toBe(true);
+    expect(mergedConfig.access.mask_values).toBe(false);
+  });
+
+  it('loads home scope with stored global config values', async () => {
+    const projectDir = path.join(tmpDir, 'project');
+    await ensureDir(projectDir);
+    await ensureDir(path.join(tmpDir, '.envcp'));
+    await fs.writeFile(path.join(tmpDir, '.envcp', 'config.yaml'), 'access:\n  require_confirmation: false\n');
+
+    const homeConfig = await loadScopedConfig(projectDir, 'home');
+    expect(homeConfig.access.require_confirmation).toBe(false);
+  });
+
   it('saves home scope rules into ~/.envcp/config.yaml', async () => {
     const projectDir = path.join(tmpDir, 'project');
     await ensureDir(projectDir);
@@ -101,6 +123,17 @@ describe('scoped config load/save', () => {
 
     const homeConfig = await fs.readFile(path.join(tmpDir, '.envcp', 'config.yaml'), 'utf8');
     expect(homeConfig).toContain('HOME_KEY');
+  });
+
+  it('saves project scope rules into envcp.yaml', async () => {
+    const projectDir = path.join(tmpDir, 'project');
+    await ensureDir(projectDir);
+    const config = await loadScopedConfig(projectDir, 'project');
+    config.access.variable_rules.PROJECT_KEY = { allow_ai_read: true };
+    await saveScopedConfig(config, projectDir, 'project');
+
+    const projectConfig = await fs.readFile(path.join(projectDir, 'envcp.yaml'), 'utf8');
+    expect(projectConfig).toContain('PROJECT_KEY');
   });
 });
 
@@ -522,6 +555,16 @@ describe('variable-specific access rules', () => {
     expect(canAccessVariable('OPENAI_API_KEY', config, 'read', 'openai')).toBe(true);
   });
 
+  it('rejects access when canAccess hits blacklist patterns directly', () => {
+    const config = EnvCPConfigSchema.parse({
+      access: {
+        blacklist_patterns: ['SECRET_*'],
+      },
+    });
+    expect(canAccess('SECRET_TOKEN', config)).toBe(false);
+    expect(canAccess('PUBLIC_TOKEN', config)).toBe(true);
+  });
+
   it('uses who-specific variable overrides ahead of global ones', () => {
     const config = EnvCPConfigSchema.parse({
       access: {
@@ -562,6 +605,68 @@ describe('variable-specific access rules', () => {
     expect(canAIActiveCheck(config, 'cursor')).toBe(true);
     expect(requiresConfirmationForVariable('OTHER_KEY', config, 'cursor')).toBe(true);
     expect(requiresConfirmationForVariable('FAST_KEY', config, 'cursor')).toBe(false);
+  });
+
+  it('treats a window with matching start and end times as always active', () => {
+    const config = EnvCPConfigSchema.parse({
+      access: {
+        variable_rules: {
+          ALWAYS_ON: { active_window: { start: '09:00', end: '09:00' } },
+        },
+      },
+    });
+    expect(isVariableRuleActive('ALWAYS_ON', config, new Date('2024-01-01T03:00:00'))).toBe(true);
+    expect(isVariableRuleActive('ALWAYS_ON', config, new Date('2024-01-01T18:00:00'))).toBe(true);
+  });
+
+  it('uses client-specific defaults for write delete export and execute', () => {
+    const config = EnvCPConfigSchema.parse({
+      access: {
+        allow_ai_write: false,
+        allow_ai_delete: false,
+        allow_ai_export: false,
+        allow_ai_execute: false,
+        client_rules: {
+          api: {
+            allow_ai_write: true,
+            allow_ai_delete: true,
+            allow_ai_export: true,
+            allow_ai_execute: true,
+          },
+        },
+      },
+    });
+    expect(canAccessVariable('API_KEY', config, 'write', 'api')).toBe(true);
+    expect(canAccessVariable('API_KEY', config, 'delete', 'api')).toBe(true);
+    expect(canAccessVariable('API_KEY', config, 'export', 'api')).toBe(true);
+    expect(canAccessVariable('API_KEY', config, 'execute', 'api')).toBe(true);
+  });
+
+  it('uses client-specific variable overrides for write delete export and execute', () => {
+    const config = EnvCPConfigSchema.parse({
+      access: {
+        allow_ai_write: false,
+        allow_ai_delete: false,
+        allow_ai_export: false,
+        allow_ai_execute: false,
+        client_rules: {
+          api: {
+            variable_rules: {
+              API_KEY: {
+                allow_ai_write: true,
+                allow_ai_delete: true,
+                allow_ai_export: true,
+                allow_ai_execute: true,
+              },
+            },
+          },
+        },
+      },
+    });
+    expect(canAccessVariable('API_KEY', config, 'write', 'api')).toBe(true);
+    expect(canAccessVariable('API_KEY', config, 'delete', 'api')).toBe(true);
+    expect(canAccessVariable('API_KEY', config, 'export', 'api')).toBe(true);
+    expect(canAccessVariable('API_KEY', config, 'execute', 'api')).toBe(true);
   });
 });
 
