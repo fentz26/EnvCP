@@ -337,9 +337,8 @@ export class HsmManager {
 
   static fromConfig(config: EnvCPConfig, projectPath: string): HsmManager {
     const hsm = config.hsm ?? {};
-    const keyPath = path.isAbsolute(hsm.protected_key_path ?? '')
-      ? hsm.protected_key_path!
-      : path.join(projectPath, hsm.protected_key_path ?? '.envcp/.hsm-key');
+    const rawKeyPath = hsm.protected_key_path ?? '.envcp/.hsm-key';
+    const keyPath = path.isAbsolute(rawKeyPath) ? rawKeyPath : path.join(projectPath, rawKeyPath);
 
     let backend: HsmBackend;
     switch (hsm.type) {

@@ -33,7 +33,10 @@ import { installService, statusService, uninstallService } from '../service/inde
 
 initMemoryProtection();
 
-async function resolveCliContext(vaultOverride?: 'global' | 'project'): Promise<{ projectPath: string; config: EnvCPConfig }> {
+type VaultOverride = 'global' | 'project';
+type HsmType = 'yubikey' | 'gpg' | 'pkcs11';
+
+async function resolveCliContext(vaultOverride?: VaultOverride): Promise<{ projectPath: string; config: EnvCPConfig }> {
   if (vaultOverride === 'global') {
     const home = process.env.HOME || process.env.USERPROFILE || os.homedir();
     const config = await loadConfig(home);
@@ -138,6 +141,13 @@ function formatEnvAssignmentValue(value: string): string {
 
   const escapedValue = value.replaceAll(/["\\]/g, String.raw`\$&`);
   return `"${escapedValue}"`;
+}
+
+function globToRegExp(pattern: string): RegExp {
+  const escaped = pattern.replaceAll(/[.+?^${}()|[\]\\]/g, String.raw`\$&`).replaceAll('*', '.*');
+  const source = `^${escaped}$`;
+  // eslint-disable-next-line security/detect-non-literal-regexp -- glob pattern from config; metacharacters escaped above
+  return new RegExp(source);
 }
 
 async function getKeychainPassword(projectPath: string, serviceName?: string, multiFactor = false): Promise<string> {
@@ -329,7 +339,7 @@ async function maybeConfigureHsmAuth(
   projectPath: string,
   options: {
     authMethod?: string;
-    hsmType?: 'yubikey' | 'gpg' | 'pkcs11';
+    hsmType?: HsmType;
     keyId?: string;
     pkcs11Lib?: string;
   },
@@ -350,21 +360,24 @@ async function maybeConfigureHsmAuth(
     protected_key_path: config.hsm?.protected_key_path ?? '.envcp/.hsm-key',
   };
   config.auth = {
-    method: authMethod as 'hsm' | 'multi',
+    method: authMethod,
     multi_factors: authMethod === 'multi' ? ['password', 'hsm'] : ['hsm'],
     fallback: 'password',
   };
   await saveConfig(config, projectPath);
 }
 
-async function withSession(fn: (storage: StorageManager, password: string, config: EnvCPConfig, projectPath: string, logManager: LogManager) => Promise<void>, vaultOverride?: 'global' | 'project'): Promise<void> {
+async function withSession(fn: (storage: StorageManager, password: string, config: EnvCPConfig, projectPath: string, logManager: LogManager) => Promise<void>, vaultOverride?: VaultOverride): Promise<void> {
   const { projectPath, config } = await resolveCliContext(vaultOverride);
 
-  const vaultPath = vaultOverride
-    ? vaultOverride === 'global'
-      ? getGlobalVaultPath(config)
-      : getProjectVaultPath(projectPath, config)
-    : await resolveVaultPath(projectPath, config);
+  let vaultPath: string;
+  if (!vaultOverride) {
+    vaultPath = await resolveVaultPath(projectPath, config);
+  } else if (vaultOverride === 'global') {
+    vaultPath = getGlobalVaultPath(config);
+  } else {
+    vaultPath = getProjectVaultPath(projectPath, config);
+  }
 
   const logManager = new LogManager(resolveLogPath(config.audit, projectPath), config.audit);
   await logManager.init();
@@ -587,7 +600,7 @@ async function runInitFlow(options: {
   skipEnv?: boolean;
   skipMcp?: boolean;
   authMethod?: string;
-  hsmType?: 'yubikey' | 'gpg' | 'pkcs11';
+  hsmType?: HsmType;
   keyId?: string;
   pkcs11Lib?: string;
 } = {}): Promise<void> {
@@ -625,9 +638,14 @@ async function runInitFlow(options: {
 
   await saveConfig(config, projectPath);
 
-  const shouldImportEnv = options.skipEnv
-    ? false
-    : hasDotEnv && (isInteractiveCli() ? await promptConfirm('Import variables from .env?', true) : false);
+  let shouldImportEnv: boolean;
+  if (options.skipEnv || !hasDotEnv) {
+    shouldImportEnv = false;
+  } else if (isInteractiveCli()) {
+    shouldImportEnv = await promptConfirm('Import variables from .env?', true);
+  } else {
+    shouldImportEnv = false;
+  }
   await maybeImportDotEnv(projectPath, config, password, shouldImportEnv);
 
   const serviceSetup = await buildServiceSetup(projectPath, initMode);
@@ -1636,7 +1654,7 @@ async function runUnlockFlow(options: UnlockOptions = {}): Promise<void> {
   }
 
   if (options.setupHsm) {
-    const hsmType = (options.hsmType as 'yubikey' | 'gpg' | 'pkcs11') || 'yubikey';
+    const hsmType = (options.hsmType as HsmType) || 'yubikey';
 
     config.hsm = {
       ...config.hsm,
@@ -2443,11 +2461,7 @@ program
         if (isBlacklisted(name, config) || !canAccess(name, config)) continue;
         if (!variable.sync_to_env) continue;
 
-        const excluded = config.sync.exclude?.some((pattern: string) => {
-          // eslint-disable-next-line security/detect-non-literal-regexp -- glob pattern from config; metacharacters escaped above
-          const regex = new RegExp(`^${pattern.replaceAll(/[.+?^${}()|[\]\\]/g, String.raw`\$&`).replaceAll('*', '.*')}$`);
-          return regex.test(name);
-        });
+        const excluded = config.sync.exclude?.some((pattern: string) => globToRegExp(pattern).test(name));
         if (excluded) continue;
 
         lines.push(`${name}=${formatEnvAssignmentValue(variable.value)}`);
@@ -2469,11 +2483,7 @@ program
           if (isBlacklisted(name, config) || !canAccess(name, config)) continue;
           if (!variable.sync_to_env) continue;
 
-          const excluded = config.sync.exclude?.some((pattern: string) => {
-            // eslint-disable-next-line security/detect-non-literal-regexp -- glob pattern from config; metacharacters escaped above
-            const regex = new RegExp(`^${pattern.replaceAll(/[.+?^${}()|[\]\\]/g, String.raw`\$&`).replaceAll('*', '.*')}$`);
-            return regex.test(name);
-          });
+          const excluded = config.sync.exclude?.some((pattern: string) => globToRegExp(pattern).test(name));
           if (excluded) continue;
 
           if (name in existing) {
@@ -3190,7 +3200,7 @@ const vaultCommand = program
       .option('-t, --tags <tags>', 'Tags (comma-separated)')
       .action(async (name, options, cmd) => {
         const parentOpts = cmd.parent.opts();
-        let vaultOverride: 'global' | 'project' | undefined;
+        let vaultOverride: VaultOverride | undefined;
         if (parentOpts.global) {
           vaultOverride = 'global';
         } else if (parentOpts.project) {
@@ -3222,7 +3232,7 @@ const vaultCommand = program
       .option('-v, --show-values', 'Show actual values')
       .action(async (options, cmd) => {
         const parentOpts = cmd.parent.opts();
-        let vaultOverride: 'global' | 'project' | undefined;
+        let vaultOverride: VaultOverride | undefined;
         if (parentOpts.global) {
           vaultOverride = 'global';
         } else if (parentOpts.project) {
@@ -3252,7 +3262,7 @@ const vaultCommand = program
       .option('-v, --show-value', 'Show actual value')
       .action(async (name, options, cmd) => {
         const parentOpts = cmd.parent.opts();
-        let vaultOverride: 'global' | 'project' | undefined;
+        let vaultOverride: VaultOverride | undefined;
         if (parentOpts.global) {
           vaultOverride = 'global';
         } else if (parentOpts.project) {
@@ -3276,7 +3286,7 @@ const vaultCommand = program
       .argument('<name>', 'Variable name')
       .action(async (name, cmd) => {
         const parentOpts = cmd.parent.parent.opts();
-        let vaultOverride: 'global' | 'project' | undefined;
+        let vaultOverride: VaultOverride | undefined;
         if (parentOpts.global) {
           vaultOverride = 'global';
         } else if (parentOpts.project) {

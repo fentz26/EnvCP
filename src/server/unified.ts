@@ -37,10 +37,8 @@ export class UnifiedServer {
   // Detect client type from request headers
   detectClientType(req: http.IncomingMessage, pathname?: string): ClientType {
     const userAgent = req.headers['user-agent']?.toLowerCase() || '';
-    if (pathname === undefined) {
-      /* c8 ignore next -- detectClientType is always called with pathname from request routing; the undefined branch is unreachable in practice */
-      pathname = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`).pathname;
-    }
+    /* c8 ignore next -- detectClientType is always called with pathname from request routing; the undefined branch is unreachable in practice */
+    pathname ??= new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`).pathname;
 
     // Check for OpenAI-style requests
     if (pathname.startsWith('/v1/chat') ||

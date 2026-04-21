@@ -112,7 +112,7 @@ export function writeCache(projectPath: string, data: CachedCheck): void {
 }
 
 export async function fetchReleases(perPage = 50): Promise<ReleaseInfo[]> {
-  const https = await import('https');
+  const https = await import('node:https');
   return new Promise((resolve, reject) => {
     const options = {
       hostname: 'api.github.com',
@@ -157,7 +157,7 @@ export function filterByChannel(releases: ReleaseInfo[], channel: ReleaseChannel
 }
 
 export async function fetchLatestRelease(): Promise<ReleaseInfo> {
-  const https = await import('https');
+  const https = await import('node:https');
   return new Promise((resolve, reject) => {
     const options = {
       hostname: 'api.github.com',

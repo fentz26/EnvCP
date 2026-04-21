@@ -3,7 +3,7 @@ import { EventEmitter } from 'events';
 
 const mockRequest = jest.fn();
 
-jest.unstable_mockModule('https', () => ({
+jest.unstable_mockModule('node:https', () => ({
   default: {
     request: mockRequest,
   },

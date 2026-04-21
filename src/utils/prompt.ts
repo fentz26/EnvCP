@@ -329,7 +329,7 @@ function chalkPointer(): string {
 }
 
 export async function promptTabbedMenu(message: string, tabs: MenuTab[], initialTabIndex = 0): Promise<string> {
-  if (tabs.length === 0 || tabs.every((tab) => tab.items.length === 0)) {
+  if (tabs.every((tab) => tab.items.length === 0)) {
     throw new Error('No tab items provided');
   }
 
