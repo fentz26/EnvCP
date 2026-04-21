@@ -51,6 +51,11 @@ We welcome feature suggestions! Please open an issue with:
    - `docs:` for documentation changes
    - `test:` for adding or fixing tests
    - `ci:` for CI/CD changes
+   - `build:` for build system or native bindings changes
+   - `perf:` for performance improvements
+   - `security:` for security fixes and hardening
+   - `deps:` (or `deps(deps-dev):`) for dependency bumps
+   - `release:` for release preparation commits
 
 5. **Push and create a pull request**:
    ```bash
@@ -99,26 +104,51 @@ We welcome feature suggestions! Please open an issue with:
 ```
 EnvCP/
 ├── src/
-│   ├── adapters/      # Protocol adapters (REST, OpenAI, Gemini, MCP base)
-│   ├── cli/           # CLI command implementations
-│   ├── config/        # Configuration loading and config-guard
-│   ├── mcp/           # MCP server implementation
-│   ├── server/        # Unified multi-protocol server
-│   ├── storage/       # Encrypted storage and audit logging
-│   ├── utils/         # Utilities (crypto, session, keychain, update-checker)
-│   ├── vault/         # Global vault and vault management
-│   └── types.ts       # Zod schemas and TypeScript types
-├── __tests__/         # Jest test suite
-└── dist/              # Compiled JavaScript (generated)
+│   ├── adapters/       # Protocol adapters (REST, OpenAI, Gemini, MCP base)
+│   ├── cli/            # CLI command implementations
+│   ├── config/         # Configuration loading, scoped rules, and config-guard
+│   ├── mcp/            # MCP server implementation
+│   ├── server/         # Unified multi-protocol server
+│   ├── service/        # Auto-start service generators (systemd, launchd, Windows)
+│   ├── storage/        # Encrypted storage, backups, and audit log chain
+│   ├── utils/          # Utilities (crypto, session, prompt, keychain, lockout, logs)
+│   ├── vault/          # Global vault and vault management
+│   ├── cli.ts          # CLI entry point
+│   ├── index.ts        # Library entry point
+│   ├── types.ts        # Zod schemas and TypeScript types
+│   └── version.ts      # Version constant (generated from VERSION)
+├── __tests__/          # Jest test suite
+├── crates/             # Rust core and native bindings
+│   ├── envcp-core/     # Rust core library (envcp-core)
+│   ├── envcp-node/     # Node.js napi bindings
+│   └── envcp-python/   # Python pyo3 bindings
+├── python/             # Python wrapper package (pip install envcp)
+├── plugins/            # Claude Code plugin (plugins/envcp)
+├── docs/               # Mintlify documentation site
+├── docker/             # Dockerfile and container image assets
+├── scripts/            # Release and tooling scripts (sync-version, postinstall)
+├── VERSION             # Single source of truth for the released version
+└── dist/               # Compiled JavaScript (generated)
 ```
 
 ## Testing
 
 Before submitting a PR:
-1. Run the build: `npm run build`
-2. Test the CLI: `node dist/cli.js --help`
-3. Test each command manually
-4. Test with different protocols (MCP, REST, OpenAI, Gemini)
+
+1. Build the project: `npm run build`
+2. Run the full test suite: `npm test`
+3. Run the linter: `npm run lint`
+4. Exercise the CLI: `node dist/cli.js --help`
+5. If touching adapters or the unified server, test each protocol: MCP (stdio), REST, OpenAI, and Gemini
+6. If touching the Rust core or native bindings, rebuild `crates/` and confirm the Node and Python bindings load
+
+### Coverage
+
+The repository enforces high coverage (currently 100% line / 100% branch across 1100+ tests). New features should land with focused tests in `__tests__/` that cover both the happy path and representative failure modes.
+
+### Release channels
+
+Releases ship on three channels managed by CI: `latest` (stable), `experimental`, and `canary`. Only maintainers publish; see the release workflow for details.
 
 ## Security
 
