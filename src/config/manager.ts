@@ -398,6 +398,43 @@ export function writeToConfig(
   }
 }
 
+async function shouldSkipMcpTarget(target: McpTarget, projectPath: string, configPath: string): Promise<boolean> {
+  if (target.projectLocal && target.detectDir) {
+    const dirPath = path.join(projectPath, target.detectDir);
+    if (!await pathExists(dirPath)) return true;
+  }
+
+  if (target.requireExisting && !await pathExists(configPath)) return true;
+
+  // For project-local Google AntiGravity: always skip creating the file fresh
+  // (only update if it already exists, since we can't detect the tool)
+  if (target.name === 'Google AntiGravity' && !await pathExists(configPath)) return true;
+
+  return false;
+}
+
+async function loadMcpTargetConfig(configPath: string): Promise<Record<string, unknown>> {
+  if (!await pathExists(configPath)) {
+    return {};
+  }
+  const content = await fs.readFile(configPath, 'utf8');
+  return JSON.parse(content) as Record<string, unknown>;
+}
+
+async function registerMcpTarget(target: McpTarget, projectPath: string, configPath: string): Promise<'registered' | 'alreadyConfigured'> {
+  const config = await loadMcpTargetConfig(configPath);
+  const entry = createMcpEntry(projectPath, target.projectLocal);
+  const result = writeToConfig(config, target.format, entry);
+
+  if (result.alreadyExists) {
+    return 'alreadyConfigured';
+  }
+
+  await ensureDir(path.dirname(configPath));
+  await fs.writeFile(configPath, JSON.stringify(config, null, 2), 'utf8');
+  return 'registered';
+}
+
 export async function registerMcpConfig(projectPath: string): Promise<{ registered: string[]; alreadyConfigured: string[]; manual: string[] }> {
   /* c8 ignore next -- HOME or USERPROFILE always set in supported environments */
   const home = process.env.HOME || process.env.USERPROFILE || '';
@@ -410,38 +447,15 @@ export async function registerMcpConfig(projectPath: string): Promise<{ register
 
   for (const target of targets) {
     const configPath = target.getPath(projectPath, home, platform);
-
-    // For project-local: check if the tool's directory exists
-    if (target.projectLocal && target.detectDir) {
-      const dirPath = path.join(projectPath, target.detectDir);
-      if (!await pathExists(dirPath)) continue;
-    }
-
-    // For global configs that don't exist yet: skip (tool not installed)
-    if (target.requireExisting && !await pathExists(configPath)) continue;
-
-    // For project-local Google AntiGravity: always skip creating the file fresh
-    // (only update if it already exists, since we can't detect the tool)
-    if (target.name === 'Google AntiGravity' && !await pathExists(configPath)) continue;
+    if (await shouldSkipMcpTarget(target, projectPath, configPath)) continue;
 
     try {
-      let config: Record<string, unknown> = {};
-      if (await pathExists(configPath)) {
-        const content = await fs.readFile(configPath, 'utf8');
-        config = JSON.parse(content);
-      }
-
-      const entry = createMcpEntry(projectPath, target.projectLocal);
-      const result = writeToConfig(config, target.format, entry);
-
-if (result.alreadyExists) {
+      const status = await registerMcpTarget(target, projectPath, configPath);
+      if (status === 'alreadyConfigured') {
         alreadyConfigured.push(target.name);
-        continue;
+      } else {
+        registered.push(target.name);
       }
-
-      await ensureDir(path.dirname(configPath));
-      await fs.writeFile(configPath, JSON.stringify(config, null, 2), 'utf8');
-      registered.push(target.name);
     } catch {
       /* c8 ignore next -- rare: invalid JSON or permission errors are silently skipped */
     }

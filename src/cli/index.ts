@@ -15,6 +15,7 @@ import { KeychainManager } from '../utils/keychain.js';
 import { HsmManager } from '../utils/hsm.js';
 import { checkForUpdate, formatUpdateMessage, logUpdateCheck, fetchReleases, filterByChannel, ReleaseChannel } from '../utils/update-checker.js';
 import { spawnSync } from 'node:child_process';
+import { createRequire } from 'node:module';
 import { LockoutManager } from '../utils/lockout.js';
 
 import { Variable, EnvCPConfig } from '../types.js';
@@ -35,6 +36,9 @@ initMemoryProtection();
 
 type VaultOverride = 'global' | 'project';
 type HsmType = 'yubikey' | 'gpg' | 'pkcs11';
+
+const require = createRequire(import.meta.url);
+const npmCliPath = require.resolve('npm/bin/npm-cli.js');
 
 async function resolveCliContext(vaultOverride?: VaultOverride): Promise<{ projectPath: string; config: EnvCPConfig }> {
   if (vaultOverride === 'global') {
@@ -2621,6 +2625,55 @@ program
     });
   });
 
+function isSyncEligible(name: string, variable: Variable, config: EnvCPConfig): boolean {
+  if (isBlacklisted(name, config) || !canAccess(name, config)) return false;
+  if (!variable.sync_to_env) return false;
+  return !config.sync.exclude?.some((pattern: string) => globToRegExp(pattern).test(name));
+}
+
+function getSyncEntries(variables: Record<string, Variable>, config: EnvCPConfig): Array<[string, Variable]> {
+  return Object.entries(variables).filter(([name, variable]) => isSyncEligible(name, variable, config));
+}
+
+function renderSyncDryRun(
+  entries: Array<[string, Variable]>,
+  existing: Record<string, string>,
+  variables: Record<string, Variable>,
+  target: string,
+): void {
+  const newVars: string[] = [];
+  const updated: string[] = [];
+  const removed: string[] = [];
+
+  for (const [name, variable] of entries) {
+    if (name in existing) {
+      if (existing[name] !== variable.value) updated.push(name);
+    } else {
+      newVars.push(name);
+    }
+  }
+
+  const storeNames = new Set(entries.map(([name]) => name));
+  for (const name of Object.keys(existing)) {
+    if (!storeNames.has(name)) removed.push(name);
+  }
+
+  console.log(chalk.blue(`Dry run: sync to ${target}\n`));
+  if (newVars.length > 0) {
+    for (const n of newVars) console.log(chalk.green(`  + ${n} = ${maskValue(variables[n].value)}`));
+  }
+  if (updated.length > 0) {
+    for (const n of updated) console.log(chalk.yellow(`  ~ ${n} = ${maskValue(variables[n].value)}`));
+  }
+  if (removed.length > 0) {
+    for (const n of removed) console.log(chalk.red(`  - ${n}`));
+  }
+  if (newVars.length === 0 && updated.length === 0 && removed.length === 0) {
+    console.log(chalk.gray('  No changes'));
+  }
+  console.log(chalk.gray('\nNo files were modified.'));
+}
+
 program
   .command('sync')
   .description('Sync variables to .env file')
@@ -2633,21 +2686,13 @@ program
       }
 
       const variables = await storage.load();
+      const entries = getSyncEntries(variables, config);
       const lines: string[] = [];
 
       if (config.sync.header) {
         lines.push(config.sync.header);
       }
-
-      for (const [name, variable] of Object.entries(variables)) {
-        if (isBlacklisted(name, config) || !canAccess(name, config)) continue;
-        if (!variable.sync_to_env) continue;
-
-        const excluded = config.sync.exclude?.some((pattern: string) => globToRegExp(pattern).test(name));
-        if (excluded) continue;
-
-        lines.push(`${name}=${formatEnvAssignmentValue(variable.value)}`);
-      }
+      lines.push(...entries.map(([name, variable]) => `${name}=${formatEnvAssignmentValue(variable.value)}`));
 
       if (options.dryRun) {
         const envPath = path.join(projectPath, config.sync.target);
@@ -2656,44 +2701,7 @@ program
           const content = await fs.readFile(envPath, 'utf8');
           Object.assign(existing, parseEnvFile(content));
         }
-
-        const newVars: string[] = [];
-        const updated: string[] = [];
-        const removed: string[] = [];
-
-        for (const [name, variable] of Object.entries(variables)) {
-          if (isBlacklisted(name, config) || !canAccess(name, config)) continue;
-          if (!variable.sync_to_env) continue;
-
-          const excluded = config.sync.exclude?.some((pattern: string) => globToRegExp(pattern).test(name));
-          if (excluded) continue;
-
-          if (name in existing) {
-            if (existing[name] !== variable.value) updated.push(name);
-          } else {
-            newVars.push(name);
-          }
-        }
-
-        const storeNames = new Set(Object.keys(variables));
-        for (const name of Object.keys(existing)) {
-          if (!storeNames.has(name)) removed.push(name);
-        }
-
-        console.log(chalk.blue(`Dry run: sync to ${config.sync.target}\n`));
-        if (newVars.length > 0) {
-          for (const n of newVars) console.log(chalk.green(`  + ${n} = ${maskValue(variables[n].value)}`));
-        }
-        if (updated.length > 0) {
-          for (const n of updated) console.log(chalk.yellow(`  ~ ${n} = ${maskValue(variables[n].value)}`));
-        }
-        if (removed.length > 0) {
-          for (const n of removed) console.log(chalk.red(`  - ${n}`));
-        }
-        if (newVars.length === 0 && updated.length === 0 && removed.length === 0) {
-          console.log(chalk.gray('  No changes'));
-        }
-        console.log(chalk.gray('\nNo files were modified.'));
+        renderSyncDryRun(entries, existing, variables, config.sync.target);
         return;
       }
 
@@ -2957,6 +2965,77 @@ const exportPassword = await promptPassword('Set export password:');
     });
   });
 
+async function loadTransferFile(file: string, invalidMessage: string): Promise<{ meta?: TransferMeta; variables: Record<string, Variable> } | null> {
+  if (!await pathExists(file)) {
+    console.log(chalk.red(`File not found: ${file}`));
+    return null;
+  }
+
+  const importPassword = await promptPassword('Enter export file password:');
+  const fileContent = await fs.readFile(file, 'utf8');
+  let importData: Record<string, unknown>;
+
+  try {
+    const decrypted = await decrypt(fileContent, importPassword);
+    importData = JSON.parse(decrypted);
+  } catch {
+    console.log(chalk.red('Failed to decrypt. Wrong password or invalid file.'));
+    return null;
+  }
+
+  return extractTransferVariables(importData, invalidMessage);
+}
+
+function printImportDryRun(
+  current: Record<string, Variable>,
+  variables: Record<string, Variable>,
+  merge: boolean,
+): void {
+  const importNames = Object.keys(variables);
+  console.log(chalk.blue(`\nDry run: import ${merge ? '(merge)' : '(replace)'}\n`));
+
+  const newVars: string[] = [];
+  const updated: string[] = [];
+
+  for (const name of importNames) {
+    if (name in current) {
+      if (current[name].value !== variables[name].value) updated.push(name);
+    } else {
+      newVars.push(name);
+    }
+  }
+
+  if (!merge) {
+    const removed = Object.keys(current).filter(n => !importNames.includes(n));
+    if (removed.length > 0) {
+      for (const n of removed) console.log(chalk.red(`  - ${n} (will be removed)`));
+    }
+  }
+
+  if (newVars.length > 0) {
+    for (const n of newVars) console.log(chalk.green(`  + ${n} = ${maskValue(variables[n].value)}`));
+  }
+  if (updated.length > 0) {
+    for (const n of updated) console.log(chalk.yellow(`  ~ ${n} = ${maskValue(variables[n].value)}`));
+  }
+  if (newVars.length === 0 && updated.length === 0) {
+    console.log(chalk.gray('  No changes'));
+  }
+  console.log(chalk.gray('\nNo files were modified.'));
+}
+
+async function applyImport(storage: StorageManager, variables: Record<string, Variable>, merge: boolean): Promise<void> {
+  if (merge) {
+    const current = await storage.load();
+    await storage.save({ ...current, ...variables });
+    console.log(chalk.green(`Merged ${Object.keys(variables).length} variables`));
+    return;
+  }
+
+  await storage.save(variables);
+  console.log(chalk.green(`Imported ${Object.keys(variables).length} variables`));
+}
+
 program
   .command('import <file>')
   .description('Import variables from an encrypted export file')
@@ -2964,84 +3043,25 @@ program
   .option('--dry-run', 'Preview what would be imported without writing')
   .action(async (file, options) => {
     await withSession(async (storage) => {
-      if (!await pathExists(file)) {
-        console.log(chalk.red(`File not found: ${file}`));
-        return;
-      }
+      const transferData = await loadTransferFile(file, 'Invalid export format');
+      if (!transferData) return;
 
-const importPassword = await promptPassword('Enter export file password:');
-
-    const fileContent = await fs.readFile(file, 'utf8');
-      let importData: Record<string, unknown>;
-
-      try {
-        const decrypted = await decrypt(fileContent, importPassword);
-        importData = JSON.parse(decrypted);
-      } catch {
-        console.log(chalk.red('Failed to decrypt. Wrong password or invalid file.'));
-        return;
-      }
-
-      const transferData = extractTransferVariables(importData, 'Invalid export format');
-      if (!transferData) {
-        return;
-      }
       const { meta, variables } = transferData;
-
       logTransferInfo('Import info:', meta, variables, { project: 'From project', timestamp: 'Exported' });
 
       if (options.dryRun) {
         const current = await storage.load();
-        const importNames = Object.keys(variables);
-
-        console.log(chalk.blue(`\nDry run: import ${options.merge ? '(merge)' : '(replace)'}\n`));
-
-        const newVars: string[] = [];
-        const updated: string[] = [];
-
-        for (const name of importNames) {
-          if (name in current) {
-            if (current[name].value !== variables[name].value) updated.push(name);
-          } else {
-            newVars.push(name);
-          }
-        }
-
-        if (!options.merge) {
-          const removed = Object.keys(current).filter(n => !importNames.includes(n));
-          if (removed.length > 0) {
-            for (const n of removed) console.log(chalk.red(`  - ${n} (will be removed)`));
-          }
-        }
-
-        if (newVars.length > 0) {
-          for (const n of newVars) console.log(chalk.green(`  + ${n} = ${maskValue(variables[n].value)}`));
-        }
-        if (updated.length > 0) {
-          for (const n of updated) console.log(chalk.yellow(`  ~ ${n} = ${maskValue(variables[n].value)}`));
-        }
-        if (newVars.length === 0 && updated.length === 0) {
-          console.log(chalk.gray('  No changes'));
-        }
-        console.log(chalk.gray('\nNo files were modified.'));
+        printImportDryRun(current, variables, options.merge);
         return;
       }
 
-const confirm = await promptConfirm(options.merge ? 'Merge into current store?' : 'Replace current store?', false);
-
-    if (!confirm) {
-      console.log(chalk.yellow('Import cancelled'));
+      const confirm = await promptConfirm(options.merge ? 'Merge into current store?' : 'Replace current store?', false);
+      if (!confirm) {
+        console.log(chalk.yellow('Import cancelled'));
         return;
       }
 
-      if (options.merge) {
-        const current = await storage.load();
-        await storage.save({ ...current, ...variables });
-        console.log(chalk.green(`Merged ${Object.keys(variables).length} variables`));
-      } else {
-        await storage.save(variables);
-        console.log(chalk.green(`Imported ${Object.keys(variables).length} variables`));
-      }
+      await applyImport(storage, variables, options.merge);
     });
   });
 
@@ -3273,27 +3293,23 @@ function printDoctorChecks(checks: DoctorCheck[]): void {
   }
 }
 
-async function printDoctorSummary(checks: DoctorCheck[], projectPath: string, autoFix: boolean): Promise<void> {
-  printDoctorChecks(checks);
+function getFixableChecks(checks: DoctorCheck[]): DoctorCheck[] {
+  return checks.filter(c => c.fix && c.status !== 'pass');
+}
 
-  const fixable = checks.filter(c => c.fix && c.status !== 'pass');
-  if (fixable.length === 0) {
-    return;
-  }
-
+function printFixableChecks(fixable: DoctorCheck[]): void {
   console.log(chalk.blue('\nFixable issues:'));
   for (const check of fixable) {
     console.log(`  - ${check.name}: ${chalk.gray(check.detail)}`);
   }
+}
 
-  let shouldFix = autoFix;
-  if (!shouldFix) {
-    shouldFix = await promptConfirm('Apply fixes?', false);
-  }
-  if (!shouldFix) {
-    return;
-  }
+async function shouldApplyDoctorFixes(autoFix: boolean): Promise<boolean> {
+  if (autoFix) return true;
+  return promptConfirm('Apply fixes?', false);
+}
 
+async function applyDoctorFixes(fixable: DoctorCheck[]): Promise<void> {
   console.log('');
   for (const check of fixable) {
     try {
@@ -3303,7 +3319,18 @@ async function printDoctorSummary(checks: DoctorCheck[], projectPath: string, au
       console.log(chalk.red('  ✗ Failed to fix ' + check.name + ': ' + (error as Error).message));
     }
   }
+}
 
+async function printDoctorSummary(checks: DoctorCheck[], projectPath: string, autoFix: boolean): Promise<void> {
+  printDoctorChecks(checks);
+
+  const fixable = getFixableChecks(checks);
+  if (fixable.length === 0) return;
+
+  printFixableChecks(fixable);
+  if (!await shouldApplyDoctorFixes(autoFix)) return;
+
+  await applyDoctorFixes(fixable);
   console.log(chalk.blue('\nRe-running checks...'));
   const updated = await runDoctorChecks(projectPath);
   printDoctorChecks(updated);
@@ -3443,7 +3470,7 @@ program
     // 6. npm uninstall
     if (npmUninstall) {
       console.log(chalk.blue('\nUninstalling npm package...'));
-      const result = spawnSync('npm', ['uninstall', '-g', '@fentz26/envcp'], { stdio: 'inherit' });
+      const result = spawnSync(process.execPath, [npmCliPath, 'uninstall', '-g', '@fentz26/envcp'], { stdio: 'inherit' });
       if (result.status === 0) {
         performed.push('npm package @fentz26/envcp uninstalled');
       } else {
@@ -3458,6 +3485,86 @@ program
     }
   });
 
+function resolveRequestedChannel(options: { latest?: boolean; experimental?: boolean; canary?: boolean }): ReleaseChannel | null {
+  if (options.latest) return 'latest';
+  if (options.experimental) return 'experimental';
+  if (options.canary) return 'canary';
+  return null;
+}
+
+async function checkForUpdatesOnly(projectPath: string): Promise<void> {
+  console.log(chalk.blue('Checking for updates...'));
+  try {
+    const info = await checkForUpdate(projectPath);
+    const message = formatUpdateMessage(info);
+    await logUpdateCheck(projectPath, info);
+    if (info.updateAvailable) {
+      console.log(info.critical ? chalk.red.bold(message) : chalk.yellow(message));
+    } else {
+      console.log(chalk.green(message));
+    }
+  } catch {
+    console.log(chalk.yellow('Could not check for updates (offline or rate-limited)'));
+  }
+}
+
+async function backupGlobalVault(home: string): Promise<boolean> {
+  const backupPath = path.join(home, `.envcp.bak.${Date.now()}`);
+  const vaultDir = path.join(home, '.envcp');
+  const confirmed = await promptConfirm(`Backup ~/.envcp → ${backupPath}?`);
+  if (!confirmed) return true;
+
+  try {
+    await fs.cp(vaultDir, backupPath, { recursive: true });
+    console.log(chalk.green(`  ✓ Backed up to ${backupPath}`));
+    return true;
+  } catch (e) {
+    console.log(chalk.red(`  Backup failed: ${(e as Error).message}`));
+    return false;
+  }
+}
+
+async function installChannelRelease(channel: ReleaseChannel, options: { backup?: boolean }, home: string): Promise<void> {
+  console.log(chalk.blue(`Fetching ${channel} releases...`));
+  let releases;
+  try {
+    const all = await fetchReleases();
+    releases = filterByChannel(all, channel).slice(0, 3);
+  } catch {
+    console.log(chalk.red('Could not fetch releases (offline or rate-limited)'));
+    return;
+  }
+
+  if (releases.length === 0) {
+    console.log(chalk.yellow(`No ${channel} releases found.`));
+    return;
+  }
+
+  console.log(chalk.bold(`\n  Available ${channel} versions:\n`));
+  releases.forEach((r, i) => {
+    console.log(chalk.cyan(`  [${i + 1}] v${r.tag}`));
+  });
+  console.log(chalk.gray('\n  [0] Cancel\n'));
+
+  const answer = await promptInput('Pick a version (0 to cancel):');
+  const picked = Number.parseInt(answer.trim(), 10);
+  if (!picked || picked < 1 || picked > releases.length) {
+    console.log(chalk.gray('Cancelled.'));
+    return;
+  }
+
+  const chosen = releases[picked - 1];
+  if (options.backup && !await backupGlobalVault(home)) return;
+
+  console.log(chalk.blue(`\nInstalling @fentz26/envcp@${chosen.tag}...`));
+  const result = spawnSync(process.execPath, [npmCliPath, 'install', '-g', `@fentz26/envcp@${chosen.tag}`], { stdio: 'inherit' });
+  if (result.status === 0) {
+    console.log(chalk.green(`\n  ✓ Installed v${chosen.tag}`));
+  } else {
+    console.log(chalk.red('\n  Installation failed.'));
+  }
+}
+
 program
   .command('update')
   .description('Check for or install EnvCP updates')
@@ -3468,86 +3575,14 @@ program
   .action(async (options) => {
     const projectPath = process.cwd();
     const home = os.homedir();
-
-    let channel: ReleaseChannel | null = null;
-    if (options.latest) {
-      channel = 'latest';
-    } else if (options.experimental) {
-      channel = 'experimental';
-    } else if (options.canary) {
-      channel = 'canary';
-    }
+    const channel = resolveRequestedChannel(options);
 
     if (!channel) {
-      // Original behaviour: just check and notify
-      console.log(chalk.blue('Checking for updates...'));
-      try {
-        const info = await checkForUpdate(projectPath);
-        const message = formatUpdateMessage(info);
-        await logUpdateCheck(projectPath, info);
-        if (info.updateAvailable) {
-          console.log(info.critical ? chalk.red.bold(message) : chalk.yellow(message));
-        } else {
-          console.log(chalk.green(message));
-        }
-      } catch {
-        console.log(chalk.yellow('Could not check for updates (offline or rate-limited)'));
-      }
+      await checkForUpdatesOnly(projectPath);
       return;
     }
 
-    console.log(chalk.blue(`Fetching ${channel} releases...`));
-    let releases;
-    try {
-      const all = await fetchReleases();
-      releases = filterByChannel(all, channel).slice(0, 3);
-    } catch {
-      console.log(chalk.red('Could not fetch releases (offline or rate-limited)'));
-      return;
-    }
-
-    if (releases.length === 0) {
-      console.log(chalk.yellow(`No ${channel} releases found.`));
-      return;
-    }
-
-    console.log(chalk.bold(`\n  Available ${channel} versions:\n`));
-    releases.forEach((r, i) => {
-      console.log(chalk.cyan(`  [${i + 1}] v${r.tag}`));
-    });
-    console.log(chalk.gray('\n  [0] Cancel\n'));
-
-    const answer = await promptInput('Pick a version (0 to cancel):');
-    const picked = Number.parseInt(answer.trim(), 10);
-    if (!picked || picked < 1 || picked > releases.length) {
-      console.log(chalk.gray('Cancelled.'));
-      return;
-    }
-
-    const chosen = releases[picked - 1];
-
-    if (options.backup) {
-      const backupPath = path.join(home, `.envcp.bak.${Date.now()}`);
-      const vaultDir = path.join(home, '.envcp');
-      const confirmed = await promptConfirm(`Backup ~/.envcp → ${backupPath}?`);
-      if (confirmed) {
-        try {
-          await fs.cp(vaultDir, backupPath, { recursive: true });
-          console.log(chalk.green(`  ✓ Backed up to ${backupPath}`));
-        } catch (e) {
-          console.log(chalk.red(`  Backup failed: ${(e as Error).message}`));
-          return;
-        }
-      }
-    }
-
-    console.log(chalk.blue(`\nInstalling @fentz26/envcp@${chosen.tag}...`));
-    const result = spawnSync('npm', ['install', '-g', `@fentz26/envcp@${chosen.tag}`], { stdio: 'inherit' });
-    if (result.status === 0) {
-      console.log(chalk.green(`\n  ✓ Installed v${chosen.tag}`));
-    } else {
-      console.log(chalk.red('\n  Installation failed.'));
-    }
+    await installChannelRelease(channel, options, home);
   });
 
 async function switchVaultContext(name: string): Promise<void> {
@@ -3870,6 +3905,42 @@ if (!await pathExists(firstRunMarker)) {
 `);
 }
 
+function buildLogsFilter(options: {
+  date?: string;
+  operation?: string;
+  variable?: string;
+  source?: string;
+  success?: boolean;
+  failure?: boolean;
+  tail?: number;
+}): Record<string, unknown> {
+  const filter: Record<string, unknown> = {};
+  if (options.date) filter.date = options.date;
+  if (options.operation) filter.operation = options.operation;
+  if (options.variable) filter.variable = options.variable;
+  if (options.source) filter.source = options.source;
+  if (options.success) filter.success = true;
+  if (options.failure) filter.success = false;
+  if (options.tail) filter.tail = options.tail;
+  return filter;
+}
+
+function renderLogEntry(logs: LogManager, entry: { timestamp: string; success: boolean; operation: string; source: string; variable?: string; message?: string; hmac?: string }, verify: boolean): boolean {
+  const ts = chalk.gray(entry.timestamp);
+  const op = entry.success ? chalk.green(entry.operation) : chalk.red(entry.operation);
+  const src = chalk.blue(entry.source);
+  const varName = entry.variable ? chalk.yellow(` [${entry.variable}]`) : '';
+  const msg = entry.message ? chalk.gray(` — ${entry.message}`) : '';
+
+  if (verify && entry.hmac !== undefined && !logs.verifyEntry(entry as Parameters<typeof logs.verifyEntry>[0])) {
+    console.log(`${ts} ${chalk.red('[TAMPERED]')} ${op} ${src}${varName}${msg}`);
+    return false;
+  }
+
+  console.log(`${ts} ${op} ${src}${varName}${msg}`);
+  return true;
+}
+
 program
   .command('logs')
   .description('View audit logs')
@@ -3900,16 +3971,7 @@ program
       return;
     }
 
-    const filter: Record<string, unknown> = {};
-    if (options.date) filter.date = options.date;
-    if (options.operation) filter.operation = options.operation;
-    if (options.variable) filter.variable = options.variable;
-    if (options.source) filter.source = options.source;
-    if (options.success) filter.success = true;
-    if (options.failure) filter.success = false;
-    if (options.tail) filter.tail = options.tail;
-
-    const entries = await logs.getLogs(filter as Parameters<typeof logs.getLogs>[0]);
+    const entries = await logs.getLogs(buildLogsFilter(options) as Parameters<typeof logs.getLogs>[0]);
 
     if (entries.length === 0) {
       console.log(chalk.gray('No log entries found.'));
@@ -3918,21 +3980,9 @@ program
 
     let failed = 0;
     entries.forEach(entry => {
-      const ts = chalk.gray(entry.timestamp);
-      const op = entry.success ? chalk.green(entry.operation) : chalk.red(entry.operation);
-      const src = chalk.blue(entry.source);
-      const varName = entry.variable ? chalk.yellow(` [${entry.variable}]`) : '';
-      const msg = entry.message ? chalk.gray(` — ${entry.message}`) : '';
-
-      if (options.verify && entry.hmac !== undefined) {
-        const valid = logs.verifyEntry(entry);
-        if (!valid) {
-          failed++;
-          console.log(`${ts} ${chalk.red('[TAMPERED]')} ${op} ${src}${varName}${msg}`);
-          return;
-        }
+      if (!renderLogEntry(logs, entry, options.verify)) {
+        failed++;
       }
-      console.log(`${ts} ${op} ${src}${varName}${msg}`);
     });
 
     if (options.verify) {

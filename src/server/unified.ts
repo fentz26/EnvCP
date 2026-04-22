@@ -562,7 +562,7 @@ export class UnifiedServer {
   ): Promise<void> {
     const { messages: rawMessages } = body as { messages?: unknown };
     const messages = Array.isArray(rawMessages) ? rawMessages : [];
-    const lastMessage = messages?.[messages.length - 1];
+    const lastMessage = messages.at(-1);
 
     if (lastMessage?.tool_calls) {
       const results = await openaiAdapter.processToolCalls(lastMessage.tool_calls);

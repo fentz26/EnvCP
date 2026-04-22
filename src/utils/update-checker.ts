@@ -243,11 +243,14 @@ export function formatUpdateMessage(info: VersionInfo): string {
   }
 
   if (info.advisory) {
-    lines.push(`  Advisory: ${info.advisory.id} [${info.advisory.severity}]`);
-    lines.push(`  ${info.advisory.summary}`);
+    const advisoryLines = [
+      `  Advisory: ${info.advisory.id} [${info.advisory.severity}]`,
+      `  ${info.advisory.summary}`,
+    ];
     if (info.advisory.url) {
-      lines.push(`  ${info.advisory.url}`);
+      advisoryLines.push(`  ${info.advisory.url}`);
     }
+    lines.push(...advisoryLines);
   }
 
   lines.push('', '  Run: npm update -g @fentz26/envcp');

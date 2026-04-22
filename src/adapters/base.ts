@@ -10,6 +10,20 @@ import { pathExists, parseEnv } from '../utils/fs.js';
 import * as path from 'node:path';
 import * as http from 'node:http';
 
+const BACKSLASH = String.raw`\\`.slice(0, 1);
+const ESCAPED_BACKSLASH = String.raw`\\`;
+const ESCAPED_QUOTE = String.raw`\"`;
+
+/**
+ * Quote an environment variable value for a .env file if it contains whitespace,
+ * comment markers, quotes, or backslashes. Escapes `\` and `"` when quoting.
+ */
+function formatEnvValue(value: string): string {
+  if (!/[\s#"'\\]/.test(value)) return value;
+  const escaped = value.replaceAll(BACKSLASH, ESCAPED_BACKSLASH).replaceAll('"', ESCAPED_QUOTE);
+  return `"${escaped}"`;
+}
+
 export abstract class BaseAdapter {
   protected storage: StorageManager;
   protected logs: LogManager;
@@ -686,8 +700,7 @@ export abstract class BaseAdapter {
         continue;
       }
 
-      const needsQuoting = /[\s#"'\\]/.test(variable.value);
-      const val = needsQuoting ? `"${variable.value.replaceAll('\\', '\\\\').replaceAll('"', '\\"')}"` : variable.value;
+      const val = formatEnvValue(variable.value);
       lines.push(`${name}=${val}`);
     }
 
@@ -743,8 +756,7 @@ export abstract class BaseAdapter {
 
     const envVars = parseEnv(content);
 
-    const needsQuoting = /[\s#"'\\]/.test(variable.value);
-    const quotedValue = needsQuoting ? `"${variable.value.replaceAll('\\', '\\\\').replaceAll('"', '\\"')}"` : variable.value;
+    const quotedValue = formatEnvValue(variable.value);
 
     if (envVars[args.name]) {
       const lines = content.split('\n');
@@ -912,38 +924,11 @@ export abstract class BaseAdapter {
     }
   }
 
-  protected async runCommand(args: { command: string; variables: string[] }): Promise<{
-    exitCode: number | null;
-    stdout: string;
-    stderr: string;
+  private async buildExecutionEnv(variableNames: string[]): Promise<{
+    env: Record<string, string>;
+    excludedVariables: string[];
+    injectedNames: string[];
   }> {
-    if (!getDefaultAccessFlag(this.config, 'execute', this.currentClientId)
-      && !args.variables.some((name) => canAccessVariable(name, this.config, 'execute', this.currentClientId))) {
-      throw new Error('AI command execution is disabled');
-    }
-
-    this.validateCommand(args.command);
-
-    const { spawn } = await import('node:child_process');
-    const { program: prog, args: cmdArgs } = this.parseCommand(args.command);
-
-    // Enforce require_command_whitelist: allowed_commands must exist and contain the program
-    if (this.config.access.run_safety?.require_command_whitelist) {
-      if (!this.config.access.allowed_commands?.includes(prog)) {
-        throw new Error(`Command '${prog}' is not in the allowed commands list (require_command_whitelist is enabled)`);
-      }
-    } else if (this.config.access.allowed_commands && this.config.access.allowed_commands.length > 0) {
-      if (!this.config.access.allowed_commands.includes(prog)) {
-        throw new Error(`Command '${prog}' is not in the allowed commands list`);
-      }
-    }
-
-    // Destructive command check (post-parse, uses structured tokens)
-    if (this.config.access.run_safety?.disallow_root_delete) {
-      this.checkRootDelete(prog, cmdArgs);
-    }
-
-    // Build a minimal env: only inherit safe system vars + requested secrets
     const SAFE_INHERIT = ['PATH', 'HOME', 'USER', 'SHELL', 'LANG', 'TERM', 'NODE_ENV', 'TMPDIR', 'TMP', 'TEMP'];
     const CRITICAL_KEYS = new Set(['PATH', 'HOME', 'TMPDIR', 'TMP', 'TEMP']);
     const env: Record<string, string> = {};
@@ -952,8 +937,7 @@ export abstract class BaseAdapter {
     }
 
     const excludedVariables: string[] = [];
-
-    for (const name of args.variables) {
+    for (const name of variableNames) {
       const blacklisted = isBlacklisted(name, this.config);
       const accessible = canAccessVariable(name, this.config, 'execute', this.currentClientId);
 
@@ -971,14 +955,9 @@ export abstract class BaseAdapter {
       }
 
       const variable = await this.storage.get(name);
-      if (variable) {
-        env[name] = variable.value;
-      }
+      if (variable) env[name] = variable.value;
     }
 
-    // Validate the final env after all injection — prevents bypass by a vault variable
-    // named PATH/HOME/TMPDIR overriding the inherited value after validation.
-    // OWASP A01:2025 – CWE-22: validate after injection, not before
     if (this.config.access.run_safety?.disallow_path_manipulation) {
       for (const key of Object.keys(env)) {
         if (CRITICAL_KEYS.has(key)) {
@@ -987,17 +966,24 @@ export abstract class BaseAdapter {
       }
     }
 
-    const injectedNames = args.variables.filter(n => !excludedVariables.includes(n));
+    return {
+      env,
+      excludedVariables,
+      injectedNames: variableNames.filter(n => !excludedVariables.includes(n)),
+    };
+  }
+
+  private spawnCommandWithTimeout(
+    spawn: (command: string, args?: readonly string[], options?: Record<string, unknown>) => any,
+    prog: string,
+    cmdArgs: string[],
+    env: Record<string, string>,
+    excludedVariables: string[],
+  ): Promise<{ exitCode: number | null; stdout: string; stderr: string }> {
     const TIMEOUT_MS = 30000;
 
-    // Create process Promise first so the timeout is registered synchronously
-    // before any async log I/O — this keeps fake-timer tests working correctly.
-    const processPromise = new Promise<{ exitCode: number | null; stdout: string; stderr: string }>((resolve) => {
-      const proc = spawn(prog, cmdArgs, {
-        env,
-        cwd: this.projectPath,
-      });
-
+    return new Promise<{ exitCode: number | null; stdout: string; stderr: string }>((resolve) => {
+      const proc = spawn(prog, cmdArgs, { env, cwd: this.projectPath });
       let stdout = '';
       let stderr = '';
       let killed = false;
@@ -1008,22 +994,55 @@ export abstract class BaseAdapter {
         setTimeout(() => { if (!proc.killed) proc.kill('SIGKILL'); }, 5000);
       }, TIMEOUT_MS);
 
-      proc.stdout.on('data', (data) => { stdout += data; });
-      proc.stderr.on('data', (data) => { stderr += data; });
+      proc.stdout.on('data', (data: Buffer | string) => { stdout += data; });
+      proc.stderr.on('data', (data: Buffer | string) => { stderr += data; });
 
-      proc.on('close', (code) => {
+      proc.on('close', (code: number | null) => {
         clearTimeout(timer);
-        if (killed) {
-          stderr += '\n[Process killed: exceeded 30s timeout]';
-        }
+        if (killed) stderr += '\n[Process killed: exceeded 30s timeout]';
         if (excludedVariables.length > 0) {
           stderr += `\n[envcp] Excluded variables by policy (not injected): ${excludedVariables.join(', ')}`;
         }
         resolve({ exitCode: code, stdout, stderr });
       });
     });
+  }
 
-    // Audit log: command start (variable names only — never values)
+  protected async runCommand(args: { command: string; variables: string[] }): Promise<{
+    exitCode: number | null;
+    stdout: string;
+    stderr: string;
+  }> {
+    if (!getDefaultAccessFlag(this.config, 'execute', this.currentClientId)
+      && !args.variables.some((name) => canAccessVariable(name, this.config, 'execute', this.currentClientId))) {
+      throw new Error('AI command execution is disabled');
+    }
+
+    this.validateCommand(args.command);
+
+    const { program: prog, args: cmdArgs } = this.parseCommand(args.command);
+
+    if (this.config.access.run_safety?.require_command_whitelist) {
+      if (!this.config.access.allowed_commands?.includes(prog)) {
+        throw new Error(`Command '${prog}' is not in the allowed commands list (require_command_whitelist is enabled)`);
+      }
+    } else if (this.config.access.allowed_commands && this.config.access.allowed_commands.length > 0) {
+      if (!this.config.access.allowed_commands.includes(prog)) {
+        throw new Error(`Command '${prog}' is not in the allowed commands list`);
+      }
+    }
+
+    if (this.config.access.run_safety?.disallow_root_delete) {
+      this.checkRootDelete(prog, cmdArgs);
+    }
+
+    const { env, excludedVariables, injectedNames } = await this.buildExecutionEnv(args.variables);
+
+    const { spawn } = await import('node:child_process');
+    // Create process Promise before any further awaits so spawn() and setTimeout()
+    // register synchronously — this keeps fake-timer tests working correctly.
+    const processPromise = this.spawnCommandWithTimeout(spawn as any, prog, cmdArgs, env, excludedVariables);
+
     await this.logEvent({
       timestamp: new Date().toISOString(),
       operation: 'run',
@@ -1035,8 +1054,6 @@ export abstract class BaseAdapter {
 
     const result = await processPromise;
 
-    // Scrub injected secret values and common secret patterns from output
-    // before returning to the AI agent (default: on).
     const scrub = this.config.access.run_safety?.scrub_output !== false;
     if (scrub) {
       const injectedValues = injectedNames
@@ -1047,7 +1064,6 @@ export abstract class BaseAdapter {
       result.stderr = scrubOutput(result.stderr, injectedValues, extraPatterns);
     }
 
-    // Audit log: command exit (exit code only — no stdout/stderr values)
     await this.logEvent({
       timestamp: new Date().toISOString(),
       operation: 'run',
