@@ -24,6 +24,19 @@ export class SessionManager {
     await ensureDir(path.dirname(this.sessionPath));
   }
 
+  private async writeEncryptedSession(passwordBuf: SecureBuffer): Promise<void> {
+    const sessionData = JSON.stringify({
+      session: this.session,
+    });
+    const encrypted = await encrypt(sessionData, passwordBuf);
+    await withLock(this.sessionPath, async () => {
+      const wh = await nodefs.open(this.sessionPath,
+        fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_TRUNC | fs.constants.O_NOFOLLOW,
+        0o600);
+      try { await wh.writeFile(encrypted, 'utf8'); } finally { await wh.close(); }
+    });
+  }
+
   async create(password: string): Promise<Session> {
     const now = new Date();
     const expires = new Date(now.getTime() + this.timeoutMinutes * 60 * 1000);
@@ -38,17 +51,7 @@ export class SessionManager {
 
     this.setPasswordBuf(password);
 
-  const sessionData = JSON.stringify({
-    session: this.session,
-  });
-
-  const encrypted = await encrypt(sessionData, this.passwordBuf!);
-  await withLock(this.sessionPath, async () => {
-    const wh = await nodefs.open(this.sessionPath,
-      fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_TRUNC | fs.constants.O_NOFOLLOW,
-      0o600);
-    try { await wh.writeFile(encrypted, 'utf8'); } finally { await wh.close(); }
-  });
+    await this.writeEncryptedSession(this.passwordBuf!);
 
     return this.session;
   }
@@ -134,17 +137,7 @@ export class SessionManager {
     this.session.extensions += 1;
     this.session.last_access = now.toISOString();
 
-    const sessionData = JSON.stringify({
-      session: this.session,
-    });
-
-    const encrypted = await encrypt(sessionData, this.passwordBuf);
-  await withLock(this.sessionPath, async () => {
-    const wh = await nodefs.open(this.sessionPath,
-      fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_TRUNC | fs.constants.O_NOFOLLOW,
-      0o600);
-    try { await wh.writeFile(encrypted, 'utf8'); } finally { await wh.close(); }
-  });
+    await this.writeEncryptedSession(this.passwordBuf);
 
     return this.session;
   }

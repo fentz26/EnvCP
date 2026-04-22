@@ -339,15 +339,13 @@ describe('update-checker', () => {
   });
 
 describe('fetchLatestRelease', () => {
-  it('returns a release or handles error', async () => {
-    try {
-      const release = await fetchLatestRelease();
-      expect(release.tag).toBeTruthy();
-      expect(typeof release.critical).toBe('boolean');
-    } catch (error) {
-      expect(error).toBeDefined();
-    }
-  }, 10000);
+  // Success and error paths are covered in __tests__/update-checker-fetch.test.ts
+  // with full network mocking. The previous live-network test here passed
+  // unconditionally (both success and error paths asserted trivially), so it was
+  // removed to avoid false-positive greens.
+  it('is exported as a function', () => {
+    expect(typeof fetchLatestRelease).toBe('function');
+  });
 });
 
   describe('logUpdateCheck', () => {

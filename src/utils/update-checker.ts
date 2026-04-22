@@ -111,12 +111,12 @@ export function writeCache(projectPath: string, data: CachedCheck): void {
   } catch { /* ignore */ }
 }
 
-export async function fetchReleases(perPage = 50): Promise<ReleaseInfo[]> {
+async function fetchGithubJson(path: string): Promise<unknown> {
   const https = await import('node:https');
   return new Promise((resolve, reject) => {
     const options = {
       hostname: 'api.github.com',
-      path: `/repos/${GITHUB_REPO}/releases?per_page=${perPage}`,
+      path,
       method: 'GET',
       headers: {
         'User-Agent': 'envcp-update-checker',
@@ -131,11 +131,7 @@ export async function fetchReleases(perPage = 50): Promise<ReleaseInfo[]> {
       res.on('end', () => {
         try {
           const data = JSON.parse(body);
-          if (res.statusCode !== 200 || !Array.isArray(data)) {
-            reject(new Error((data as Record<string, unknown>).message as string || `GitHub API returned ${res.statusCode}`));
-            return;
-          }
-          resolve((data as unknown[]).map(parseRelease));
+          resolve({ statusCode: res.statusCode, data });
         } catch { reject(new Error('Failed to parse response')); }
       });
     });
@@ -144,6 +140,16 @@ export async function fetchReleases(perPage = 50): Promise<ReleaseInfo[]> {
     req.on('timeout', () => { req.destroy(); reject(new Error('Request timed out')); });
     req.end();
   });
+}
+
+export async function fetchReleases(perPage = 50): Promise<ReleaseInfo[]> {
+  const { statusCode, data } = await fetchGithubJson(
+    `/repos/${GITHUB_REPO}/releases?per_page=${perPage}`,
+  ) as { statusCode?: number; data: unknown };
+  if (statusCode !== 200 || !Array.isArray(data)) {
+    throw new Error((data as Record<string, unknown>)?.message as string || `GitHub API returned ${statusCode}`);
+  }
+  return (data as unknown[]).map(parseRelease);
 }
 
 export type ReleaseChannel = 'latest' | 'experimental' | 'canary';
@@ -157,38 +163,13 @@ export function filterByChannel(releases: ReleaseInfo[], channel: ReleaseChannel
 }
 
 export async function fetchLatestRelease(): Promise<ReleaseInfo> {
-  const https = await import('node:https');
-  return new Promise((resolve, reject) => {
-    const options = {
-      hostname: 'api.github.com',
-      path: `/repos/${GITHUB_REPO}/releases/latest`,
-      method: 'GET',
-      headers: {
-        'User-Agent': 'envcp-update-checker',
-        'Accept': 'application/vnd.github+json',
-      },
-      timeout: 5000,
-    };
-
-    const req = https.request(options, (res) => {
-      let body = '';
-      res.on('data', (chunk: Buffer) => { body += chunk.toString(); });
-      res.on('end', () => {
-        try {
-          const data = JSON.parse(body);
-          if (res.statusCode !== 200) {
-            reject(new Error(data.message || `GitHub API returned ${res.statusCode}`));
-            return;
-          }
-          resolve(parseRelease(data));
-        } catch { reject(new Error('Failed to parse response')); }
-      });
-    });
-
-    req.on('error', reject);
-    req.on('timeout', () => { req.destroy(); reject(new Error('Request timed out')); });
-    req.end();
-  });
+  const { statusCode, data } = await fetchGithubJson(
+    `/repos/${GITHUB_REPO}/releases/latest`,
+  ) as { statusCode?: number; data: { message?: string } & Record<string, unknown> };
+  if (statusCode !== 200) {
+    throw new Error(data.message || `GitHub API returned ${statusCode}`);
+  }
+  return parseRelease(data);
 }
 
 export async function checkForUpdate(projectPath?: string, fetcher?: () => Promise<ReleaseInfo>): Promise<VersionInfo> {

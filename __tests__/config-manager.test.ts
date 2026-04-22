@@ -2,7 +2,7 @@ import * as fs from 'fs/promises';
 import { ensureDir, pathExists } from '../src/utils/fs.js';
 import * as os from 'os';
 import * as path from 'path';
-import { loadConfig, loadScopedConfig, saveScopedConfig, saveConfig, initConfig, canAIActiveCheck, requiresUserReference, registerMcpConfig, canAccessVariable, requiresConfirmationForVariable, isVariableRuleActive, canAccess } from '../src/config/manager';
+import { loadConfig, loadScopedConfig, saveScopedConfig, saveConfig, initConfig, canAIActiveCheck, requiresUserReference, registerMcpConfig, unregisterMcpConfig, canAccessVariable, requiresConfirmationForVariable, isVariableRuleActive, canAccess, parseEnvFile, validateVariableName, resolveAccessRuleFlag, isBlacklisted } from '../src/config/manager';
 import { EnvCPConfigSchema } from '../src/types';
 
 describe('loadConfig', () => {
@@ -994,6 +994,522 @@ describe('writeToConfig — return value documentation (line 337)', () => {
     const result = writeToConfig({ mcp_servers: [{ name: 'envcp' }] }, 'mcp_servers_array', { command: 'npx' });
     expect(result.written).toBe(false);
     expect(result.alreadyExists).toBe(true);
+  });
+});
+
+describe('unregisterMcpConfig', () => {
+  let tmpDir: string;
+  let origHome: string | undefined;
+  let origUserProfile: string | undefined;
+
+  beforeEach(async () => {
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-unreg-'));
+    origHome = process.env.HOME;
+    origUserProfile = process.env.USERPROFILE;
+    process.env.HOME = tmpDir;
+  });
+
+  afterEach(async () => {
+    process.env.HOME = origHome;
+    if (origUserProfile !== undefined) process.env.USERPROFILE = origUserProfile;
+    else delete process.env.USERPROFILE;
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  });
+
+  it('removes envcp from mcpServers-format config (Claude Code)', async () => {
+    const claudeDir = path.join(tmpDir, '.claude');
+    await ensureDir(claudeDir);
+    const mcpPath = path.join(claudeDir, 'mcp.json');
+    await fs.writeFile(mcpPath, JSON.stringify({ mcpServers: { envcp: { command: 'npx' }, other: { command: 'foo' } } }));
+
+    const result = await unregisterMcpConfig(tmpDir);
+    expect(result.removed).toContain('Claude Code');
+    const written = JSON.parse(await fs.readFile(mcpPath, 'utf8'));
+    expect(written.mcpServers.envcp).toBeUndefined();
+    expect(written.mcpServers.other).toBeDefined();
+  });
+
+  it('removes envcp from servers-format config (VS Code)', async () => {
+    const vscodeDir = path.join(tmpDir, '.vscode');
+    await ensureDir(vscodeDir);
+    const mcpPath = path.join(vscodeDir, 'mcp.json');
+    await fs.writeFile(mcpPath, JSON.stringify({ servers: { envcp: { command: 'npx' } } }));
+
+    const result = await unregisterMcpConfig(tmpDir);
+    expect(result.removed).toContain('VS Code');
+    const written = JSON.parse(await fs.readFile(mcpPath, 'utf8'));
+    expect(written.servers.envcp).toBeUndefined();
+  });
+
+  it('removes envcp from context_servers-format config (Zed)', async () => {
+    const zedPath = path.join(tmpDir, '.config', 'zed', 'settings.json');
+    await ensureDir(path.dirname(zedPath));
+    await fs.writeFile(zedPath, JSON.stringify({ context_servers: { envcp: { command: { path: 'npx' } } } }));
+
+    const result = await unregisterMcpConfig(tmpDir);
+    expect(result.removed).toContain('Zed');
+    const written = JSON.parse(await fs.readFile(zedPath, 'utf8'));
+    expect(written.context_servers.envcp).toBeUndefined();
+  });
+
+  it('removes envcp from mcp_key-format config (OpenCode)', async () => {
+    const opencodePath = path.join(tmpDir, '.config', 'opencode', 'opencode.json');
+    await ensureDir(path.dirname(opencodePath));
+    await fs.writeFile(opencodePath, JSON.stringify({ mcp: { envcp: { type: 'local' } } }));
+
+    const result = await unregisterMcpConfig(tmpDir);
+    expect(result.removed).toContain('OpenCode');
+    const written = JSON.parse(await fs.readFile(opencodePath, 'utf8'));
+    expect(written.mcp.envcp).toBeUndefined();
+  });
+
+  it('removes envcp from mcp_servers_array-format config (GitHub Copilot CLI)', async () => {
+    const copilotPath = path.join(tmpDir, '.copilot', 'mcp-config.json');
+    await ensureDir(path.dirname(copilotPath));
+    await fs.writeFile(copilotPath, JSON.stringify({ mcp_servers: [{ name: 'envcp' }, { name: 'other' }] }));
+
+    const result = await unregisterMcpConfig(tmpDir);
+    expect(result.removed).toContain('GitHub Copilot CLI');
+    const written = JSON.parse(await fs.readFile(copilotPath, 'utf8'));
+    expect(written.mcp_servers).toEqual([{ name: 'other' }]);
+  });
+
+  it('reports notFound when config exists but has no envcp entry (mcpServers)', async () => {
+    const claudeDir = path.join(tmpDir, '.claude');
+    await ensureDir(claudeDir);
+    await fs.writeFile(path.join(claudeDir, 'mcp.json'), JSON.stringify({ mcpServers: { other: {} } }));
+
+    const result = await unregisterMcpConfig(tmpDir);
+    expect(result.notFound).toContain('Claude Code');
+    expect(result.removed).not.toContain('Claude Code');
+  });
+
+  it('reports notFound when array config exists but has no envcp entry', async () => {
+    const copilotPath = path.join(tmpDir, '.copilot', 'mcp-config.json');
+    await ensureDir(path.dirname(copilotPath));
+    await fs.writeFile(copilotPath, JSON.stringify({ mcp_servers: [{ name: 'other' }] }));
+
+    const result = await unregisterMcpConfig(tmpDir);
+    expect(result.notFound).toContain('GitHub Copilot CLI');
+    expect(result.removed).not.toContain('GitHub Copilot CLI');
+  });
+
+  it('reports notFound when mcp_servers is missing entirely (array format)', async () => {
+    const copilotPath = path.join(tmpDir, '.copilot', 'mcp-config.json');
+    await ensureDir(path.dirname(copilotPath));
+    await fs.writeFile(copilotPath, JSON.stringify({}));
+
+    const result = await unregisterMcpConfig(tmpDir);
+    expect(result.notFound).toContain('GitHub Copilot CLI');
+  });
+
+  it('reports notFound when mcpServers container is missing', async () => {
+    const claudeDir = path.join(tmpDir, '.claude');
+    await ensureDir(claudeDir);
+    await fs.writeFile(path.join(claudeDir, 'mcp.json'), JSON.stringify({}));
+
+    const result = await unregisterMcpConfig(tmpDir);
+    expect(result.notFound).toContain('Claude Code');
+  });
+
+  it('reports notFound when mcpServers container is null', async () => {
+    const claudeDir = path.join(tmpDir, '.claude');
+    await ensureDir(claudeDir);
+    await fs.writeFile(path.join(claudeDir, 'mcp.json'), JSON.stringify({ mcpServers: null }));
+
+    const result = await unregisterMcpConfig(tmpDir);
+    expect(result.notFound).toContain('Claude Code');
+  });
+
+  it('reports notFound when mcpServers container is a string (non-object)', async () => {
+    const claudeDir = path.join(tmpDir, '.claude');
+    await ensureDir(claudeDir);
+    await fs.writeFile(path.join(claudeDir, 'mcp.json'), JSON.stringify({ mcpServers: 'not-an-object' }));
+
+    const result = await unregisterMcpConfig(tmpDir);
+    expect(result.notFound).toContain('Claude Code');
+  });
+
+  it('reports notFound when mcpServers container is an array (Array.isArray check)', async () => {
+    const claudeDir = path.join(tmpDir, '.claude');
+    await ensureDir(claudeDir);
+    await fs.writeFile(path.join(claudeDir, 'mcp.json'), JSON.stringify({ mcpServers: ['x'] }));
+
+    const result = await unregisterMcpConfig(tmpDir);
+    expect(result.notFound).toContain('Claude Code');
+  });
+
+  it('handles invalid JSON gracefully (caught in try/catch)', async () => {
+    const claudeDir = path.join(tmpDir, '.claude');
+    await ensureDir(claudeDir);
+    await fs.writeFile(path.join(claudeDir, 'mcp.json'), 'not valid json {{{');
+
+    const result = await unregisterMcpConfig(tmpDir);
+    expect(result.removed).not.toContain('Claude Code');
+    expect(result.notFound).not.toContain('Claude Code');
+  });
+
+  it('skips configs that do not exist', async () => {
+    const result = await unregisterMcpConfig(tmpDir);
+    // Nothing was set up — neither removed nor notFound for any target
+    expect(result.removed).toEqual([]);
+    expect(result.notFound).toEqual([]);
+  });
+
+  it('uses USERPROFILE when HOME is unset', async () => {
+    delete process.env.HOME;
+    process.env.USERPROFILE = tmpDir;
+    const claudeDir = path.join(tmpDir, '.claude');
+    await ensureDir(claudeDir);
+    await fs.writeFile(path.join(claudeDir, 'mcp.json'), JSON.stringify({ mcpServers: { envcp: {} } }));
+
+    const result = await unregisterMcpConfig(tmpDir);
+    expect(result.removed).toContain('Claude Code');
+  });
+
+  it('returns no removed entries when both HOME and USERPROFILE are unset', async () => {
+    delete process.env.HOME;
+    delete process.env.USERPROFILE;
+
+    const result = await unregisterMcpConfig(tmpDir);
+    expect(result.removed).toEqual([]);
+  });
+});
+
+describe('verifyProjectConfigSignature — tampered config', () => {
+  let tmpDir: string;
+  let origHome: string | undefined;
+
+  beforeEach(async () => {
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-sig-'));
+    origHome = process.env.HOME;
+    process.env.HOME = tmpDir;
+  });
+
+  afterEach(async () => {
+    process.env.HOME = origHome;
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  });
+
+  it('throws when both sig file and config exist but HMAC does not match', async () => {
+    // Create a config file
+    await fs.writeFile(path.join(tmpDir, 'envcp.yaml'), 'access:\n  allow_ai_read: true\n');
+    // Create the .envcp dir with a bad (wrong) signature
+    const envcpDir = path.join(tmpDir, '.envcp');
+    await ensureDir(envcpDir);
+    await fs.writeFile(path.join(envcpDir, '.config_signature'), 'sha256:deadbeefdeadbeefdeadbeef00000000deadbeef00000000deadbeef00000000');
+
+    await expect(loadConfig(tmpDir)).rejects.toThrow('Config integrity check failed');
+  });
+});
+
+describe('initConfig — global option', () => {
+  let tmpDir: string;
+  let origHome: string | undefined;
+
+  beforeEach(async () => {
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-globalinit-'));
+    origHome = process.env.HOME;
+    process.env.HOME = tmpDir;
+  });
+
+  afterEach(async () => {
+    process.env.HOME = origHome;
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  });
+
+  it('sets vault mode to global when options.global is true', async () => {
+    const config = await initConfig(tmpDir, 'global-project', { global: true });
+    expect(config.vault.mode).toBe('global');
+  });
+
+  it('does not create .gitignore when global option is set', async () => {
+    await initConfig(tmpDir, 'global-project', { global: true });
+    const gitignoreExists = await pathExists(path.join(tmpDir, '.gitignore'));
+    expect(gitignoreExists).toBe(false);
+  });
+});
+
+describe('parseEnvFile', () => {
+  it('parses simple KEY=value pairs', () => {
+    const result = parseEnvFile('KEY=value\nOTHER=test');
+    expect(result).toEqual({ KEY: 'value', OTHER: 'test' });
+  });
+
+  it('handles empty content', () => {
+    const result = parseEnvFile('');
+    expect(result).toEqual({});
+  });
+
+  it('ignores comment lines', () => {
+    const result = parseEnvFile('# comment\nKEY=value');
+    expect(result).toEqual({ KEY: 'value' });
+  });
+
+  it('handles double-quoted values', () => {
+    const result = parseEnvFile('KEY="hello world"');
+    expect(result).toEqual({ KEY: 'hello world' });
+  });
+
+  it('drops invalid POSIX variable names', () => {
+    const result = parseEnvFile('123INVALID=value\nVALID=ok');
+    expect(result).toEqual({ VALID: 'ok' });
+  });
+});
+
+describe('validateVariableName', () => {
+  it('returns true for valid variable names', () => {
+    expect(validateVariableName('VALID_NAME')).toBe(true);
+    expect(validateVariableName('_UNDERSCORE')).toBe(true);
+    expect(validateVariableName('myVar123')).toBe(true);
+  });
+
+  it('returns false for names starting with a digit', () => {
+    expect(validateVariableName('123invalid')).toBe(false);
+  });
+
+  it('returns false for names containing hyphens', () => {
+    expect(validateVariableName('INVALID-NAME')).toBe(false);
+  });
+
+  it('returns false for empty string', () => {
+    expect(validateVariableName('')).toBe(false);
+  });
+});
+
+describe('isBlacklisted', () => {
+  it('returns true when name matches a blacklist_patterns entry', () => {
+    const config = EnvCPConfigSchema.parse({
+      access: { blacklist_patterns: ['SECRET_*'] },
+    });
+    expect(isBlacklisted('SECRET_TOKEN', config)).toBe(true);
+  });
+
+  it('returns false when name does not match any blacklist_patterns entry', () => {
+    const config = EnvCPConfigSchema.parse({
+      access: { blacklist_patterns: ['SECRET_*'] },
+    });
+    expect(isBlacklisted('PUBLIC_TOKEN', config)).toBe(false);
+  });
+
+  it('returns false when blacklist_patterns is empty', () => {
+    const config = EnvCPConfigSchema.parse({});
+    expect(isBlacklisted('ANY_VAR', config)).toBe(false);
+  });
+});
+
+describe('canAccess — denied_patterns and allowed_patterns', () => {
+  it('returns false when name matches a denied_patterns entry', () => {
+    const config = EnvCPConfigSchema.parse({
+      access: { denied_patterns: ['PRIVATE_*'] },
+    });
+    expect(canAccess('PRIVATE_KEY', config)).toBe(false);
+  });
+
+  it('returns true when name does not match denied_patterns', () => {
+    const config = EnvCPConfigSchema.parse({
+      access: { denied_patterns: ['PRIVATE_*'] },
+    });
+    expect(canAccess('PUBLIC_KEY', config)).toBe(true);
+  });
+
+  it('returns false when allowed_patterns is set and name does not match', () => {
+    const config = EnvCPConfigSchema.parse({
+      access: { allowed_patterns: ['ALLOWED_*'] },
+    });
+    expect(canAccess('OTHER_KEY', config)).toBe(false);
+  });
+
+  it('returns true when name matches an allowed_patterns entry', () => {
+    const config = EnvCPConfigSchema.parse({
+      access: { allowed_patterns: ['ALLOWED_*'] },
+    });
+    expect(canAccess('ALLOWED_KEY', config)).toBe(true);
+  });
+});
+
+describe('resolveAccessRuleFlag', () => {
+  it('falls through to default access flag when no variable rule is set', () => {
+    const config = EnvCPConfigSchema.parse({
+      access: { allow_ai_read: true },
+    });
+    expect(resolveAccessRuleFlag('NO_RULE_VAR', config, 'read')).toBe(true);
+  });
+
+  it('returns variable rule flag when set (overrides default)', () => {
+    const config = EnvCPConfigSchema.parse({
+      access: {
+        allow_ai_read: true,
+        variable_rules: { SPECIFIC: { allow_ai_read: false } },
+      },
+    });
+    expect(resolveAccessRuleFlag('SPECIFIC', config, 'read')).toBe(false);
+  });
+
+  it('uses client variable rule when clientId is provided', () => {
+    const config = EnvCPConfigSchema.parse({
+      access: {
+        allow_ai_read: false,
+        client_rules: {
+          myClient: {
+            variable_rules: { MY_VAR: { allow_ai_read: true } },
+          },
+        },
+      },
+    });
+    expect(resolveAccessRuleFlag('MY_VAR', config, 'read', 'myClient')).toBe(true);
+  });
+});
+
+describe('canAccessVariable — blacklist and inactive window branches', () => {
+  it('returns false immediately when variable is blacklisted', () => {
+    const config = EnvCPConfigSchema.parse({
+      access: {
+        allow_ai_read: true,
+        blacklist_patterns: ['SECRET_*'],
+      },
+    });
+    expect(canAccessVariable('SECRET_TOKEN', config, 'read')).toBe(false);
+  });
+
+  it('returns false when variable rule window is not active', () => {
+    const config = EnvCPConfigSchema.parse({
+      access: {
+        allow_ai_read: true,
+        variable_rules: {
+          TIMED_KEY: { active_window: { start: '09:00', end: '10:00' } },
+        },
+      },
+    });
+    // Use a time outside the window (e.g. 18:00)
+    const outside = new Date('2024-01-01T18:00:00');
+    expect(isVariableRuleActive('TIMED_KEY', config, outside)).toBe(false);
+    // Exercise the canAccessVariable inactive-window branch directly with an injected clock
+    expect(canAccessVariable('TIMED_KEY', config, 'read', '', outside)).toBe(false);
+
+    // Also verify with a distinct narrow-window config
+    const config3 = EnvCPConfigSchema.parse({
+      access: {
+        allow_ai_read: true,
+        variable_rules: {
+          NIGHT_VAR: { active_window: { start: '00:00', end: '00:01' } },
+        },
+      },
+    });
+    expect(isVariableRuleActive('NIGHT_VAR', config3, outside)).toBe(false);
+    expect(canAccessVariable('NIGHT_VAR', config3, 'read', '', outside)).toBe(false);
+  });
+});
+
+describe('canAccessVariable inactive rule branch', () => {
+  it('returns false when variable rule has an inactive time window', () => {
+    // Build a config with a variable rule active only between 00:00 and 00:01
+    // Then call canAccessVariable at a time outside that window
+    const config = EnvCPConfigSchema.parse({
+      access: {
+        allow_ai_read: true,
+        variable_rules: {
+          NIGHT_VAR: { active_window: { start: '00:00', end: '00:01' } },
+        },
+      },
+    });
+    // Mock the current time to be inside an inactive period (18:00)
+    const fixedDate = new Date('2025-01-01T18:00:00');
+    const RealDate = Date;
+    // @ts-expect-error - test override
+    global.Date = class extends RealDate {
+      constructor(...args: ConstructorParameters<typeof RealDate>) {
+        if (args.length === 0) {
+          super(fixedDate);
+          return;
+        }
+        super(...args);
+      }
+    } as DateConstructor;
+    try {
+      expect(canAccessVariable('NIGHT_VAR', config, 'read')).toBe(false);
+    } finally {
+      global.Date = RealDate;
+    }
+  });
+});
+
+describe('getVariableRuleFlag and getDefaultAccessFlag operations', () => {
+  it('returns variable rule flags for each operation when client rule is absent', () => {
+    const config = EnvCPConfigSchema.parse({
+      access: {
+        variable_rules: {
+          OP_VAR: {
+            allow_ai_read: true,
+            allow_ai_write: true,
+            allow_ai_delete: true,
+            allow_ai_export: true,
+            allow_ai_execute: true,
+          },
+        },
+      },
+    });
+    expect(resolveAccessRuleFlag('OP_VAR', config, 'read')).toBe(true);
+    expect(resolveAccessRuleFlag('OP_VAR', config, 'write')).toBe(true);
+    expect(resolveAccessRuleFlag('OP_VAR', config, 'delete')).toBe(true);
+    expect(resolveAccessRuleFlag('OP_VAR', config, 'export')).toBe(true);
+    expect(resolveAccessRuleFlag('OP_VAR', config, 'execute')).toBe(true);
+  });
+
+  it('falls back to defaults for each operation when no variable rule', () => {
+    const config = EnvCPConfigSchema.parse({
+      access: {
+        allow_ai_read: true,
+        allow_ai_write: true,
+        allow_ai_delete: true,
+        allow_ai_export: true,
+        allow_ai_execute: true,
+      },
+    });
+    expect(resolveAccessRuleFlag('NOPE', config, 'read')).toBe(true);
+    expect(resolveAccessRuleFlag('NOPE', config, 'write')).toBe(true);
+    expect(resolveAccessRuleFlag('NOPE', config, 'delete')).toBe(true);
+    expect(resolveAccessRuleFlag('NOPE', config, 'export')).toBe(true);
+    expect(resolveAccessRuleFlag('NOPE', config, 'execute')).toBe(true);
+  });
+});
+
+describe('getHomeDir USERPROFILE fallback', () => {
+  it('uses USERPROFILE when HOME is unset (covered indirectly via initConfig)', async () => {
+    const origHome = process.env.HOME;
+    const origUserProfile = process.env.USERPROFILE;
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-userprofile-'));
+    try {
+      delete process.env.HOME;
+      process.env.USERPROFILE = tmpDir;
+      // Any code path that calls getHomeDir() will exercise the fallback.
+      // loadConfig calls it internally to find the global config.
+      const config = await loadConfig(tmpDir);
+      expect(config).toBeDefined();
+    } finally {
+      if (origHome !== undefined) process.env.HOME = origHome;
+      if (origUserProfile !== undefined) process.env.USERPROFILE = origUserProfile;
+      else delete process.env.USERPROFILE;
+      await fs.rm(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it('falls back to empty string when both HOME and USERPROFILE are unset', async () => {
+    const origHome = process.env.HOME;
+    const origUserProfile = process.env.USERPROFILE;
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'envcp-nohome-'));
+    try {
+      delete process.env.HOME;
+      delete process.env.USERPROFILE;
+      // loadConfig calls getHomeDir() which now falls back to ''
+      // This should not throw; it just means no global config is found.
+      const config = await loadConfig(tmpDir);
+      expect(config).toBeDefined();
+    } finally {
+      if (origHome !== undefined) process.env.HOME = origHome;
+      if (origUserProfile !== undefined) process.env.USERPROFILE = origUserProfile;
+      await fs.rm(tmpDir, { recursive: true, force: true });
+    }
   });
 });
 

@@ -5,7 +5,7 @@ import * as os from 'node:os';
 import * as fs from 'node:fs/promises';
 import { promptPassword, promptInput, promptConfirm, promptMenu, promptTabbedMenu, MenuTab } from '../utils/prompt.js';
 import { ensureDir, pathExists, findProjectRoot } from '../utils/fs.js';
-import { loadConfig, loadScopedConfig, initConfig, saveConfig, saveScopedConfig, parseEnvFile, registerMcpConfig, isBlacklisted, canAccess } from '../config/manager.js';
+import { loadConfig, loadScopedConfig, initConfig, saveConfig, saveScopedConfig, parseEnvFile, registerMcpConfig, unregisterMcpConfig, isBlacklisted, canAccess } from '../config/manager.js';
 import { ConfigGuard } from '../config/config-guard.js';
 import { StorageManager, LogManager, resolveLogPath } from '../storage/index.js';
 import { VERSION } from '../version.js';
@@ -3132,7 +3132,7 @@ const confirm = await promptConfirm(options.merge ? 'Merge backup into current s
     });
   });
 
-type DoctorCheck = { name: string; status: 'pass' | 'fail' | 'warn'; detail: string };
+type DoctorCheck = { name: string; status: 'pass' | 'fail' | 'warn'; detail: string; fix?: () => Promise<void> };
 
 async function collectStoreFileCheck(projectPath: string, config: EnvCPConfig): Promise<DoctorCheck> {
   const storePath = path.join(projectPath, config.storage.path);
@@ -3180,19 +3180,34 @@ async function collectEnvcpDirCheck(projectPath: string): Promise<DoctorCheck> {
   if (await pathExists(envcpDir)) {
     return { name: '.envcp directory', status: 'pass', detail: 'Exists' };
   }
-  return { name: '.envcp directory', status: 'fail', detail: 'Missing — run `envcp init`' };
+  return {
+    name: '.envcp directory',
+    status: 'fail',
+    detail: 'Missing — run `envcp init`',
+    fix: async () => { await ensureDir(envcpDir); },
+  };
 }
 
 async function collectGitignoreCheck(projectPath: string): Promise<DoctorCheck> {
   const gitignorePath = path.join(projectPath, '.gitignore');
   if (!await pathExists(gitignorePath)) {
-    return { name: '.gitignore', status: 'warn', detail: 'No .gitignore found' };
+    return {
+      name: '.gitignore',
+      status: 'warn',
+      detail: 'No .gitignore found',
+      fix: async () => { await fs.writeFile(gitignorePath, '.envcp/\n'); },
+    };
   }
   const gitignore = await fs.readFile(gitignorePath, 'utf8');
   if (gitignore.includes('.envcp/')) {
     return { name: '.gitignore', status: 'pass', detail: '.envcp/ is ignored' };
   }
-  return { name: '.gitignore', status: 'warn', detail: '.envcp/ not in .gitignore — secrets may be committed' };
+  return {
+    name: '.gitignore',
+    status: 'warn',
+    detail: '.envcp/ not in .gitignore — secrets may be committed',
+    fix: async () => { await fs.appendFile(gitignorePath, '\n.envcp/\n'); },
+  };
 }
 
 async function collectMcpCheck(projectPath: string): Promise<DoctorCheck> {
@@ -3232,7 +3247,7 @@ async function runDoctorChecks(projectPath: string): Promise<DoctorCheck[]> {
   return checks;
 }
 
-function printDoctorSummary(checks: DoctorCheck[]): void {
+function printDoctorChecks(checks: DoctorCheck[]): void {
   console.log(chalk.blue('\nEnvCP Doctor\n'));
   for (const check of checks) {
     let icon: string;
@@ -3258,13 +3273,189 @@ function printDoctorSummary(checks: DoctorCheck[]): void {
   }
 }
 
+async function printDoctorSummary(checks: DoctorCheck[], projectPath: string, autoFix: boolean): Promise<void> {
+  printDoctorChecks(checks);
+
+  const fixable = checks.filter(c => c.fix && c.status !== 'pass');
+  if (fixable.length === 0) {
+    return;
+  }
+
+  console.log(chalk.blue('\nFixable issues:'));
+  for (const check of fixable) {
+    console.log(`  - ${check.name}: ${chalk.gray(check.detail)}`);
+  }
+
+  let shouldFix = autoFix;
+  if (!shouldFix) {
+    shouldFix = await promptConfirm('Apply fixes?', false);
+  }
+  if (!shouldFix) {
+    return;
+  }
+
+  console.log('');
+  for (const check of fixable) {
+    try {
+      await check.fix!();
+      console.log(chalk.green('  ✓ Fixed: ' + check.name));
+    } catch (error) {
+      console.log(chalk.red('  ✗ Failed to fix ' + check.name + ': ' + (error as Error).message));
+    }
+  }
+
+  console.log(chalk.blue('\nRe-running checks...'));
+  const updated = await runDoctorChecks(projectPath);
+  printDoctorChecks(updated);
+}
+
 program
   .command('doctor')
   .description('Diagnose common issues and check system health')
-  .action(async () => {
+  .option('--fix', 'Automatically apply fixes for fixable issues')
+  .action(async (options) => {
     const projectPath = process.cwd();
     const checks = await runDoctorChecks(projectPath);
-    printDoctorSummary(checks);
+    await printDoctorSummary(checks, projectPath, options.fix === true);
+  });
+
+program
+  .command('uninstall')
+  .description('Uninstall EnvCP, optionally removing vault data and MCP registrations')
+  .action(async () => {
+    if (!isInteractiveCli()) {
+      console.log(chalk.red('envcp uninstall is only available in an interactive terminal.'));
+      process.exit(1);
+    }
+
+    console.log(chalk.yellow('\n⚠  This will uninstall EnvCP from your system.'));
+    console.log(chalk.yellow('   Choose which actions to perform.\n'));
+
+    const timestamp = new Date().toISOString().replaceAll(/[.:]/g, '-');
+    const homeVault = path.join(os.homedir(), '.envcp');
+    const projectVault = path.join(process.cwd(), '.envcp');
+
+    // 1. Export secrets
+    const doExport = await promptConfirm('Export secrets (encrypted backup) before uninstall?', true);
+    let exportPath = '';
+    if (doExport) {
+      const defaultExport = path.join(process.cwd(), `envcp-backup-${timestamp}.json`);
+      const input = (await promptInput(`Export output path [${defaultExport}]:`)).trim();
+      exportPath = input || defaultExport;
+    }
+
+    // 2. Decrypt secrets to plain .env
+    const doDecrypt = await promptConfirm('Decrypt secrets into a plain .env file?', false);
+    let decryptPath = '';
+    if (doDecrypt) {
+      const defaultDecrypt = path.join(process.cwd(), 'envcp-secrets.env');
+      const input = (await promptInput(`Plain .env output path [${defaultDecrypt}]:`)).trim();
+      decryptPath = input || defaultDecrypt;
+    }
+
+    // 3. Remove ~/.envcp
+    const removeHome = await promptConfirm('Remove ~/.envcp (global vault)?', false);
+    // 4. Remove ./.envcp/
+    const removeProject = await promptConfirm('Remove ./.envcp/ (project vault)?', false);
+    // 5. MCP deregistration
+    const removeMcp = await promptConfirm('Remove MCP registrations from AI tools?', false);
+    // 6. npm uninstall
+    const npmUninstall = await promptConfirm('Uninstall the npm package globally (@fentz26/envcp)?', true);
+
+    // Summary
+    console.log(chalk.blue('\nPlanned actions:'));
+    if (doExport) console.log(chalk.gray(`  • Export encrypted backup → ${exportPath}`));
+    if (doDecrypt) console.log(chalk.gray(`  • Decrypt secrets to plain file → ${decryptPath}`));
+    if (removeMcp) console.log(chalk.gray('  • Remove MCP registrations from AI tools'));
+    if (removeHome) console.log(chalk.gray(`  • Remove ${homeVault}`));
+    if (removeProject) console.log(chalk.gray(`  • Remove ${projectVault}`));
+    if (npmUninstall) console.log(chalk.gray('  • npm uninstall -g @fentz26/envcp'));
+    if (!doExport && !doDecrypt && !removeHome && !removeProject && !removeMcp && !npmUninstall) {
+      console.log(chalk.gray('  (no actions selected)'));
+    }
+    console.log();
+
+    const proceed = await promptConfirm('Proceed with these actions?', false);
+    if (!proceed) {
+      console.log(chalk.gray('Uninstall aborted.'));
+      return;
+    }
+
+    const performed: string[] = [];
+
+    // 1. Export (must succeed before destructive steps)
+    if (doExport) {
+      console.log(chalk.blue(`\nExporting encrypted backup to ${exportPath}...`));
+      const result = spawnSync(process.execPath, [process.argv[1], 'export', '--encrypted', '--output', exportPath], { stdio: 'inherit' });
+      if (result.status !== 0) {
+        console.log(chalk.red('Export failed. Aborting before destructive steps.'));
+        return;
+      }
+      performed.push(`Encrypted backup written to ${exportPath}`);
+    }
+
+    // 2. Decrypt to plain .env (no native --plain flag exists; warn the user)
+    if (doDecrypt) {
+      console.log(chalk.yellow(`\n⚠  No automated plain-text export is available.`));
+      console.log(chalk.yellow(`   Run \`envcp export --format env > ${decryptPath}\` manually before removing your vault.`));
+      performed.push(`Manual decrypt instructions printed for ${decryptPath}`);
+    }
+
+    // 3. MCP deregistration
+    if (removeMcp) {
+      console.log(chalk.blue('\nRemoving MCP registrations...'));
+      try {
+        const mcpResult = await unregisterMcpConfig(process.cwd());
+        for (const name of mcpResult.removed) {
+          console.log(chalk.green(`  ✓ Removed from ${name}`));
+        }
+        for (const name of mcpResult.notFound) {
+          console.log(chalk.gray(`  - ${name}: not registered`));
+        }
+        performed.push(`MCP registrations removed from ${mcpResult.removed.length} tool(s)`);
+      } catch (error) {
+        console.log(chalk.red(`  ✗ MCP deregistration failed: ${(error as Error).message}`));
+      }
+    }
+
+    // 4. Remove ~/.envcp
+    if (removeHome) {
+      try {
+        await fs.rm(homeVault, { recursive: true, force: true });
+        console.log(chalk.green(`  ✓ Removed ${homeVault}`));
+        performed.push(`Removed ${homeVault}`);
+      } catch (error) {
+        console.log(chalk.red(`  ✗ Failed to remove ${homeVault}: ${(error as Error).message}`));
+      }
+    }
+
+    // 5. Remove ./.envcp/
+    if (removeProject) {
+      try {
+        await fs.rm(projectVault, { recursive: true, force: true });
+        console.log(chalk.green(`  ✓ Removed ${projectVault}`));
+        performed.push(`Removed ${projectVault}`);
+      } catch (error) {
+        console.log(chalk.red(`  ✗ Failed to remove ${projectVault}: ${(error as Error).message}`));
+      }
+    }
+
+    // 6. npm uninstall
+    if (npmUninstall) {
+      console.log(chalk.blue('\nUninstalling npm package...'));
+      const result = spawnSync('npm', ['uninstall', '-g', '@fentz26/envcp'], { stdio: 'inherit' });
+      if (result.status === 0) {
+        performed.push('npm package @fentz26/envcp uninstalled');
+      } else {
+        console.log(chalk.red('  ✗ npm uninstall returned non-zero exit code.'));
+      }
+    }
+
+    console.log(chalk.green('\n✓ EnvCP uninstall complete.'));
+    if (performed.length > 0) {
+      console.log(chalk.gray('Summary:'));
+      for (const step of performed) console.log(chalk.gray(`  • ${step}`));
+    }
   });
 
 program

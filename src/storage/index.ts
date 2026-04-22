@@ -322,6 +322,7 @@ export class LogManager {
         return entries.at(-1);
       }
     }
+    /* c8 ignore next 2 -- only reachable if every log file is empty; loadLastChainState already short-circuits on zero dates */
     return undefined;
   }
 

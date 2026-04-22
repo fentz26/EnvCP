@@ -79,22 +79,27 @@ describe('EnvCPServer', () => {
     const mcpServer = (server as any).server;
     // Access the handler map
     const handlers = mcpServer._requestHandlers;
-    if (handlers && handlers.size > 0) {
-      // Find the ListTools handler (registered with ListToolsRequestSchema)
-      for (const [schema, handler] of handlers) {
-        try {
-          const result = await handler({ method: 'tools/list' });
-          if (result && result.tools) {
-            expect(result.tools.length).toBe(8);
-            expect(result.tools[0]).toHaveProperty('name');
-            expect(result.tools[0]).toHaveProperty('inputSchema');
-            break;
-          }
-        } catch {
-          // Some handlers may not accept this input
-        }
+    expect(handlers).toBeDefined();
+    expect(handlers.size).toBeGreaterThan(0);
+
+    // Find the ListTools handler (registered with ListToolsRequestSchema)
+    let matched = false;
+    for (const [, handler] of handlers) {
+      let result: any;
+      try {
+        result = await handler({ method: 'tools/list' });
+      } catch {
+        continue; // wrong handler for this input
+      }
+      if (result && result.tools) {
+        expect(result.tools.length).toBe(9);
+        expect(result.tools[0]).toHaveProperty('name');
+        expect(result.tools[0]).toHaveProperty('inputSchema');
+        matched = true;
+        break;
       }
     }
+    expect(matched).toBe(true);
   });
 
   it('CallToolRequestSchema handler calls a tool', async () => {
@@ -110,22 +115,25 @@ describe('EnvCPServer', () => {
 
     const mcpServer = (server as any).server;
     const handlers = mcpServer._requestHandlers;
-    if (handlers) {
-      // Try each handler to find CallTool
-      for (const [, handler] of handlers) {
-        try {
-          const result = await handler({ method: 'tools/call', params: { name: 'envcp_list', arguments: {} } });
-          if (result && result.content) {
-            expect(result.content[0].type).toBe('text');
-            const parsed = JSON.parse(result.content[0].text);
-            expect(parsed.count).toBe(0);
-            break;
-          }
-        } catch {
-          // Skip non-matching handlers
-        }
+    expect(handlers).toBeDefined();
+
+    let matched = false;
+    for (const [, handler] of handlers) {
+      let result: any;
+      try {
+        result = await handler({ method: 'tools/call', params: { name: 'envcp_list', arguments: {} } });
+      } catch {
+        continue; // wrong handler for this input
+      }
+      if (result && result.content) {
+        expect(result.content[0].type).toBe('text');
+        const parsed = JSON.parse(result.content[0].text);
+        expect(parsed.count).toBe(0);
+        matched = true;
+        break;
       }
     }
+    expect(matched).toBe(true);
   });
 
   it('CallToolRequestSchema handler returns error for unknown tool', async () => {
@@ -140,19 +148,26 @@ describe('EnvCPServer', () => {
 
     const mcpServer = (server as any).server;
     const handlers = mcpServer._requestHandlers;
-    if (handlers) {
-      for (const [, handler] of handlers) {
-        try {
-          await handler({ method: 'tools/call', params: { name: 'nonexistent_tool', arguments: {} } });
-        } catch (e: any) {
-          // Should throw McpError — check message or code
-          if (e.message?.includes('Unknown tool') || e.message?.includes('nonexistent_tool') || e.code !== undefined) {
-            expect(e).toBeDefined();
-            break;
-          }
+    expect(handlers).toBeDefined();
+
+    let sawExpectedError = false;
+    for (const [, handler] of handlers) {
+      try {
+        await handler({ method: 'tools/call', params: { name: 'nonexistent_tool', arguments: {} } });
+      } catch (e: any) {
+        // Only the CallTool handler will throw for an unknown tool name.
+        // Other handlers will reject the shape earlier with a different error.
+        if (
+          e?.message?.includes('Unknown tool') ||
+          e?.message?.includes('nonexistent_tool') ||
+          e?.code !== undefined
+        ) {
+          sawExpectedError = true;
+          break;
         }
       }
     }
+    expect(sawExpectedError).toBe(true);
   });
 
   it('adapter can call tools after init', async () => {

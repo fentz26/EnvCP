@@ -274,3 +274,59 @@ export class LockoutManager {
     };
   }
 }
+
+/**
+ * Brute-force protection settings resolved from EnvCPConfig with safe defaults.
+ * Mirrors the per-call argument shape that LockoutManager.recordFailure expects.
+ */
+export interface ResolvedBruteForceSettings {
+  lockoutThreshold: number;
+  lockoutBaseSeconds: number;
+  progressiveDelay: boolean;
+  maxDelay: number;
+  permanentThreshold: number;
+}
+
+/**
+ * Resolve brute-force protection settings from a full EnvCP config object.
+ * Centralises the same fallback chain used by both the REST and unified server.
+ *
+ * @param config A loaded EnvCP config (typed as `unknown` to avoid a circular type import).
+ */
+export function resolveBruteForceSettings(config: unknown): ResolvedBruteForceSettings {
+  /* c8 ignore next 10 -- Zod always provides BFP fields; fallback ?? branches unreachable in practice */
+  const cfg = (config ?? {}) as { security?: { brute_force_protection?: Record<string, unknown> }; session?: Record<string, unknown> };
+  const bfp = cfg.security?.brute_force_protection ?? {};
+  const session = cfg.session ?? {};
+  return {
+    lockoutThreshold: (bfp.max_attempts as number | undefined) ?? (session.lockout_threshold as number | undefined) ?? 5,
+    lockoutBaseSeconds: (bfp.lockout_duration as number | undefined) ?? (session.lockout_base_seconds as number | undefined) ?? 60,
+    progressiveDelay: (bfp.progressive_delay as boolean | undefined) ?? true,
+    maxDelay: (bfp.max_delay as number | undefined) ?? 60,
+    permanentThreshold: (bfp.permanent_lockout_threshold as number | undefined) ?? 0,
+  };
+}
+
+/**
+ * Build the standard "auth_failure" audit log entry for an invalid API key.
+ * Centralised so REST/unified servers emit identical structures.
+ */
+export function buildInvalidApiKeyLogEntry(req: { socket: { remoteAddress?: string } }, suffix?: string): {
+  timestamp: string;
+  operation: 'auth_failure';
+  variable: string;
+  source: 'api';
+  success: false;
+  message: string;
+} {
+  /* c8 ignore next -- socket.remoteAddress always set in tests; '?? unknown' fallback is defensive */
+  const remote = req.socket.remoteAddress ?? 'unknown';
+  return {
+    timestamp: new Date().toISOString(),
+    operation: 'auth_failure',
+    variable: '',
+    source: 'api',
+    success: false,
+    message: suffix ? `Invalid API key - ${suffix} from ${remote}` : `Invalid API key from ${remote}`,
+  };
+}

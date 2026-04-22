@@ -47,12 +47,16 @@ export const AuditConfigSchema = z.object({
 
 export type AuditConfig = z.infer<typeof AuditConfigSchema>;
 
-const VariableRuleSchema = z.object({
+const BaseAIAccessFlagsShape = {
   allow_ai_read: z.boolean().optional(),
   allow_ai_write: z.boolean().optional(),
   allow_ai_delete: z.boolean().optional(),
   allow_ai_export: z.boolean().optional(),
   allow_ai_execute: z.boolean().optional(),
+} as const;
+
+const VariableRuleSchema = z.object({
+  ...BaseAIAccessFlagsShape,
   require_confirmation: z.boolean().optional(),
   active_window: z.object({
     start: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
@@ -61,11 +65,7 @@ const VariableRuleSchema = z.object({
 });
 
 const ClientAccessRuleSchema = z.object({
-  allow_ai_read: z.boolean().optional(),
-  allow_ai_write: z.boolean().optional(),
-  allow_ai_delete: z.boolean().optional(),
-  allow_ai_export: z.boolean().optional(),
-  allow_ai_execute: z.boolean().optional(),
+  ...BaseAIAccessFlagsShape,
   allow_ai_active_check: z.boolean().optional(),
   require_confirmation: z.boolean().optional(),
   variable_rules: z.record(VariableRuleSchema).default({}),

@@ -2,11 +2,11 @@ import { BaseAdapter } from './base.js';
 import { OpenAIFunction, OpenAIToolCall, OpenAIMessage, RateLimitConfig } from '../types.js';
 import { sendJson, parseBody } from '../utils/http.js';
 import { VERSION } from '../version.js';
+import { TOOLS_MESSAGE, buildChatCompletionBase } from './shared.js';
 import * as http from 'node:http';
 
 export class OpenAIAdapter extends BaseAdapter {
   private server: http.Server | null = null;
-  private static readonly TOOLS_MESSAGE = 'EnvCP tools available. Use function calling to interact with environment variables.';
 
   private async handleFunctionCall(req: http.IncomingMessage, res: http.ServerResponse, clientId: string): Promise<void> {
     const body = await parseBody(req);
@@ -81,22 +81,14 @@ export class OpenAIAdapter extends BaseAdapter {
 
   createToolResultsCompletion(results: OpenAIMessage[]): Record<string, unknown> {
     return {
-      id: `chatcmpl-${Date.now()}`,
-      object: 'chat.completion',
-      created: Math.floor(Date.now() / 1000),
-      model: `envcp-${VERSION}`,
-      choices: [{ index: 0, message: { role: 'assistant', content: null, tool_calls: null }, finish_reason: 'tool_calls' }],
+      ...buildChatCompletionBase({ role: 'assistant', content: null, tool_calls: null }, 'tool_calls'),
       tool_results: results,
     };
   }
 
   createAvailableToolsCompletion(): Record<string, unknown> {
     return {
-      id: `chatcmpl-${Date.now()}`,
-      object: 'chat.completion',
-      created: Math.floor(Date.now() / 1000),
-      model: `envcp-${VERSION}`,
-      choices: [{ index: 0, message: { role: 'assistant', content: OpenAIAdapter.TOOLS_MESSAGE }, finish_reason: 'stop' }],
+      ...buildChatCompletionBase({ role: 'assistant', content: TOOLS_MESSAGE }, 'stop'),
       available_tools: this.getOpenAIFunctions().map(f => ({ type: 'function', function: f })),
     };
   }
@@ -115,9 +107,7 @@ export class OpenAIAdapter extends BaseAdapter {
   }
 
   async startServer(port: number, host: string, apiKey?: string, rateLimitConfig?: RateLimitConfig): Promise<void> {
-    await this.init();
-
-    this.server = await this.createHttpServer({
+    this.server = await this.startBrandedHttpServer({
       port,
       host,
       apiKey,
@@ -126,7 +116,6 @@ export class OpenAIAdapter extends BaseAdapter {
       authHeaderFn: (req) => req.headers['authorization']?.replace(/^Bearer\s+/i, ''),
       authFailureResponse: (message) => ({ error: { message, type: 'invalid_api_key' } }),
       internalErrorResponse: (message) => ({ error: { message, type: 'internal_error' } }),
-      healthEndpoints: ['/v1/health', '/'],
       mode: 'openai',
       onRequest: async (req, res, pathname, clientId) => {
         if (pathname === '/v1/models' && req.method === 'GET') {

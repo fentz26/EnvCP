@@ -1,8 +1,8 @@
 import { BaseAdapter } from './base.js';
 import { EnvCPConfig, RESTResponse, ToolDefinition, RateLimitConfig } from '../types.js';
 import { VERSION } from '../version.js';
-import { setCorsHeaders, sendJson, parseBody, validateApiKey, RateLimiter, rateLimitMiddleware } from '../utils/http.js';
-import { LockoutManager } from '../utils/lockout.js';
+import { sendJson, parseBody, validateApiKey, RateLimiter, applyServerPreChecks } from '../utils/http.js';
+import { LockoutManager, resolveBruteForceSettings, buildInvalidApiKeyLogEntry } from '../utils/lockout.js';
 import { resolveSessionPath } from '../vault/index.js';
 import * as http from 'node:http';
 import * as path from 'node:path';
@@ -162,6 +162,7 @@ export class RESTAdapter extends BaseAdapter {
       variable: '',
       source: 'api',
       success: false,
+      /* c8 ignore next -- socket.remoteAddress always set in tests; '?? unknown' fallback is defensive */
       message: `${logMessage} from ${req.socket.remoteAddress ?? 'unknown'}`,
     });
     sendJson(res, statusCode, this.createResponse(false, undefined, responseMessage));
@@ -208,13 +209,8 @@ export class RESTAdapter extends BaseAdapter {
 
   private async recordInvalidKey(req: http.IncomingMessage, res: http.ServerResponse): Promise<boolean> {
     if (!this.lockoutManager) return true;
-    const bfpConfig = this.config.security?.brute_force_protection;
-    /* c8 ignore next 5 -- Zod always provides BFP fields; fallback ?? branches unreachable */
-    const lockoutThreshold = bfpConfig?.max_attempts ?? this.config.session?.lockout_threshold ?? 5;
-    const lockoutBaseSeconds = bfpConfig?.lockout_duration ?? this.config.session?.lockout_base_seconds ?? 60;
-    const progressiveDelay = bfpConfig?.progressive_delay ?? true;
-    const maxDelay = bfpConfig?.max_delay ?? 60;
-    const permanentThreshold = bfpConfig?.permanent_lockout_threshold ?? 0;
+    const { lockoutThreshold, lockoutBaseSeconds, progressiveDelay, maxDelay, permanentThreshold } =
+      resolveBruteForceSettings(this.config);
 
     const status = await this.lockoutManager.recordFailure(
       lockoutThreshold,
@@ -258,14 +254,7 @@ export class RESTAdapter extends BaseAdapter {
       return false;
     }
 
-    await this.logs.log({
-      timestamp: new Date().toISOString(),
-      operation: 'auth_failure',
-      variable: '',
-      source: 'api',
-      success: false,
-      message: `Invalid API key from ${req.socket.remoteAddress ?? 'unknown'}`,
-    });
+    await this.logs.log(buildInvalidApiKeyLogEntry(req));
     sendJson(res, 401, this.createResponse(false, undefined, 'Invalid API key'));
     return false;
   }
@@ -398,19 +387,12 @@ export class RESTAdapter extends BaseAdapter {
     this.initLockoutManager();
 
     this.server = http.createServer(async (req, res) => {
-      setCorsHeaders(res, undefined, req.headers.origin);
-
-      if (req.method === 'OPTIONS') {
-        res.writeHead(204);
-        res.end();
-        return;
-      }
-
-      if (rateLimitEnabled && !rateLimitMiddleware(this.rateLimiter, req, res, whitelist)) {
-        return;
-      }
-
-      if (!await this.enforceApiKey(req, res, apiKey)) {
+      if (!await applyServerPreChecks(req, res, {
+        rateLimiter: this.rateLimiter,
+        rateLimitEnabled,
+        whitelist,
+        enforceApiKey: () => this.enforceApiKey(req, res, apiKey),
+      })) {
         return;
       }
 

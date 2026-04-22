@@ -182,3 +182,40 @@ export function rateLimitMiddleware(
   res.setHeader('X-RateLimit-Remaining', String(limiter.getRemainingRequests(key)));
   return true;
 }
+
+/**
+ * Run the standard set of per-request pre-checks shared by the REST and unified
+ * servers: CORS headers, OPTIONS short-circuit, rate limiting, and API-key auth.
+ *
+ * Returns `true` when the caller should continue handling the request, or
+ * `false` when the response has already been written (preflight handled,
+ * rate-limited, or auth rejected).
+ */
+export async function applyServerPreChecks(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  opts: {
+    rateLimiter: RateLimiter;
+    rateLimitEnabled: boolean;
+    whitelist: string[];
+    enforceApiKey: () => Promise<boolean>;
+  },
+): Promise<boolean> {
+  setCorsHeaders(res, undefined, req.headers.origin);
+
+  if (req.method === 'OPTIONS') {
+    res.writeHead(204);
+    res.end();
+    return false;
+  }
+
+  if (opts.rateLimitEnabled && !rateLimitMiddleware(opts.rateLimiter, req, res, opts.whitelist)) {
+    return false;
+  }
+
+  if (!await opts.enforceApiKey()) {
+    return false;
+  }
+
+  return true;
+}

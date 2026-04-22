@@ -2,11 +2,11 @@ import { BaseAdapter } from './base.js';
 import { GeminiFunctionDeclaration, GeminiFunctionCall, GeminiFunctionResponse, RateLimitConfig } from '../types.js';
 import { sendJson, parseBody } from '../utils/http.js';
 import { VERSION } from '../version.js';
+import { TOOLS_MESSAGE } from './shared.js';
 import * as http from 'node:http';
 
 export class GeminiAdapter extends BaseAdapter {
   private server: http.Server | null = null;
-  private static readonly TOOLS_MESSAGE = 'EnvCP tools available. Use function calling to interact with environment variables.';
 
   private async handleFunctionCall(req: http.IncomingMessage, res: http.ServerResponse, clientId: string): Promise<void> {
     const body = await parseBody(req);
@@ -96,7 +96,7 @@ export class GeminiAdapter extends BaseAdapter {
 
   createAvailableToolsResponse(): Record<string, unknown> {
     return {
-      candidates: [{ content: { parts: [{ text: GeminiAdapter.TOOLS_MESSAGE }], role: 'model' }, finishReason: 'STOP' }],
+      candidates: [{ content: { parts: [{ text: TOOLS_MESSAGE }], role: 'model' }, finishReason: 'STOP' }],
       availableTools: [{ functionDeclarations: this.getGeminiFunctionDeclarations() }],
     };
   }
@@ -115,16 +115,13 @@ export class GeminiAdapter extends BaseAdapter {
   }
 
   async startServer(port: number, host: string, apiKey?: string, rateLimitConfig?: RateLimitConfig): Promise<void> {
-    await this.init();
-
-    this.server = await this.createHttpServer({
+    this.server = await this.startBrandedHttpServer({
       port,
       host,
       apiKey,
       rateLimitConfig,
       defaultClientId: 'gemini',
       authHeaderFn: (req) => (req.headers['x-goog-api-key'] || req.headers['authorization']?.replace(/^Bearer\s+/i, '')) as string | undefined,
-      healthEndpoints: ['/v1/health', '/'],
       mode: 'gemini',
       onRequest: async (req, res, pathname, clientId) => {
         if (pathname === '/v1/models' && req.method === 'GET') {

@@ -355,6 +355,35 @@ function insertEnvcpArray(
   return { written: true, alreadyExists: false };
 }
 
+function removeEnvcpFromContainer(config: Record<string, unknown>, containerKey: string): boolean {
+  const container = config[containerKey];
+  if (!container || typeof container !== 'object' || Array.isArray(container)) return false;
+  const obj = container as Record<string, unknown>;
+  if (obj.envcp === undefined) return false;
+  delete obj.envcp;
+  return true;
+}
+
+function removeEnvcpFromArray(config: Record<string, unknown>): boolean {
+  const servers = config.mcp_servers;
+  if (!Array.isArray(servers)) return false;
+  const originalLength = servers.length;
+  const filtered = (servers as Array<Record<string, unknown>>).filter(s => s.name !== 'envcp');
+  if (filtered.length === originalLength) return false;
+  config.mcp_servers = filtered;
+  return true;
+}
+
+function removeFromConfig(config: Record<string, unknown>, format: McpTarget['format']): boolean {
+  switch (format) {
+    case 'mcpServers': return removeEnvcpFromContainer(config, 'mcpServers');
+    case 'servers': return removeEnvcpFromContainer(config, 'servers');
+    case 'context_servers': return removeEnvcpFromContainer(config, 'context_servers');
+    case 'mcp_key': return removeEnvcpFromContainer(config, 'mcp');
+    case 'mcp_servers_array': return removeEnvcpFromArray(config);
+  }
+}
+
 export function writeToConfig(
   config: Record<string, unknown>,
   format: McpTarget['format'],
@@ -419,6 +448,33 @@ if (result.alreadyExists) {
   }
 
   return { registered, alreadyConfigured, manual };
+}
+
+export async function unregisterMcpConfig(projectPath: string): Promise<{ removed: string[]; notFound: string[] }> {
+  const home = process.env.HOME || process.env.USERPROFILE || '';
+  const platform = process.platform;
+  const targets = getMcpTargets();
+  const removed: string[] = [];
+  const notFound: string[] = [];
+
+  for (const target of targets) {
+    const configPath = target.getPath(projectPath, home, platform);
+    if (!await pathExists(configPath)) continue;
+    try {
+      const content = await fs.readFile(configPath, 'utf8');
+      const config: Record<string, unknown> = JSON.parse(content);
+      const didRemove = removeFromConfig(config, target.format);
+      if (didRemove) {
+        await fs.writeFile(configPath, JSON.stringify(config, null, 2), 'utf8');
+        removed.push(target.name);
+      } else {
+        notFound.push(target.name);
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+  return { removed, notFound };
 }
 
 /**
@@ -581,12 +637,13 @@ export function canAccessVariable(
   config: EnvCPConfig,
   operation: VariableAccessOperation,
   clientId = '',
+  now: Date = new Date(),
 ): boolean {
   if (isBlacklisted(name, config)) {
     return false;
   }
 
-  if (!isVariableRuleActive(name, config, new Date(), clientId)) {
+  if (!isVariableRuleActive(name, config, now, clientId)) {
     return false;
   }
 

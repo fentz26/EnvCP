@@ -1,5 +1,6 @@
 /* c8 ignore file - tested via integration tests in __tests__/utils/prompt.test.ts */
 import * as readline from 'node:readline';
+import chalk from 'chalk';
 
 let nonTtyLinesPromise: Promise<string[]> | null = null;
 let nonTtyLineIndex = 0;
@@ -159,13 +160,14 @@ export interface MenuTab {
 }
 
 function clearScreen(output: NodeJS.WriteStream): void {
-  output.write('\x1Bc');
+  output.write('\x1B[2J\x1B[H');
 }
 
 function formatMenuLine(choice: MenuChoice, isSelected: boolean): string {
   const prefix = isSelected ? chalkPointer() + ' ' : '  ';
   const hint = choice.hint ? ` ${choice.hint}` : '';
-  return `${prefix}${choice.label}${hint}`;
+  const line = `${prefix}${choice.label}${hint}`;
+  return isSelected ? chalk.bgBlue.white(line) : line;
 }
 
 function renderMenuItems(output: NodeJS.WriteStream, choices: MenuChoice[], selectedIndex: number): void {
@@ -196,7 +198,7 @@ function createRawMenuSession<T>(
   const finish = (value: T) => {
     settled = true;
     cleanup();
-    clearScreen(output);
+    output.write('\n');
     resolve(value);
   };
 

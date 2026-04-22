@@ -1122,4 +1122,29 @@ export abstract class BaseAdapter {
       });
     });
   }
+
+  /**
+   * Common startup wrapper for branded HTTP adapters (OpenAI/Gemini):
+   * runs init(), then createHttpServer() with the standard /v1/health endpoints.
+   */
+  protected async startBrandedHttpServer(
+    opts: {
+      port: number;
+      host: string;
+      apiKey?: string;
+      rateLimitConfig?: RateLimitConfig;
+      defaultClientId: string;
+      authHeaderFn: (req: http.IncomingMessage) => string | undefined;
+      onRequest: (req: http.IncomingMessage, res: http.ServerResponse, pathname: string, clientId: string) => Promise<void>;
+      authFailureResponse?: (message: string) => unknown;
+      internalErrorResponse?: (message: string) => unknown;
+      mode: string;
+    },
+  ): Promise<http.Server> {
+    await this.init();
+    return this.createHttpServer({
+      ...opts,
+      healthEndpoints: ['/v1/health', '/'],
+    });
+  }
 }

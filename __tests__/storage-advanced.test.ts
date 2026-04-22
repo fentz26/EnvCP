@@ -188,16 +188,12 @@ describe('StorageManager advanced', () => {
     }
     await ensureDir(bak1);
 
-    // This should still try bak.2 and recover
+    // The non-ENOENT error from bak.1 being a directory must be handled
+    // cleanly inside the restore loop — i.e. the load() call must surface the
+    // normal decryption failure, not let EISDIR escape.
     const storage2 = new StorageManager(storePath, true, 2);
     storage2.setPassword('test');
-    try {
-      const loaded = await storage2.load();
-      // May or may not succeed depending on bak.2 state
-      expect(loaded).toBeDefined();
-    } catch {
-      // If all backups fail, that's OK — the key thing is line 136 was hit
-    }
+    await expect(storage2.load()).rejects.toThrow(/decrypt|corrupted|invalid password/i);
   });
 
   it('silently skips corrupted backups when restore attempts fail', async () => {
@@ -775,12 +771,18 @@ describe('StorageManager — tryRestoreFromBackup (lines 132-159)', () => {
     await fs.writeFile(`${storePath}.bak.3`, '{}');
     await fs.mkdir(`${storePath}.bak.2`);
     const storage = new StorageManager(storePath, false, 3);
-    try {
-      await storage.set('TEST', { name: 'TEST', value: 'v', encrypted: false, created: new Date().toISOString(), updated: new Date().toISOString(), sync_to_env: true });
-      expect(true).toBe(false);
-    } catch (e: unknown) {
-      expect((e as Error).message).toBeDefined();
-    }
+    // bak.2 being a directory causes a non-ENOENT error on rename — must be
+    // rethrown (not swallowed) during rotation.
+    await expect(
+      storage.set('TEST', {
+        name: 'TEST',
+        value: 'v',
+        encrypted: false,
+        created: new Date().toISOString(),
+        updated: new Date().toISOString(),
+        sync_to_env: true,
+      }),
+    ).rejects.toThrow(/EISDIR|ENOTDIR|is a directory|not a directory|illegal operation/i);
   });
 
   it('tryRestoreFromBackup returns null when password not set', async () => {

@@ -342,10 +342,9 @@ describe('ConfigGuard', () => {
       await new Promise(resolve => setTimeout(resolve, 500));
 
       const logPath = path.join(tmpDir, '.envcp', 'logs', 'audit.log');
-      if (await pathExists(logPath)) {
-        const logContent = await fs.readFile(logPath, 'utf8');
-        expect(logContent).toContain('SECURITY WARNING');
-      }
+      expect(await pathExists(logPath)).toBe(true);
+      const logContent = await fs.readFile(logPath, 'utf8');
+      expect(logContent).toContain('SECURITY WARNING');
 
       guard.destroy();
     });
@@ -395,11 +394,10 @@ describe('ConfigGuard', () => {
       expect(guard.isTampered()).toBe(true);
 
       const logPath = path.join(tmpDir, '.envcp', 'logs', 'audit.log');
-      if (await pathExists(logPath)) {
-        const logContent = await fs.readFile(logPath, 'utf8');
-        const tamperCount = (logContent.match(/PERIODIC_TAMPER/g) || []).length;
-        expect(tamperCount).toBeLessThanOrEqual(1);
-      }
+      expect(await pathExists(logPath)).toBe(true);
+      const logContent = await fs.readFile(logPath, 'utf8');
+      const tamperCount = (logContent.match(/PERIODIC_TAMPER/g) || []).length;
+      expect(tamperCount).toBeLessThanOrEqual(1);
 
       guard.destroy();
     });
