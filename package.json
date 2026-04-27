@@ -57,7 +57,7 @@
     "eslint": "^10.2.0",
     "eslint-plugin-security": "^4.0.0",
     "jest": "^30.3.0",
-    "jest-junit": "^16.0.0",
+    "jest-junit": "^17.0.0",
     "jscpd": "^4.0.9",
     "ts-jest": "^29.4.9",
     "typescript": "^5.9.3"
