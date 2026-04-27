@@ -8,7 +8,7 @@ license-file = "../../LICENSE"
 [dependencies]
 argon2 = "0.5"
 aes-gcm = "0.10"
-pbkdf2 = { version = "0.12", features = ["std"] }
+pbkdf2 = { version = "0.13", features = ["std"] }
 sha2 = "0.10"
 hmac = "0.12"
 hex = "0.4"
